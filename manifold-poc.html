@@ -282,25 +282,38 @@
   // --- 3MF export ---
   if (gyroidManifold) {
     const btn = document.getElementById('btn-export');
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'hint';
+    statusDiv.style.marginTop = '8px';
+    btn.parentNode.insertBefore(statusDiv, btn.nextSibling);
+
     btn.disabled = false;
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       try {
-        // Manifold's JS binding exposes 3MF export via exportMesh or writeMesh.
-        // We'll build a minimal 3MF using the mesh data and a tiny XML wrapper,
-        // since the JS binding's 3MF writer availability varies by version.
+        btn.disabled = true;
+        statusDiv.textContent = 'Building 3MF…';
+        statusDiv.style.color = 'var(--pending)';
+
         const mesh = gyroidManifold.getMesh();
         const verts = mesh.vertProperties; // Float32Array, 3 floats per vertex
         const tris  = mesh.triVerts;       // Uint32Array, 3 indices per tri
 
-        const blob = buildMinimal3MF(verts, tris);
+        const blob = await buildMinimal3MF(verts, tris);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'gyroid-manifold-poc.3mf';
         a.click();
         URL.revokeObjectURL(url);
+
+        statusDiv.textContent = `Downloaded gyroid-manifold-poc.3mf (${(blob.size/1024).toFixed(1)} KB, ${(tris.length/3).toLocaleString()} triangles)`;
+        statusDiv.style.color = 'var(--pass)';
+        btn.disabled = false;
       } catch (err) {
+        statusDiv.textContent = 'Export failed — see error below';
+        statusDiv.style.color = 'var(--fail)';
         showError('err-export', err);
+        btn.disabled = false;
       }
     });
   }

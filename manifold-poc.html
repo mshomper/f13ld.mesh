@@ -224,18 +224,25 @@
   const runTest = (rowId, name, sdfFn, bounds, edgeLength) => {
     try {
       const t0 = performance.now();
-      // LevelSet signature: (sdf, bounds, edgeLength, level=0)
-      // bounds: {min:[x,y,z], max:[x,y,z]}
+      // Manifold.levelSet(sdf, bounds, edgeLength, level?, tolerance?)
+      //   sdf: (point: Vec3) => number   -- positive inside, negative outside
+      //   bounds: { min: Vec3, max: Vec3 }
       const m = Manifold.levelSet(sdfFn, bounds, edgeLength);
       const t1 = performance.now();
 
-      const isManifold = (typeof m.isEmpty === 'function' ? !m.isEmpty() : true)
-                        && (typeof m.genus === 'function'); // Manifold objects have genus()
+      // Check actual geometry, not just "did it throw"
+      const empty = (typeof m.isEmpty === 'function') ? m.isEmpty() : false;
       const mesh = m.getMesh();
       const triCount = mesh.triVerts.length / 3;
 
+      if (empty || triCount === 0) {
+        setRow(rowId, 'fail', triCount, false, Math.round(t1 - t0));
+        showError('err-tests', new Error(`${name}: levelSet returned empty manifold (0 triangles). Likely SDF sign or bounds issue.`));
+        return null;
+      }
+
       setRow(rowId, 'pass', triCount, true, Math.round(t1 - t0));
-      return m; // caller can use it for export
+      return m;
     } catch (err) {
       setRow(rowId, 'fail', 0, false, 0);
       showError('err-tests', new Error(`${name} failed: ${err.message || err}`));
@@ -244,28 +251,29 @@
   };
 
   // Test 1: Sphere, radius 1
+  // SDF signature is (point) => number where point is [x, y, z]
   runTest('row-sphere', 'sphere',
-    (x,y,z) => 1 - Math.sqrt(x*x + y*y + z*z),
+    (p) => 1 - Math.sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2]),
     { min: [-1.5, -1.5, -1.5], max: [1.5, 1.5, 1.5] },
     0.05
   );
 
   // Test 2: Torus, major R=1, minor r=0.3
   runTest('row-torus', 'torus',
-    (x,y,z) => {
-      const q = Math.sqrt(x*x + y*y) - 1.0;
-      return 0.3 - Math.sqrt(q*q + z*z);
+    (p) => {
+      const q = Math.sqrt(p[0]*p[0] + p[1]*p[1]) - 1.0;
+      return 0.3 - Math.sqrt(q*q + p[2]*p[2]);
     },
     { min: [-1.5, -1.5, -0.5], max: [1.5, 1.5, 0.5] },
     0.05
   );
 
-  // Test 3: Gyroid, period 2π
+  // Test 3: Gyroid shell (|gyroid| < 0.1), period 2π
   const gyroidManifold = runTest('row-gyroid', 'gyroid',
-    (x,y,z) => 0.1 - Math.abs(
-      Math.sin(x)*Math.cos(y) +
-      Math.sin(y)*Math.cos(z) +
-      Math.sin(z)*Math.cos(x)
+    (p) => 0.1 - Math.abs(
+      Math.sin(p[0])*Math.cos(p[1]) +
+      Math.sin(p[1])*Math.cos(p[2]) +
+      Math.sin(p[2])*Math.cos(p[0])
     ),
     { min: [-Math.PI, -Math.PI, -Math.PI], max: [Math.PI, Math.PI, Math.PI] },
     0.15

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manifold POC — SDF → Mesh</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#06080f;color:#e0e0ff;font-family:system-ui,sans-serif;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       min-height:100vh;gap:24px;padding:32px}
+  h1{font-size:18px;color:#22d3ee;letter-spacing:0.05em}
+  p{font-size:13px;color:#888;max-width:480px;text-align:center;line-height:1.6}
+  .card{background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:12px;
+        padding:24px;display:flex;flex-direction:column;gap:16px;width:100%;max-width:480px}
+  label{font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.06em}
+  .row{display:flex;align-items:center;gap:12px}
+  .row label{width:120px;flex-shrink:0}
+  input[type=range]{flex:1;accent-color:#22d3ee}
+  .val{font-size:12px;color:#22d3ee;width:48px;text-align:right}
+  button{background:#22d3ee;color:#06080f;border:none;border-radius:8px;
+         padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;
+         transition:opacity 0.15s}
+  button:disabled{opacity:0.4;cursor:default}
+  #status{font-size:12px;color:#555;min-height:18px;text-align:center}
+  #result{font-size:12px;color:#22c55e;text-align:center;display:none}
+  #error{font-size:12px;color:#ef4444;text-align:center;display:none;white-space:pre-wrap}
+  .divider{border:none;border-top:0.5px solid #2a2a3a}
+  .sec{font-size:11px;color:#18f370;text-transform:uppercase;letter-spacing:0.08em}
+</style>
+</head>
+<body>
+
+<h1>Manifold POC — SDF → Watertight Mesh</h1>
+<p>Tests loading manifold-3d via CDN in a Web Worker, running LevelSet on a simplex noise SDF, and downloading the result as binary STL.</p>
+
+<div class="card">
+  <div class="sec">SDF test shape</div>
+
+  <div class="row">
+    <label>Shape</label>
+    <select id="shape" style="flex:1;background:#06080f;color:#e0e0ff;border:0.5px solid #2a2a3a;border-radius:6px;padding:4px 8px;font-size:13px">
+      <option value="sphere">Sphere (r=4mm)</option>
+      <option value="torus">Torus (R=3, r=1.5mm)</option>
+      <option value="gyroid">Gyroid sheet (TPMS)</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>Edge length</label>
+    <input type="range" id="edgeLen" min="0.1" max="1.0" step="0.05" value="0.5">
+    <span class="val" id="edgeLenVal">0.50mm</span>
+  </div>
+
+  <div class="row">
+    <label>Box size</label>
+    <input type="range" id="boxSize" min="5" max="20" step="1" value="10">
+    <span class="val" id="boxSizeVal">10mm</span>
+  </div>
+
+  <hr class="divider">
+
+  <div class="sec">Status</div>
+  <div id="status">Ready — click Generate to test</div>
+  <div id="error"></div>
+  <div id="result"></div>
+
+  <button id="btn" onclick="generate()">Generate + Download STL</button>
+</div>
+
+<script>
+// ── Worker source (inlined as a Blob) ─────────────────────────────────────
+// The worker loads manifold-3d from jsdelivr CDN.
+// locateFile() tells Emscripten where to fetch the .wasm binary.
+var WORKER_SRC = `
+'use strict';
+
+// Capture all unhandled errors with detail
+self.onerror = function(msg, src, line, col, err) {
+  postMessage({type:'error', msg: 'Worker onerror: ' + msg + ' (line ' + line + ')'});
+};
+
+// Stub Node.js globals that manifold.js's Emscripten glue tries to access.
+// Without these, the ENVIRONMENT_IS_NODE check can misfire and call require().
+if (typeof process === 'undefined') {
+  self.process = {versions: {node: false}, env: {}, platform: 'browser'};
+}
+if (typeof require === 'undefined') {
+  self.require = function(m) {
+    throw new Error('require() called in browser worker: ' + m);
+  };
+}
+
+// Tell Emscripten where to find the WASM binary
+self.Module = {
+  locateFile: function(path) {
+    if (path.endsWith('.wasm')) {
+      return 'https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/' + path;
+    }
+    return path;
+  },
+  onAbort: function(what) {
+    postMessage({type:'error', msg: 'WASM aborted: ' + what});
+  }
+};
+
+postMessage({type:'status', msg:'Loading manifold.js from CDN...'});
+
+try {
+  importScripts('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/manifold.js');
+  postMessage({type:'status', msg:'manifold.js loaded — waiting for WASM init...'});
+} catch(e) {
+  postMessage({type:'error', msg:'importScripts failed: ' + (e.message || e.toString())});
+  self.close();
+}
+
+Module.onRuntimeInitialized = function() {
+  postMessage({type:'ready'});
+
+  self.onmessage = function(e) {
+    var d = e.data;
+    if (d.type === 'generate') {
+      try {
+        var r = run(Module, d.shape, d.edgeLen, d.boxSize);
+        postMessage({type:'mesh', stl: r.stl, triCount: r.triCount, vertCount: r.vertCount, shape: d.shape});
+      } catch(err) {
+        postMessage({type:'error', msg: (err.message || String(err))});
+      }
+    }
+  };
+};
+
+function run(wasm, shape, edgeLen, boxSize) {
+  var half = boxSize / 2;
+  var bounds = {
+    min: {x: -half, y: -half, z: -half},
+    max: {x:  half, y:  half, z:  half}
+  };
+
+  var sdf;
+  if (shape === 'sphere') {
+    var r = boxSize * 0.4;
+    sdf = function(x, y, z) { return Math.sqrt(x*x + y*y + z*z) - r; };
+  } else if (shape === 'torus') {
+    var R = boxSize * 0.30, ri = boxSize * 0.15;
+    sdf = function(x, y, z) {
+      var q = Math.sqrt(x*x + z*z) - R;
+      return Math.sqrt(q*q + y*y) - ri;
+    };
+  } else {
+    var freq = Math.PI * 2 / (boxSize * 0.5);
+    var thickness = 0.5;
+    sdf = function(x, y, z) {
+      var fx=x*freq, fy=y*freq, fz=z*freq;
+      var g = Math.cos(fx)*Math.sin(fy)+Math.cos(fy)*Math.sin(fz)+Math.cos(fz)*Math.sin(fx);
+      return Math.abs(g) - thickness * freq;
+    };
+  }
+
+  postMessage({type:'status', msg:'Running LevelSet...'});
+  var manifold = wasm.Manifold.levelSet(sdf, bounds, edgeLen, 0.0);
+
+  var numTri  = manifold.numTri();
+  var numVert = manifold.numVert();
+  postMessage({type:'status', msg:'Meshed: '+numVert+' verts, '+numTri+' tris — serializing...'});
+
+  var meshGL = manifold.getMesh();
+  manifold.delete();
+
+  var verts = meshGL.vertProperties;
+  var tris  = meshGL.triVerts;
+  var nTris = tris.length / 3;
+
+  var buf  = new ArrayBuffer(84 + nTris * 50);
+  var view = new DataView(buf);
+  var hdr  = 'Manifold POC — ' + shape;
+  for (var i=0; i<80; i++) view.setUint8(i, i<hdr.length ? hdr.charCodeAt(i) : 0);
+  view.setUint32(80, nTris, true);
+
+  var off = 84;
+  for (var t=0; t<nTris; t++) {
+    var a=tris[t*3]*3, b=tris[t*3+1]*3, c=tris[t*3+2]*3;
+    var ax=verts[a],ay=verts[a+1],az=verts[a+2];
+    var bx=verts[b],by=verts[b+1],bz=verts[b+2];
+    var cx=verts[c],cy=verts[c+1],cz=verts[c+2];
+    var ux=bx-ax,uy=by-ay,uz=bz-az, vx=cx-ax,vy=cy-ay,vz=cz-az;
+    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    var nl=Math.sqrt(nx*nx+ny*ny+nz*nz)||1;
+    view.setFloat32(off,   nx/nl,true); view.setFloat32(off+4, ny/nl,true); view.setFloat32(off+8,nz/nl,true);
+    view.setFloat32(off+12,ax,true); view.setFloat32(off+16,ay,true); view.setFloat32(off+20,az,true);
+    view.setFloat32(off+24,bx,true); view.setFloat32(off+28,by,true); view.setFloat32(off+32,bz,true);
+    view.setFloat32(off+36,cx,true); view.setFloat32(off+40,cy,true); view.setFloat32(off+44,cz,true);
+    view.setUint16(off+48,0,true);
+    off+=50;
+  }
+  if(meshGL.delete) meshGL.delete();
+  return {stl: buf, triCount: nTris, vertCount: numVert};
+}
+`;
+
+// ── Main page ─────────────────────────────────────────────────────────────
+var worker = null;
+var workerReady = false;
+
+function setStatus(msg, col) {
+  var el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.color = col || '#555';
+}
+
+function setError(msg) {
+  var el = document.getElementById('error');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+  document.getElementById('result').style.display = 'none';
+}
+
+function setResult(msg) {
+  var el = document.getElementById('result');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('error').style.display = 'none';
+}
+
+function initWorker() {
+  if (worker) worker.terminate();
+  setStatus('Loading Manifold WASM from CDN...', '#facc15');
+  document.getElementById('btn').disabled = true;
+  document.getElementById('error').style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+
+  var blob = new Blob([WORKER_SRC], {type:'application/javascript'});
+  worker = new Worker(URL.createObjectURL(blob));
+
+  worker.onmessage = function(e) {
+    var d = e.data;
+    if (d.type === 'ready') {
+      workerReady = true;
+      setStatus('Manifold ready ✓', '#22c55e');
+      document.getElementById('btn').disabled = false;
+    } else if (d.type === 'status') {
+      setStatus(d.msg, '#facc15');
+    } else if (d.type === 'mesh') {
+      var r = d.stl;
+      setResult('✓ ' + r.triCount.toLocaleString() + ' triangles, ' + r.vertCount.toLocaleString() + ' vertices — downloading...');
+      setStatus('Done.', '#22c55e');
+      document.getElementById('btn').disabled = false;
+      // Trigger download
+      var blob2 = new Blob([r.stl], {type:'model/stl'});
+      var url = URL.createObjectURL(blob2);
+      var a = document.createElement('a');
+      a.href=url; a.download='manifold_poc_' + d.shape + '.stl';
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else if (d.type === 'error') {
+      setError('Error: ' + d.msg);
+      setStatus('Failed — see error above', '#ef4444');
+      document.getElementById('btn').disabled = false;
+    }
+  };
+
+  worker.onerror = function(e) {
+    // e.message can be undefined for cross-origin script errors
+    var msg = e.message || e.filename || 'Unknown worker error';
+    if (e.lineno) msg += ' (line ' + e.lineno + ')';
+    setError('Worker error: ' + msg + '\n\nThis usually means:\n• importScripts blocked (try serving from a local HTTP server, not file://)\n• CDN CORS restriction\n• manifold.js Node.js compat issue');
+    setStatus('Failed — see error above', '#ef4444');
+    document.getElementById('btn').disabled = false;
+  };
+}
+
+function generate() {
+  if (!workerReady) return;
+  document.getElementById('btn').disabled = true;
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('error').style.display = 'none';
+  setStatus('Generating...', '#facc15');
+
+  worker.postMessage({
+    type:    'generate',
+    shape:   document.getElementById('shape').value,
+    edgeLen: parseFloat(document.getElementById('edgeLen').value),
+    boxSize: parseFloat(document.getElementById('boxSize').value)
+  });
+}
+
+// Slider display updates
+document.getElementById('edgeLen').oninput = function() {
+  document.getElementById('edgeLenVal').textContent = parseFloat(this.value).toFixed(2) + 'mm';
+};
+document.getElementById('boxSize').oninput = function() {
+  document.getElementById('boxSizeVal').textContent = this.value + 'mm';
+};
+
+// Auto-init on load
+window.onload = initWorker;
+</script>
+</body>
+</html>

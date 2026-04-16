@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manifold POC — F13LD.mesh</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --pass: #3fb950;
+    --fail: #f85149;
+    --pending: #d29922;
+    --cyan: #39d0d8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { color: var(--cyan); font-size: 18px; margin: 0 0 4px 0; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 14px;
+  }
+  .status {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 14px;
+    text-align: center;
+    line-height: 20px;
+    flex-shrink: 0;
+  }
+  .status.pending { background: var(--pending); color: #000; }
+  .status.pass    { background: var(--pass);    color: #000; }
+  .status.fail    { background: var(--fail);    color: #fff; }
+  .label { flex: 1; }
+  .detail { color: var(--muted); font-size: 13px; }
+  .error-box {
+    background: #2d0f11;
+    border: 1px solid var(--fail);
+    color: #ffb4b0;
+    padding: 12px;
+    border-radius: 4px;
+    margin-top: 12px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: normal; }
+  button {
+    background: var(--cyan);
+    color: #000;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 12px;
+    font-weight: 600;
+  }
+  button:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  h2 { font-size: 14px; color: var(--cyan); margin: 0 0 10px 0; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<h1>Manifold POC — F13LD.mesh</h1>
+<div class="sub">Main-thread ESM load test. Loads Manifold v3.4.1 from jsDelivr, runs three SDF tests, exports 3MF.</div>
+
+<div class="panel">
+  <h2>Load steps</h2>
+  <div class="step" id="step-import">
+    <span class="status pending" id="st-import">…</span>
+    <span class="label">Import Manifold module from jsDelivr</span>
+    <span class="detail" id="dt-import"></span>
+  </div>
+  <div class="step" id="step-init">
+    <span class="status pending" id="st-init">…</span>
+    <span class="label">Initialize WASM runtime</span>
+    <span class="detail" id="dt-init"></span>
+  </div>
+  <div class="step" id="step-setup">
+    <span class="status pending" id="st-setup">…</span>
+    <span class="label">Setup Manifold API (setMinCircularAngle, etc.)</span>
+    <span class="detail" id="dt-setup"></span>
+  </div>
+  <div id="err-load"></div>
+</div>
+
+<div class="panel">
+  <h2>SDF tests</h2>
+  <table>
+    <thead>
+      <tr><th>Test</th><th>Status</th><th>Triangles</th><th>Manifold?</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      <tr id="row-sphere">
+        <td>Sphere (r=1)</td>
+        <td><span class="status pending">…</span></td>
+        <td>—</td><td>—</td><td>—</td>
+      </tr>
+      <tr id="row-torus">
+        <td>Torus (R=1, r=0.3)</td>
+        <td><span class="status pending">…</span></td>
+        <td>—</td><td>—</td><td>—</td>
+      </tr>
+      <tr id="row-gyroid">
+        <td>Gyroid (period 2π)</td>
+        <td><span class="status pending">…</span></td>
+        <td>—</td><td>—</td><td>—</td>
+      </tr>
+    </tbody>
+  </table>
+  <div id="err-tests"></div>
+</div>
+
+<div class="panel">
+  <h2>Export</h2>
+  <div class="step">
+    <span class="label">Download gyroid as 3MF (for nTop verification)</span>
+  </div>
+  <button id="btn-export" disabled>Export 3MF</button>
+  <div class="hint">Button enables after gyroid test passes. Drop the file into nTop to sanity-check the geometry.</div>
+  <div id="err-export"></div>
+</div>
+
+<script type="module">
+  // --- UI helpers ---
+  const setStatus = (id, kind, text) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'status ' + kind;
+    el.textContent = kind === 'pass' ? '✓' : kind === 'fail' ? '✗' : '…';
+    if (text) {
+      const detail = document.getElementById('dt-' + id.slice(3));
+      if (detail) detail.textContent = text;
+    }
+  };
+  const setRow = (rowId, kind, tris, manifold, ms) => {
+    const tr = document.getElementById(rowId);
+    const cells = tr.querySelectorAll('td');
+    cells[1].innerHTML = `<span class="status ${kind}">${kind === 'pass' ? '✓' : kind === 'fail' ? '✗' : '…'}</span>`;
+    if (tris !== undefined)     cells[2].textContent = tris.toLocaleString();
+    if (manifold !== undefined) cells[3].textContent = manifold ? 'yes' : 'NO';
+    if (ms !== undefined)       cells[4].textContent = `${ms} ms`;
+  };
+  const showError = (containerId, err) => {
+    const box = document.createElement('div');
+    box.className = 'error-box';
+    box.textContent = (err && err.stack) ? err.stack : String(err);
+    document.getElementById(containerId).appendChild(box);
+  };
+
+  // --- Main ---
+  let Manifold, Mesh, Module;
+  let gyroidMesh3MF = null;
+
+  try {
+    // Step 1: import
+    setStatus('st-import', 'pending', 'fetching…');
+    const mod = await import('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/+esm');
+    setStatus('st-import', 'pass', 'module loaded');
+
+    // Step 2: initialize WASM
+    setStatus('st-init', 'pending', 'starting wasm…');
+    const t0 = performance.now();
+    Module = await mod.default();
+    const t1 = performance.now();
+    setStatus('st-init', 'pass', `${Math.round(t1 - t0)} ms`);
+
+    // Step 3: setup API
+    setStatus('st-setup', 'pending', 'configuring…');
+    Module.setup();
+    Manifold = Module.Manifold;
+    Mesh = Module.Mesh;
+    setStatus('st-setup', 'pass', 'ready');
+
+  } catch (err) {
+    // Mark whichever step is still pending as failed
+    ['st-import','st-init','st-setup'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.classList.contains('pending')) {
+        setStatus(id, 'fail', 'failed');
+      }
+    });
+    showError('err-load', err);
+    throw err; // stop here; SDF tests can't run
+  }
+
+  // --- SDF test runner ---
+  const runTest = (rowId, name, sdfFn, bounds, edgeLength) => {
+    try {
+      const t0 = performance.now();
+      // LevelSet signature: (sdf, bounds, edgeLength, level=0)
+      // bounds: {min:[x,y,z], max:[x,y,z]}
+      const m = Manifold.levelSet(sdfFn, bounds, edgeLength);
+      const t1 = performance.now();
+
+      const isManifold = (typeof m.isEmpty === 'function' ? !m.isEmpty() : true)
+                        && (typeof m.genus === 'function'); // Manifold objects have genus()
+      const mesh = m.getMesh();
+      const triCount = mesh.triVerts.length / 3;
+
+      setRow(rowId, 'pass', triCount, true, Math.round(t1 - t0));
+      return m; // caller can use it for export
+    } catch (err) {
+      setRow(rowId, 'fail', 0, false, 0);
+      showError('err-tests', new Error(`${name} failed: ${err.message || err}`));
+      return null;
+    }
+  };
+
+  // Test 1: Sphere, radius 1
+  runTest('row-sphere', 'sphere',
+    (x,y,z) => 1 - Math.sqrt(x*x + y*y + z*z),
+    { min: [-1.5, -1.5, -1.5], max: [1.5, 1.5, 1.5] },
+    0.05
+  );
+
+  // Test 2: Torus, major R=1, minor r=0.3
+  runTest('row-torus', 'torus',
+    (x,y,z) => {
+      const q = Math.sqrt(x*x + y*y) - 1.0;
+      return 0.3 - Math.sqrt(q*q + z*z);
+    },
+    { min: [-1.5, -1.5, -0.5], max: [1.5, 1.5, 0.5] },
+    0.05
+  );
+
+  // Test 3: Gyroid, period 2π
+  const gyroidManifold = runTest('row-gyroid', 'gyroid',
+    (x,y,z) => 0.1 - Math.abs(
+      Math.sin(x)*Math.cos(y) +
+      Math.sin(y)*Math.cos(z) +
+      Math.sin(z)*Math.cos(x)
+    ),
+    { min: [-Math.PI, -Math.PI, -Math.PI], max: [Math.PI, Math.PI, Math.PI] },
+    0.15
+  );
+
+  // --- 3MF export ---
+  if (gyroidManifold) {
+    const btn = document.getElementById('btn-export');
+    btn.disabled = false;
+    btn.addEventListener('click', () => {
+      try {
+        // Manifold's JS binding exposes 3MF export via exportMesh or writeMesh.
+        // We'll build a minimal 3MF using the mesh data and a tiny XML wrapper,
+        // since the JS binding's 3MF writer availability varies by version.
+        const mesh = gyroidManifold.getMesh();
+        const verts = mesh.vertProperties; // Float32Array, 3 floats per vertex
+        const tris  = mesh.triVerts;       // Uint32Array, 3 indices per tri
+
+        const blob = buildMinimal3MF(verts, tris);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'gyroid-manifold-poc.3mf';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showError('err-export', err);
+      }
+    });
+  }
+
+  // Minimal 3MF writer (single mesh, no materials).
+  // 3MF is a ZIP containing [Content_Types].xml, _rels/.rels, and 3D/3dmodel.model
+  async function buildMinimal3MF(vertProps, triVerts) {
+    // We need a ZIP builder. Load fflate from CDN.
+    const fflate = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm');
+
+    const nVerts = vertProps.length / 3;
+    const nTris  = triVerts.length / 3;
+
+    let vxml = '';
+    for (let i = 0; i < nVerts; i++) {
+      vxml += `<vertex x="${vertProps[i*3]}" y="${vertProps[i*3+1]}" z="${vertProps[i*3+2]}"/>`;
+    }
+    let txml = '';
+    for (let i = 0; i < nTris; i++) {
+      txml += `<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
+    }
+
+    const model =
+`<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<resources>
+<object id="1" type="model"><mesh><vertices>${vxml}</vertices><triangles>${txml}</triangles></mesh></object>
+</resources>
+<build><item objectid="1"/></build>
+</model>`;
+
+    const contentTypes =
+`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`;
+
+    const rels =
+`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+
+    const enc = new TextEncoder();
+    const zipped = fflate.zipSync({
+      '[Content_Types].xml': enc.encode(contentTypes),
+      '_rels/.rels': enc.encode(rels),
+      '3D/3dmodel.model': enc.encode(model)
+    });
+    return new Blob([zipped], { type: 'model/3mf' });
+  }
+</script>
+
+</body>
+</html>

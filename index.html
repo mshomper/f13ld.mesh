@@ -75,9 +75,12 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .qual-btn .ql{display:block;font-size:9px;color:var(--muted);opacity:.7}
 .qual-btn.active{color:var(--cyan);border-color:var(--cyan)}
 .qual-btn.active .ql{color:var(--cyan)}
-#expBtn{width:100%;padding:7px 14px;border:.5px solid var(--cyan);border-radius:20px;background:rgba(34,211,238,.08);color:var(--cyan);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;transition:background .15s}
+#expBtn{width:100%;padding:7px 14px;border:.5px solid var(--cyan);border-radius:20px;background:rgba(34,211,238,.08);color:var(--cyan);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;transition:background .15s;position:relative;overflow:hidden}
 #expBtn:hover:not(:disabled){background:rgba(34,211,238,.18)}
 #expBtn:disabled{opacity:.4;cursor:not-allowed;background:transparent;border-color:var(--border);color:var(--muted)}
+#expBtn::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(34,211,238,.18) 50%,transparent 100%);transform:translateX(-100%);pointer-events:none}
+#expBtn.sweeping::after{animation:btnSweep 1s ease-in-out infinite}
+@keyframes btnSweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .exp-report{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
 .exp-chip{background:#0e0e1a;border:.5px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .exp-chip b{color:var(--text);font-weight:500}
@@ -521,7 +524,8 @@ window.triggerExport=async function(){
   const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
   const edgeMm=QUAL_EDGE_MM[currentExportQual]||.10;
   const edgeWorld=edgeMm*10/domainMm;
-  btn.disabled=true;btn.textContent='computing…';report.innerHTML='';
+  btn.disabled=true;btn.classList.add('sweeping');btn.textContent='computing…';report.innerHTML='';
+  await new Promise(r=>setTimeout(r,50));
   try{
     await manifoldReady;
     if(!ManifoldAPI)throw new Error('Manifold not available.');
@@ -549,10 +553,10 @@ window.triggerExport=async function(){
       ${expChip('file',(blob.size/1024).toFixed(1)+' KB')}
       ${expChip('time',ms+'ms')}
     </div>`;
-    btn.textContent='Export 3MF';
+    btn.classList.remove('sweeping');btn.textContent='Export 3MF';
   }catch(e){
     report.innerHTML=`<div class="exp-err">⚠ ${e.message||e}</div>`;
-    btn.textContent='Export 3MF';
+    btn.classList.remove('sweeping');btn.textContent='Export 3MF';
     console.error(e);
   }
   btn.disabled=false;

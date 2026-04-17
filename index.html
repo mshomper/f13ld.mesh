@@ -2,299 +2,602 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Manifold POC — SDF → Mesh</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F13LD.mesh — Scaffold Exporter</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/",
+    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm"
+  }
+}
+</script>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#06080f;color:#e0e0ff;font-family:system-ui,sans-serif;
-       display:flex;flex-direction:column;align-items:center;justify-content:center;
-       min-height:100vh;gap:24px;padding:32px}
-  h1{font-size:18px;color:#22d3ee;letter-spacing:0.05em}
-  p{font-size:13px;color:#888;max-width:480px;text-align:center;line-height:1.6}
-  .card{background:#0e0e1a;border:0.5px solid #2a2a3a;border-radius:12px;
-        padding:24px;display:flex;flex-direction:column;gap:16px;width:100%;max-width:480px}
-  label{font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.06em}
-  .row{display:flex;align-items:center;gap:12px}
-  .row label{width:120px;flex-shrink:0}
-  input[type=range]{flex:1;accent-color:#22d3ee}
-  .val{font-size:12px;color:#22d3ee;width:48px;text-align:right}
-  button{background:#22d3ee;color:#06080f;border:none;border-radius:8px;
-         padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;
-         transition:opacity 0.15s}
-  button:disabled{opacity:0.4;cursor:default}
-  #status{font-size:12px;color:#555;min-height:18px;text-align:center}
-  #result{font-size:12px;color:#22c55e;text-align:center;display:none}
-  #error{font-size:12px;color:#ef4444;text-align:center;display:none;white-space:pre-wrap}
-  .divider{border:none;border-top:0.5px solid #2a2a3a}
-  .sec{font-size:11px;color:#18f370;text-transform:uppercase;letter-spacing:0.08em}
+:root{--bg:#06080f;--panel:#111118;--border:#2a2a3a;--text:#e0e0ff;--muted:#555;--dim:#888;--cyan:#22d3ee;--purple:#7c6ff7;--green:#18f370;--amber:#f59e0b;--fail:#f87171}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
+#container{display:flex;flex-direction:column;height:100vh}
+#hdr{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;flex-shrink:0}
+#hdr h1{font-size:13px;font-weight:500;color:#7c8aaa;letter-spacing:.08em;text-transform:uppercase;flex:1}
+.ver{font-size:10px;color:#3a3a5a;margin-left:6px}
+.mpill{display:flex;align-items:center;gap:5px;background:var(--panel);border:.5px solid var(--border);border-radius:20px;padding:3px 10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.mdot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background .3s;flex-shrink:0}
+.mdot.loading{background:var(--amber);animation:pulse 1.2s infinite}
+.mdot.ready{background:var(--cyan)}
+.mdot.error{background:var(--fail)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+#errorBox{display:none;background:rgba(248,113,113,.07);border:.5px solid var(--fail);border-radius:7px;padding:9px 12px;font-size:12px;color:#ffb4b4;margin:0 16px 8px;line-height:1.5}
+#dropzone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 16px 16px;border:.5px dashed var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
+#dropzone:hover,#dropzone.dragover{border-color:var(--cyan);background:rgba(34,211,238,.025)}
+#dropzone.dragover{border-style:solid}
+.dz-icon{font-size:28px;margin-bottom:14px;opacity:.2;line-height:1}
+.dz-main{font-size:13px;color:var(--dim);margin-bottom:5px}
+.dz-sub{font-size:11px;color:var(--muted);letter-spacing:.04em}
+.dz-pick{font-size:11px;color:var(--cyan);margin-top:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+#fileInput{display:none}
+#recipeView{display:none;flex-direction:column;flex:1;margin:0 16px;min-height:0}
+#previewArea{flex:1;min-height:120px;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px 12px 0 0}
+#threeCanvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+#computeOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;background:rgba(6,8,15,.82);z-index:4}
+#computeOverlay.hidden{display:none}
+.co-main{font-size:12px;color:var(--dim)}
+.co-sub{font-size:10px;color:var(--muted)}
+#typeBadge{position:absolute;top:10px;left:10px;z-index:3;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 10px;border-radius:20px}
+#typeBadge.noise{background:rgba(34,211,238,.1);color:var(--cyan);border:.5px solid var(--cyan)}
+#typeBadge.tpms{background:rgba(124,111,247,.1);color:var(--purple);border:.5px solid var(--purple)}
+#typeBadge.grain{background:rgba(24,243,112,.1);color:var(--green);border:.5px solid var(--green)}
+#reloadBtn{position:absolute;top:10px;right:10px;z-index:3;font-size:10px;color:var(--muted);background:rgba(6,8,15,.85);border:.5px solid var(--border);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:inherit}
+#reloadBtn:hover{color:var(--text);border-color:var(--dim)}
+#resStrip{position:absolute;bottom:10px;right:10px;display:flex;gap:4px;z-index:3}
+.res-btn{font-size:10px;padding:3px 8px;border:.5px solid var(--border);border-radius:5px;background:rgba(6,8,15,.85);color:var(--muted);cursor:pointer;font-family:inherit;transition:color .1s,border-color .1s}
+.res-btn.active{color:var(--cyan);border-color:var(--cyan)}
+.res-btn:disabled{opacity:.4;cursor:default}
+#triPill{display:none;position:absolute;bottom:10px;left:10px;z-index:3;font-size:10px;color:var(--dim);background:rgba(6,8,15,.85);border:.5px solid var(--border);border-radius:5px;padding:3px 8px}
+#panel{background:var(--panel);border:.5px solid var(--border);border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;overflow-y:auto;max-height:46vh;margin-bottom:16px;flex-shrink:0}
+.sec-lbl{font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:10px}
+.mc{background:#0e0e1a;border:.5px solid var(--border);border-radius:7px;padding:7px 9px}
+.mc-lbl{font-size:10px;color:var(--muted);margin-bottom:2px}
+.mc-val{font-size:13px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums;word-break:break-all}
+.mc-unit{font-size:10px;color:var(--muted);margin-left:2px}
+.homo-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.hchip{background:#0e0e1a;border:.5px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.hchip b{color:var(--text);font-weight:500}
+.hchip small{font-size:10px;color:var(--muted)}
+.exp-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.exp-label{font-size:12px;color:var(--dim);min-width:80px}
+.exp-num{font-size:12px;padding:2px 6px;background:#1a1a2e;border:.5px solid var(--border);border-radius:5px;color:var(--text);width:60px;text-align:center;font-family:inherit}
+.exp-unit{font-size:11px;color:var(--muted)}
+.qual-strip{display:flex;gap:4px;flex:1}
+.qual-btn{font-size:11px;padding:4px 0;border:.5px solid var(--border);border-radius:20px;background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;flex:1;text-align:center;transition:color .1s,border-color .1s;line-height:1.2}
+.qual-btn .ql{display:block;font-size:9px;color:var(--muted);opacity:.7}
+.qual-btn.active{color:var(--cyan);border-color:var(--cyan)}
+.qual-btn.active .ql{color:var(--cyan)}
+#expBtn{width:100%;padding:7px 14px;border:.5px solid var(--cyan);border-radius:20px;background:rgba(34,211,238,.08);color:var(--cyan);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;transition:background .15s}
+#expBtn:hover:not(:disabled){background:rgba(34,211,238,.18)}
+#expBtn:disabled{opacity:.4;cursor:not-allowed;background:transparent;border-color:var(--border);color:var(--muted)}
+.exp-report{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.exp-chip{background:#0e0e1a;border:.5px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.exp-chip b{color:var(--text);font-weight:500}
+.exp-err{font-size:11px;color:#ffb4b4;margin-top:6px;line-height:1.5}
 </style>
 </head>
 <body>
-
-<h1>Manifold POC — SDF → Watertight Mesh</h1>
-<p>Tests loading manifold-3d via CDN in a Web Worker, running LevelSet on a simplex noise SDF, and downloading the result as binary STL.</p>
-
-<div class="card">
-  <div class="sec">SDF test shape</div>
-
-  <div class="row">
-    <label>Shape</label>
-    <select id="shape" style="flex:1;background:#06080f;color:#e0e0ff;border:0.5px solid #2a2a3a;border-radius:6px;padding:4px 8px;font-size:13px">
-      <option value="sphere">Sphere (r=4mm)</option>
-      <option value="torus">Torus (R=3, r=1.5mm)</option>
-      <option value="gyroid">Gyroid sheet (TPMS)</option>
-    </select>
+<div id="container">
+  <div id="hdr">
+    <h1>F13LD.mesh <span class="ver">v0.1 · step 3</span></h1>
+    <div class="mpill"><div class="mdot loading" id="mdot"></div><span id="mLabel">manifold loading</span></div>
   </div>
-
-  <div class="row">
-    <label>Edge length</label>
-    <input type="range" id="edgeLen" min="0.1" max="1.0" step="0.05" value="0.5">
-    <span class="val" id="edgeLenVal">0.50mm</span>
+  <div id="errorBox"></div>
+  <div id="dropzone">
+    <div class="dz-icon">⬡</div>
+    <div class="dz-main">Drop a JSON recipe here</div>
+    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; grain &nbsp;·&nbsp; spinodoid</div>
+    <div class="dz-pick" id="pickBtn">or pick a file</div>
+    <input type="file" id="fileInput" accept=".json,application/json">
   </div>
-
-  <div class="row">
-    <label>Box size</label>
-    <input type="range" id="boxSize" min="5" max="20" step="1" value="10">
-    <span class="val" id="boxSizeVal">10mm</span>
+  <div id="recipeView">
+    <div id="previewArea">
+      <canvas id="threeCanvas"></canvas>
+      <div id="computeOverlay">
+        <div class="co-main" id="coMain">awaiting recipe…</div>
+        <div class="co-sub"  id="coSub"></div>
+      </div>
+      <div id="typeBadge"></div>
+      <button id="reloadBtn">↩ load different</button>
+      <div id="resStrip">
+        <button class="res-btn active" id="btnLow">Low</button>
+        <button class="res-btn"       id="btnExact">Exact</button>
+      </div>
+      <div id="triPill"></div>
+    </div>
+    <div id="panel"><div id="summaryContent"></div></div>
   </div>
-
-  <hr class="divider">
-
-  <div class="sec">Status</div>
-  <div id="status">Ready — click Generate to test</div>
-  <div id="error"></div>
-  <div id="result"></div>
-
-  <button id="btn" onclick="generate()">Generate + Download STL</button>
 </div>
 
-<script>
-// ── Worker source (inlined as a Blob) ─────────────────────────────────────
-// The worker loads manifold-3d from jsdelivr CDN.
-// locateFile() tells Emscripten where to fetch the .wasm binary.
-var WORKER_SRC = `
-'use strict';
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as fflate from 'fflate';
 
-// Capture all unhandled errors with detail
-self.onerror = function(msg, src, line, col, err) {
-  postMessage({type:'error', msg: 'Worker onerror: ' + msg + ' (line ' + line + ')'});
-};
+// ── Manifold ──────────────────────────────────────────────────────────────
+let ManifoldAPI = null;
+const mdot = document.getElementById('mdot'), mLabel = document.getElementById('mLabel');
+function setMS(s,t){mdot.className='mdot '+s;mLabel.textContent=t;}
 
-// Stub Node.js globals that manifold.js's Emscripten glue tries to access.
-// Without these, the ENVIRONMENT_IS_NODE check can misfire and call require().
-if (typeof process === 'undefined') {
-  self.process = {versions: {node: false}, env: {}, platform: 'browser'};
-}
-if (typeof require === 'undefined') {
-  self.require = function(m) {
-    throw new Error('require() called in browser worker: ' + m);
-  };
-}
+const manifoldReady = (async()=>{
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/+esm');
+    const wasm=await mod.default();wasm.setup();ManifoldAPI=wasm;
+    setMS('ready','manifold ready');return wasm;
+  }catch(e){setMS('error','manifold failed');console.error(e);return null;}
+})();
 
-// Tell Emscripten where to find the WASM binary
-self.Module = {
-  locateFile: function(path) {
-    if (path.endsWith('.wasm')) {
-      return 'https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/' + path;
-    }
-    return path;
-  },
-  onAbort: function(what) {
-    postMessage({type:'error', msg: 'WASM aborted: ' + what});
+// ── Noise primitives (verbatim port from mesher.js) ───────────────────────
+const Noise=(()=>{
+  function mod289(x){return x-Math.floor(x/289)*289;}
+  function permute(x){return mod289(((x*34)+1)*x);}
+  function tis(r){return 1.79284291400159-0.85373472095314*r;}
+  function snoise(vx,vy,vz){
+    var C0=1/6,C1=1/3,s=(vx+vy+vz)*C1;
+    var ix=Math.floor(vx+s),iy=Math.floor(vy+s),iz=Math.floor(vz+s);
+    var t=(ix+iy+iz)*C0,x0x=vx-ix+t,x0y=vy-iy+t,x0z=vz-iz+t;
+    var gx=x0x>=x0y?1:0,gy=x0y>=x0z?1:0,gz=x0z>=x0x?1:0,lx=1-gx,ly=1-gy,lz=1-gz;
+    var i1x=Math.min(gx,lz),i1y=Math.min(gy,lx),i1z=Math.min(gz,ly);
+    var i2x=Math.max(gx,lz),i2y=Math.max(gy,lx),i2z=Math.max(gz,ly);
+    var x1x=x0x-i1x+C0,x1y=x0y-i1y+C0,x1z=x0z-i1z+C0;
+    var x2x=x0x-i2x+C1,x2y=x0y-i2y+C1,x2z=x0z-i2z+C1;
+    var x3x=x0x-0.5,x3y=x0y-0.5,x3z=x0z-0.5;
+    ix=mod289(ix);iy=mod289(iy);iz=mod289(iz);
+    var p0=permute(permute(permute(iz)+iy)+ix);
+    var p1=permute(permute(permute(iz+i1z)+iy+i1y)+ix+i1x);
+    var p2=permute(permute(permute(iz+i2z)+iy+i2y)+ix+i2x);
+    var p3=permute(permute(permute(iz+1)+iy+1)+ix+1);
+    var nx=0.285714285714,ny=-0.928571428571,nz=0.142857142857;
+    var j0=p0-49*Math.floor(p0*nz*nz),j1=p1-49*Math.floor(p1*nz*nz);
+    var j2=p2-49*Math.floor(p2*nz*nz),j3=p3-49*Math.floor(p3*nz*nz);
+    var x0_=Math.floor(j0*nz),y0_=Math.floor(j0-7*x0_);
+    var x1_=Math.floor(j1*nz),y1_=Math.floor(j1-7*x1_);
+    var x2_=Math.floor(j2*nz),y2_=Math.floor(j2-7*x2_);
+    var x3_=Math.floor(j3*nz),y3_=Math.floor(j3-7*x3_);
+    function grad(xs,ys){var h=1-Math.abs(xs)-Math.abs(ys),sh=h<=0?-1:0;return[xs+(Math.floor(xs)*2+1)*sh,ys+(Math.floor(ys)*2+1)*sh,h];}
+    var g0=grad(x0_*nx+ny,y0_*nx+ny),g1=grad(x1_*nx+ny,y1_*nx+ny),g2=grad(x2_*nx+ny,y2_*nx+ny),g3=grad(x3_*nx+ny,y3_*nx+ny);
+    var n0=tis(g0[0]*g0[0]+g0[1]*g0[1]+g0[2]*g0[2]),n1=tis(g1[0]*g1[0]+g1[1]*g1[1]+g1[2]*g1[2]);
+    var n2=tis(g2[0]*g2[0]+g2[1]*g2[1]+g2[2]*g2[2]),n3=tis(g3[0]*g3[0]+g3[1]*g3[1]+g3[2]*g3[2]);
+    g0[0]*=n0;g0[1]*=n0;g0[2]*=n0;g1[0]*=n1;g1[1]*=n1;g1[2]*=n1;
+    g2[0]*=n2;g2[1]*=n2;g2[2]*=n2;g3[0]*=n3;g3[1]*=n3;g3[2]*=n3;
+    var m0=Math.max(0.6-(x0x*x0x+x0y*x0y+x0z*x0z),0);m0*=m0;
+    var m1=Math.max(0.6-(x1x*x1x+x1y*x1y+x1z*x1z),0);m1*=m1;
+    var m2=Math.max(0.6-(x2x*x2x+x2y*x2y+x2z*x2z),0);m2*=m2;
+    var m3=Math.max(0.6-(x3x*x3x+x3y*x3y+x3z*x3z),0);m3*=m3;
+    return 42*(m0*m0*(g0[0]*x0x+g0[1]*x0y+g0[2]*x0z)+m1*m1*(g1[0]*x1x+g1[1]*x1y+g1[2]*x1z)+
+               m2*m2*(g2[0]*x2x+g2[1]*x2y+g2[2]*x2z)+m3*m3*(g3[0]*x3x+g3[1]*x3y+g3[2]*x3z));
   }
-};
-
-postMessage({type:'status', msg:'Loading manifold.js from CDN...'});
-
-try {
-  importScripts('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/manifold.js');
-  postMessage({type:'status', msg:'manifold.js loaded — waiting for WASM init...'});
-} catch(e) {
-  postMessage({type:'error', msg:'importScripts failed: ' + (e.message || e.toString())});
-  self.close();
-}
-
-Module.onRuntimeInitialized = function() {
-  postMessage({type:'ready'});
-
-  self.onmessage = function(e) {
-    var d = e.data;
-    if (d.type === 'generate') {
-      try {
-        var r = run(Module, d.shape, d.edgeLen, d.boxSize);
-        postMessage({type:'mesh', stl: r.stl, triCount: r.triCount, vertCount: r.vertCount, shape: d.shape});
-      } catch(err) {
-        postMessage({type:'error', msg: (err.message || String(err))});
-      }
+  function frac(x){return x-Math.floor(x);}
+  function cellular(px,py,pz,metric){
+    var pix=Math.floor(px),piy=Math.floor(py),piz=Math.floor(pz),pfx=px-pix,pfy=py-piy,pfz=pz-piz,d1=10,d2=10;
+    for(var oz=-1;oz<=1;oz++)for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
+      var cx=pix+ox,cy=piy+oy,cz=piz+oz;
+      var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
+      var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
+      var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
+      var dx=ox+rpx-pfx,dy=oy+rpy-pfy,dz=oz+rpz-pfz;
+      var d=metric==='euclidean'?Math.sqrt(dx*dx+dy*dy+dz*dz):metric==='manhattan'?Math.abs(dx)+Math.abs(dy)+Math.abs(dz):Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
+      if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
     }
-  };
-};
-
-function run(wasm, shape, edgeLen, boxSize) {
-  var half = boxSize / 2;
-  var bounds = {
-    min: {x: -half, y: -half, z: -half},
-    max: {x:  half, y:  half, z:  half}
-  };
-
-  var sdf;
-  if (shape === 'sphere') {
-    var r = boxSize * 0.4;
-    sdf = function(x, y, z) { return Math.sqrt(x*x + y*y + z*z) - r; };
-  } else if (shape === 'torus') {
-    var R = boxSize * 0.30, ri = boxSize * 0.15;
-    sdf = function(x, y, z) {
-      var q = Math.sqrt(x*x + z*z) - R;
-      return Math.sqrt(q*q + y*y) - ri;
-    };
-  } else {
-    var freq = Math.PI * 2 / (boxSize * 0.5);
-    var thickness = 0.5;
-    sdf = function(x, y, z) {
-      var fx=x*freq, fy=y*freq, fz=z*freq;
-      var g = Math.cos(fx)*Math.sin(fy)+Math.cos(fy)*Math.sin(fz)+Math.cos(fz)*Math.sin(fx);
-      return Math.abs(g) - thickness * freq;
-    };
+    return Math.max(Math.min((d2-d1)*2-1,1),-1);
   }
+  function fbm(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=snoise(px*f,py*f,pz*f)*a;mx+=a;a*=g;f*=l;}return v/mx;}
+  function ridged(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=(1-Math.abs(snoise(px*f,py*f,pz*f)))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
+  function billow(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=Math.abs(snoise(px*f,py*f,pz*f))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
+  function warp(px,py,pz,strength,o,l,g){var qx=fbm(px,py,pz,o,l,g),qy=fbm(px+5.2,py+1.3,pz+8.1,o,l,g),qz=fbm(px+3.7,py+9.4,pz+2.8,o,l,g);return fbm(px+strength*qx,py+strength*qy,pz+strength*qz,o,l,g);}
+  function curl(px,py,pz,step,ps){var s=ps,e=step,psi_x=snoise(px*s,py*s,pz*s),psi_y=snoise(px*s+3.7,py*s+1.5,pz*s+2.8),psi_z=snoise(px*s+1.2,py*s+4.6,pz*s+0.9);var pzy=snoise(px*s+1.2,(py+e)*s+4.6,pz*s+0.9),pyz=snoise(px*s+3.7,py*s+1.5,(pz+e)*s+2.8),pxz=snoise(px*s,py*s,(pz+e)*s),pzx=snoise((px+e)*s+1.2,py*s+4.6,pz*s+0.9),pyx=snoise((px+e)*s+3.7,py*s+1.5,pz*s+2.8),pxy=snoise(px*s,(py+e)*s,pz*s);var cx=(pzy-psi_z)/e-(pyz-psi_y)/e,cy=(pxz-psi_x)/e-(pzx-psi_z)/e,cz=(pyx-psi_y)/e-(pxy-psi_x)/e;return Math.sqrt(cx*cx+cy*cy+cz*cz);}
+  return{snoise,cellular,fbm,ridged,billow,warp,curl};
+})();
 
-  postMessage({type:'status', msg:'Running LevelSet...'});
-  var manifold = wasm.Manifold.levelSet(sdf, bounds, edgeLen, 0.0);
-
-  var numTri  = manifold.numTri();
-  var numVert = manifold.numVert();
-  postMessage({type:'status', msg:'Meshed: '+numVert+' verts, '+numTri+' tris — serializing...'});
-
-  var meshGL = manifold.getMesh();
-  manifold.delete();
-
-  var verts = meshGL.vertProperties;
-  var tris  = meshGL.triVerts;
-  var nTris = tris.length / 3;
-
-  var buf  = new ArrayBuffer(84 + nTris * 50);
-  var view = new DataView(buf);
-  var hdr  = 'Manifold POC — ' + shape;
-  for (var i=0; i<80; i++) view.setUint8(i, i<hdr.length ? hdr.charCodeAt(i) : 0);
-  view.setUint32(80, nTris, true);
-
-  var off = 84;
-  for (var t=0; t<nTris; t++) {
-    var a=tris[t*3]*3, b=tris[t*3+1]*3, c=tris[t*3+2]*3;
-    var ax=verts[a],ay=verts[a+1],az=verts[a+2];
-    var bx=verts[b],by=verts[b+1],bz=verts[b+2];
-    var cx=verts[c],cy=verts[c+1],cz=verts[c+2];
-    var ux=bx-ax,uy=by-ay,uz=bz-az, vx=cx-ax,vy=cy-ay,vz=cz-az;
-    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
-    var nl=Math.sqrt(nx*nx+ny*ny+nz*nz)||1;
-    view.setFloat32(off,   nx/nl,true); view.setFloat32(off+4, ny/nl,true); view.setFloat32(off+8,nz/nl,true);
-    view.setFloat32(off+12,ax,true); view.setFloat32(off+16,ay,true); view.setFloat32(off+20,az,true);
-    view.setFloat32(off+24,bx,true); view.setFloat32(off+28,by,true); view.setFloat32(off+32,bz,true);
-    view.setFloat32(off+36,cx,true); view.setFloat32(off+40,cy,true); view.setFloat32(off+44,cz,true);
-    view.setUint16(off+48,0,true);
-    off+=50;
+// ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
+function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
+function sampleVMF(rng,kappa){
+  if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
+  var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);
+  if(w<-1)w=-1;if(w>1)w=1;var phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-w*w));return[sr*Math.cos(phi),sr*Math.sin(phi),w];
+}
+function rotateTo(v,mux,muy,muz){
+  if(Math.abs(muz+1)<1e-6)return[-v[0],-v[1],-v[2]];if(Math.abs(muz-1)<1e-6)return v.slice();
+  var ax=-muy,ay=mux,al=Math.sqrt(ax*ax+ay*ay);ax/=al;ay/=al;
+  var angle=Math.acos(Math.min(Math.max(muz,-1),1)),c=Math.cos(angle),s=Math.sin(angle),t=1-c,vx=v[0],vy=v[1],vz=v[2];
+  return[(t*ax*ax+c)*vx+(t*ax*ay)*vy+(s*ay)*vz,(t*ax*ay)*vx+(t*ay*ay+c)*vy+(-s*ax)*vz,(-s*ay)*vx+(s*ax)*vy+c*vz];
+}
+function buildSpinodoidWaves(params){
+  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,kappa=params.kappa,mode=params.dirMode;
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34],totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6),waves=[];
+  for(var i=0;i<N;i++){
+    var dir;
+    if(mode==='iso')dir=sampleVMF(rng,0);
+    else if(mode==='single')dir=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,chosen=0;for(var a=0;a<3;a++){cum+=weights[a];if(r<=cum){chosen=a;break;}}dir=rotateTo(sampleVMF(rng,kappa),axes[chosen][0],axes[chosen][1],axes[chosen][2]);}
+    var mag=2*Math.PI*freq*(0.85+0.3*rng()),phase=2*Math.PI*rng();
+    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase});
   }
-  if(meshGL.delete) meshGL.delete();
-  return {stl: buf, triCount: nTris, vertCount: numVert};
+  return waves;
 }
-`;
-
-// ── Main page ─────────────────────────────────────────────────────────────
-var worker = null;
-var workerReady = false;
-
-function setStatus(msg, col) {
-  var el = document.getElementById('status');
-  el.textContent = msg;
-  el.style.color = col || '#555';
+function buildGRFWaves(params){
+  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,mode=params.dirMode;
+  var sigmafrac=params.grfSigma||.45,k0base=2*Math.PI*freq,waves=[];
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  function randn(){var u=Math.max(rng(),1e-10),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  for(var i=0;i<N;i++){
+    var dir=sampleVMF(rng,0),k0;
+    if(mode==='ortho'){var wx=params.wX||.33,wy=params.wY||.33,wz=params.wZ||.34;var tot=Math.max(wx+wy+wz,1e-6);wx/=tot;wy/=tot;wz/=tot;var mW=Math.max(wx,wy,wz);var kS=1/(Math.max(wx*dir[0]*dir[0]+wy*dir[1]*dir[1]+wz*dir[2]*dir[2],.05)/mW);kS=Math.min(Math.max(kS,.3),3);k0=k0base*kS;}
+    else if(mode==='single'){var align=Math.abs(dir[0]*mux+dir[1]*muy+dir[2]*muz);k0=k0base*(1.5-align);}
+    else k0=k0base;
+    var sigma=sigmafrac*k0,mag,tries=0;do{mag=k0+randn()*sigma;tries++;}while(mag<=0&&tries<30);
+    if(mag<=0)mag=k0*.1;
+    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase:2*Math.PI*rng()});
+  }
+  return waves;
+}
+function jitteredGrid3D(N,rng){
+  var cells=Math.ceil(Math.pow(N,1/3)),cs=1/cells,pts=[];
+  for(var ix=0;ix<cells;ix++)for(var iy=0;iy<cells;iy++)for(var iz=0;iz<cells;iz++){
+    var px=(ix+.5+(rng()-.5)*.9)*cs,py=(iy+.5+(rng()-.5)*.9)*cs,pz=(iz+.5+(rng()-.5)*.9)*cs;
+    pts.push([Math.max(.01,Math.min(.99,px)),Math.max(.01,Math.min(.99,py)),Math.max(.01,Math.min(.99,pz))]);
+  }
+  for(var i=pts.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var tmp=pts[i];pts[i]=pts[j];pts[j]=tmp;}
+  return pts.slice(0,N);
+}
+function buildHUKernels(params){
+  var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
+  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
+  function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+  function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}
+  var kernels=[],TP=2*Math.PI;
+  for(var i=0;i<N;i++){
+    var t2;
+    if(mode==='iso')t2=sampleVMF(rng,0);
+    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
+    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
+    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
+    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
+  }
+  return kernels;
+}
+function evalHUField(kernels,x,y,z){
+  x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
+  var s=0;
+  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
+  return s-.3;
+}
+function evalField(waves,x,y,z,kernels){
+  if(kernels)return evalHUField(kernels,x,y,z);
+  var s=0,N=waves.length;for(var i=0;i<N;i++)s+=Math.cos(waves[i].kx*x+waves[i].ky*y+waves[i].kz*z+waves[i].phase);return s/Math.sqrt(N);
 }
 
-function setError(msg) {
-  var el = document.getElementById('error');
-  el.textContent = msg;
-  el.style.display = msg ? 'block' : 'none';
-  document.getElementById('result').style.display = 'none';
+// ── SDF closures — all return positive-inside (Manifold convention) ───────
+
+function evalNoiseRaw(surf,nx,ny,nz){
+  const t=surf.noise_type||'simplex',o=surf.octaves||4,l=surf.lacunarity||2,g=surf.gain||.5;
+  if(t==='simplex') return Noise.snoise(nx,ny,nz);
+  if(t==='cellular')return Noise.cellular(nx,ny,nz,surf.distance_metric||'euclidean');
+  if(t==='fbm')     return Noise.fbm(nx,ny,nz,o,l,g);
+  if(t==='ridged')  return Noise.ridged(nx,ny,nz,o,l,g);
+  if(t==='billow')  return Noise.billow(nx,ny,nz,o,l,g);
+  if(t==='curl')    return Noise.curl(nx,ny,nz,surf.curl_step||.1,surf.potential_scale||1);
+  return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
 }
 
-function setResult(msg) {
-  var el = document.getElementById('result');
-  el.textContent = msg;
-  el.style.display = 'block';
-  document.getElementById('error').style.display = 'none';
+function buildNoiseSDF(json){
+  const surf=json.surface,geom=json.geometry||{};
+  const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
+  const PP=16;let mn=Infinity,mx=-Infinity;
+  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
+    const px=((xi/(PP-1))*2-1)*5,py=((yi/(PP-1))*2-1)*5,pz=((zi/(PP-1))*2-1)*5;
+    const raw=evalNoiseRaw(surf,px*freq*sx,py*freq*sy,pz*freq*sz);
+    if(raw<mn)mn=raw;if(raw>mx)mx=raw;
+  }
+  const range=mx-mn,noiseMin=mn-range*.05,noiseMax=mx+range*.05;
+  const mid=(noiseMin+noiseMax)*.5,halfR=Math.max((noiseMax-noiseMin)*.5,.001);
+  const center=surf.center??0,halfW=surf.half_width??.15,solid=(geom.mode==='solid');
+  return p=>{
+    const raw=evalNoiseRaw(surf,p[0]*freq*sx,p[1]*freq*sy,p[2]*freq*sz);
+    const norm=(raw-mid)/halfR;
+    const scaffold=(solid?-1:1)*(Math.abs(norm-center)-halfW);
+    return -scaffold; // negate: mesher.js is negative-inside; Manifold wants positive-inside
+  };
 }
 
-function initWorker() {
-  if (worker) worker.terminate();
-  setStatus('Loading Manifold WASM from CDN...', '#facc15');
-  document.getElementById('btn').disabled = true;
-  document.getElementById('error').style.display = 'none';
-  document.getElementById('result').style.display = 'none';
-
-  var blob = new Blob([WORKER_SRC], {type:'application/javascript'});
-  worker = new Worker(URL.createObjectURL(blob));
-
-  worker.onmessage = function(e) {
-    var d = e.data;
-    if (d.type === 'ready') {
-      workerReady = true;
-      setStatus('Manifold ready ✓', '#22c55e');
-      document.getElementById('btn').disabled = false;
-    } else if (d.type === 'status') {
-      setStatus(d.msg, '#facc15');
-    } else if (d.type === 'mesh') {
-      var r = d.stl;
-      setResult('✓ ' + r.triCount.toLocaleString() + ' triangles, ' + r.vertCount.toLocaleString() + ' vertices — downloading...');
-      setStatus('Done.', '#22c55e');
-      document.getElementById('btn').disabled = false;
-      // Trigger download
-      var blob2 = new Blob([r.stl], {type:'model/stl'});
-      var url = URL.createObjectURL(blob2);
-      var a = document.createElement('a');
-      a.href=url; a.download='manifold_poc_' + d.shape + '.stl';
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } else if (d.type === 'error') {
-      setError('Error: ' + d.msg);
-      setStatus('Failed — see error above', '#ef4444');
-      document.getElementById('btn').disabled = false;
+function buildTPMSSDF(json){
+  const s=json.surface,g=json.geometry||{};
+  const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
+  const ps=g.phase_shift||{x:0,y:0,z:0},terms=s.terms||[],mode=g.mode||'shell';
+  const TP=2*Math.PI;
+  function evalFactor(factor,tx,ty,tz){
+    const t=factor.trig;
+    let val=t.includes('(x)')?tx*(factor.fx||1):t.includes('(y)')?ty*(factor.fy||1):t.includes('(z)')?tz*(factor.fz||1):0;
+    if(t.startsWith('sin'))return Math.sin(val);
+    if(t.startsWith('cos'))return Math.cos(val);
+    return 1;
+  }
+  function evalTerms(tx,ty,tz){
+    let sum=0;
+    for(const term of terms){if(!term.on)continue;let prod=term.coef??1;for(const f of term.factors)prod*=evalFactor(f,tx,ty,tz);sum+=prod;}
+    return sum;
+  }
+  return p=>{
+    const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
+    const phiA=evalTerms(tx,ty,tz);
+    if(mode==='pi-tpms'){
+      const phiB=evalTerms(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
+      return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
     }
-  };
-
-  worker.onerror = function(e) {
-    // e.message can be undefined for cross-origin script errors
-    var msg = e.message || e.filename || 'Unknown worker error';
-    if (e.lineno) msg += ' (line ' + e.lineno + ')';
-    setError('Worker error: ' + msg + '\n\nThis usually means:\n• importScripts blocked (try serving from a local HTTP server, not file://)\n• CDN CORS restriction\n• manifold.js Node.js compat issue');
-    setStatus('Failed — see error above', '#ef4444');
-    document.getElementById('btn').disabled = false;
+    if(mode==='solid') return (g.offset||0)-phiA;
+    return ((g.wall_thickness||.3)/2)-Math.abs(phiA-(g.offset||0));
   };
 }
 
-function generate() {
-  if (!workerReady) return;
-  document.getElementById('btn').disabled = true;
-  document.getElementById('result').style.display = 'none';
-  document.getElementById('error').style.display = 'none';
-  setStatus('Generating...', '#facc15');
-
-  worker.postMessage({
-    type:    'generate',
-    shape:   document.getElementById('shape').value,
-    edgeLen: parseFloat(document.getElementById('edgeLen').value),
-    boxSize: parseFloat(document.getElementById('boxSize').value)
-  });
+function buildGrainSDF(json){
+  const f=json.field,g=json.geometry||{};
+  let dirTheta=0,dirPhi=0;
+  if(f.dir_mode==='single'&&f.principal_direction){
+    const[mx,my,mz]=f.principal_direction;
+    dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
+    dirPhi=Math.atan2(my,mx)*180/Math.PI;
+  }
+  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
+  const isHU=f.type==='hyperuniform';
+  const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
+  const kernels=isHU?buildHUKernels(params):null;
+  const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
+  // Grain 3D shader uses H=pi world box — map [-5,5] to [-pi,pi] (scale=pi/5), same as TPMS.
+  // No normalization: exported center/half_width are calibrated for raw field values.
+  // HU: evalHUField expects [0,1] and remaps to [-pi,pi] internally — pass 0.5+p/10.
+  const PI5=Math.PI/5;
+  return p=>{
+    let raw;
+    if(isHU){
+      raw=evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10);
+    }else{
+      raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
+    }
+    if(topo==='half') return raw-center;
+    return halfW-Math.abs(raw-center);
+  };
 }
 
-// Slider display updates
-document.getElementById('edgeLen').oninput = function() {
-  document.getElementById('edgeLenVal').textContent = parseFloat(this.value).toFixed(2) + 'mm';
-};
-document.getElementById('boxSize').oninput = function() {
-  document.getElementById('boxSizeVal').textContent = this.value + 'mm';
+function buildSDF(recipe){
+  if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
+  if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
+  if(recipe.family==='grain')return buildGrainSDF(recipe.json);
+  throw new Error('No evaluator for family: '+recipe.family);
+}
+
+// ── Three.js scene ────────────────────────────────────────────────────────
+let scene,camera,renderer,controls,meshObj;let threeReady=false;
+function initThreeJS(){
+  const canvas=document.getElementById('threeCanvas');
+  const w=canvas.clientWidth||400,h=canvas.clientHeight||300;
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x06080f);
+  camera=new THREE.PerspectiveCamera(42,w/h,.1,500);camera.position.set(9,7,13);camera.lookAt(0,0,0);
+  renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(w,h);
+  scene.add(new THREE.AmbientLight(0x3a4060,1.2));
+  const key=new THREE.DirectionalLight(0xd0d8ff,1.4);key.position.set(8,12,10);scene.add(key);
+  const fill=new THREE.DirectionalLight(0x4466aa,.5);fill.position.set(-8,-4,-6);scene.add(fill);
+  controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.06;controls.minDistance=2;controls.maxDistance=50;
+  new ResizeObserver(()=>resizeRenderer()).observe(document.getElementById('previewArea'));
+  (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);})();
+  threeReady=true;
+}
+function resizeRenderer(){
+  if(!renderer)return;const area=document.getElementById('previewArea');
+  const w=area.clientWidth,h=area.clientHeight;if(!w||!h)return;
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+}
+function displayMesh(mMesh){
+  if(meshObj){scene.remove(meshObj);meshObj.geometry.dispose();meshObj.material.dispose();meshObj=null;}
+  const positions=new Float32Array(mMesh.vertProperties);
+  const indices=new Uint32Array(mMesh.triVerts);
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  geo.setIndex(new THREE.BufferAttribute(indices,1));
+  geo.computeVertexNormals();
+  const mat=new THREE.MeshStandardMaterial({color:0x7a99cc,metalness:.15,roughness:.65,side:THREE.DoubleSide});
+  meshObj=new THREE.Mesh(geo,mat);scene.add(meshObj);
+}
+
+// ── Mesh pipeline ─────────────────────────────────────────────────────────
+let currentManifold=null;
+async function triggerMesh(edgeLength){
+  showComputing('computing mesh…','edge length: '+edgeLength);setBtns(false);
+  try{
+    await manifoldReady;if(!ManifoldAPI)throw new Error('Manifold not available — check console.');
+    const sdfFn=buildSDF(currentRecipe);
+    const t0=performance.now();
+    const mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},edgeLength);
+    const ms=Math.round(performance.now()-t0);
+    if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — SDF may not intersect domain at this edge length. Check center/half-width/frequency.');}
+    const mMesh=mfld.getMesh(),triCount=mfld.numTri();
+    if(currentManifold){try{currentManifold.delete();}catch(_){}}
+    currentManifold=mfld;
+    displayMesh(mMesh);showTriCount(triCount,ms);hideComputing();
+  }catch(e){hideComputing();showError('Mesh error: '+(e.message||e));console.error(e);}
+  finally{setBtns(true);}
+}
+
+// ── Recipe router ─────────────────────────────────────────────────────────
+function routeRecipe(json){
+  if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform'].includes(ft))return{family:'grain',subtype:ft,json};}
+  if(json.surface&&json.surface.type){const st=json.surface.type;if(st==='noise')return{family:'noise',subtype:json.surface.noise_type||'simplex',json};if(st==='terms'||st==='raw_preset')return{family:'tpms',subtype:json.surface.preset||json.geometry?.mode||'custom',json};}
+  throw new Error('Unrecognized recipe format — expected surface.type ("noise"/"terms") or field.type ("spinodoid"/"gaussian"/"hyperuniform").');
+}
+
+// ── Summary renderers ─────────────────────────────────────────────────────
+function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-lbl">${l}</div><div class="mc-val">${v}${u?`<span class="mc-unit">${u}</span>`:''}</div></div>`;}
+function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${l} <b>${v}</b>${u?`<small> ${u}</small>`:''}</div>`;}
+function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${h.method||'MIL-HS'}&middot;${h.grid||'?'}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
+function exportPanel(){
+  const q=currentExportQual||'standard';
+  return`<hr class="div">
+<div class="sec-lbl">export 3mf</div>
+<div class="exp-row">
+  <span class="exp-label">domain size</span>
+  <input type="number" id="expDomainMm" class="exp-num" value="10" min="1" max="100" step="1">
+  <span class="exp-unit">mm</span>
+</div>
+<div class="exp-row">
+  <span class="exp-label">quality</span>
+  <div class="qual-strip">
+    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')">Draft<span class="ql">0.20 mm</span></button>
+    <button class="qual-btn${q==='standard'?' active':''}" id="qStd" onclick="setQual('standard')">Standard<span class="ql">0.10 mm</span></button>
+    <button class="qual-btn${q==='fine'?' active':''}" id="qFine" onclick="setQual('fine')">Fine<span class="ql">0.05 mm</span></button>
+  </div>
+</div>
+<button id="expBtn" onclick="triggerExport()">Export 3MF</button>
+<div id="expReport"></div>`;}
+function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${homoSection(h)}${exportPanel()}`;}
+function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${homoSection(h)}${exportPanel()}`;}
+function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${homoSection(h)}${exportPanel()}`;}
+function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);}
+
+// ── UI helpers ────────────────────────────────────────────────────────────
+const dropzone=document.getElementById('dropzone'),recipeView=document.getElementById('recipeView');
+const errorBox=document.getElementById('errorBox'),typeBadge=document.getElementById('typeBadge');
+const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill');
+const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
+const overlay=document.getElementById('computeOverlay');
+const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN'};
+let currentRecipe=null;
+
+// ── Export state & functions ───────────────────────────────────────────────
+const QUAL_EDGE_MM={draft:.20,standard:.10,fine:.05};
+let currentExportQual='standard';
+
+window.setQual=function(q){
+  currentExportQual=q;
+  const ids={draft:'qDraft',standard:'qStd',fine:'qFine'};
+  Object.keys(ids).forEach(k=>{const el=document.getElementById(ids[k]);if(el)el.classList.toggle('active',k===q);});
 };
 
-// Auto-init on load
-window.onload = initWorker;
+window.triggerExport=async function(){
+  if(!currentRecipe)return;
+  const btn=document.getElementById('expBtn');
+  const report=document.getElementById('expReport');
+  const domainEl=document.getElementById('expDomainMm');
+  const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
+  const edgeMm=QUAL_EDGE_MM[currentExportQual]||.10;
+  const edgeWorld=edgeMm*10/domainMm;
+  btn.disabled=true;btn.textContent='computing…';report.innerHTML='';
+  try{
+    await manifoldReady;
+    if(!ManifoldAPI)throw new Error('Manifold not available.');
+    const sdfFn=buildSDF(currentRecipe);
+    const t0=performance.now();
+    const mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},edgeWorld);
+    const ms=Math.round(performance.now()-t0);
+    if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
+    const mesh=mfld.getMesh(),triCount=mfld.numTri();
+    mfld.delete();
+    btn.textContent='building 3MF…';
+    const scale=domainMm/10;
+    const blob=await buildMinimal3MF(mesh.vertProperties,mesh.triVerts,scale);
+    const j=currentRecipe.json;
+    const preset=j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype;
+    const ts=new Date().toISOString().slice(0,10);
+    const filename=`${currentRecipe.family}_${preset}_${domainMm}mm_${ts}.3mf`;
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+    URL.revokeObjectURL(url);
+    report.innerHTML=`<div class="exp-report">
+      ${expChip('triangles',triCount.toLocaleString())}
+      ${expChip('domain',domainMm+'mm³')}
+      ${expChip('edge',edgeMm+'mm')}
+      ${expChip('file',(blob.size/1024).toFixed(1)+' KB')}
+      ${expChip('time',ms+'ms')}
+    </div>`;
+    btn.textContent='Export 3MF';
+  }catch(e){
+    report.innerHTML=`<div class="exp-err">⚠ ${e.message||e}</div>`;
+    btn.textContent='Export 3MF';
+    console.error(e);
+  }
+  btn.disabled=false;
+};
+
+function expChip(l,v){return`<div class="exp-chip">${l} <b>${v}</b></div>`;}
+
+async function buildMinimal3MF(vertProps,triVerts,scale){
+  const nV=vertProps.length/3,nT=triVerts.length/3;
+  let vx='',tx='';
+  for(let i=0;i<nV;i++)vx+=`<vertex x="${(vertProps[i*3]*scale).toFixed(6)}" y="${(vertProps[i*3+1]*scale).toFixed(6)}" z="${(vertProps[i*3+2]*scale).toFixed(6)}"/>`;
+  for(let i=0;i<nT;i++)tx+=`<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
+  const model=`<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>${vx}</vertices><triangles>${tx}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>`;
+  const ct=`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`;
+  const rels=`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
+  const enc=new TextEncoder();
+  const zipped=fflate.zipSync({'[Content_Types].xml':enc.encode(ct),'_rels/.rels':enc.encode(rels),'3D/3dmodel.model':enc.encode(model)});
+  return new Blob([zipped],{type:'model/3mf'});
+}
+
+function showError(m){errorBox.style.display='block';errorBox.textContent='⚠ '+m;}
+function clearError(){errorBox.style.display='none';}
+function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';}
+function hideComputing(){overlay.classList.add('hidden');}
+function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';}
+function setBtns(on){document.getElementById('btnLow').disabled=!on;document.getElementById('btnExact').disabled=!on;}
+function setActivBtn(id){document.getElementById('btnLow').classList.toggle('active',id==='btnLow');document.getElementById('btnExact').classList.toggle('active',id==='btnExact');}
+
+async function showRecipe(recipe){
+  clearError();currentRecipe=recipe;
+  dropzone.style.display='none';recipeView.style.display='flex';
+  typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
+  summaryEl.innerHTML=renderSummary(recipe);
+  if(!threeReady){await new Promise(r=>setTimeout(r,60));initThreeJS();}
+  resizeRenderer();setActivBtn('btnLow');triggerMesh(0.30);
+}
+function resetToDropzone(){
+  recipeView.style.display='none';dropzone.style.display='flex';
+  clearError();triPill.style.display='none';
+  overlay.classList.remove('hidden');coMain.textContent='awaiting recipe…';coSub.textContent='';
+}
+document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
+document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnLow');triggerMesh(0.30);});
+document.getElementById('btnExact').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnExact');triggerMesh(0.07);});
+
+
+// ── URL ingestion — auto-load recipe from ?r= parameter ──────────────────
+(function(){
+  try{
+    const p=new URLSearchParams(location.search);
+    if(p.has('r')){
+      const json=JSON.parse(decodeURIComponent(p.get('r')));
+      // Wait for DOM + Manifold to be ready, then show
+      setTimeout(()=>showRecipe(routeRecipe(json)),0);
+    }
+  }catch(e){
+    console.warn('URL recipe parse error:',e);
+  }
+})();
+
+// ── File handling ─────────────────────────────────────────────────────────
+function handleJSON(text,filename){let json;try{json=JSON.parse(text);}catch(e){showError('Invalid JSON in '+(filename||'file')+' — '+e.message);return;}try{showRecipe(routeRecipe(json));}catch(e){showError(e.message);}}
+function handleFile(file){if(!file)return;if(!file.name.toLowerCase().endsWith('.json')){showError('Expected a .json file. Got: '+file.name);return;}const reader=new FileReader();reader.onload=e=>handleJSON(e.target.result,file.name);reader.onerror=()=>showError('Could not read: '+file.name);reader.readAsText(file);}
+const fileInput=document.getElementById('fileInput'),pickBtn=document.getElementById('pickBtn');
+dropzone.addEventListener('click',()=>fileInput.click());
+pickBtn.addEventListener('click',e=>{e.stopPropagation();fileInput.click();});
+fileInput.addEventListener('change',()=>{if(fileInput.files[0])handleFile(fileInput.files[0]);fileInput.value='';});
+document.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover');});
+document.addEventListener('dragleave',e=>{if(!e.relatedTarget)dropzone.classList.remove('dragover');});
+document.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f)handleFile(f);});
 </script>
 </body>
 </html>

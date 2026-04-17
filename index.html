@@ -316,11 +316,31 @@ function buildNoiseSDF(json){
   };
 }
 
+// Raw preset field functions — verbatim from TPMS builder _fn definitions
+const RAW_PRESETS={
+  splitP:       (x,y,z)=>Math.sin(x)*Math.sin(y)*Math.cos(z)+Math.sin(y)*Math.sin(z)*Math.cos(x)+Math.sin(z)*Math.sin(x)*Math.cos(y)-0.3,
+  frd:          (x,y,z)=>Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z)-Math.cos(2*x)*Math.cos(2*y)-Math.cos(2*y)*Math.cos(2*z)-Math.cos(2*z)*Math.cos(2*x)+0.3,
+  fks:          (x,y,z)=>Math.cos(2*x)*Math.sin(y)*Math.cos(z)+Math.cos(2*y)*Math.sin(z)*Math.cos(x)+Math.cos(2*z)*Math.sin(x)*Math.cos(y),
+  gyroidHarmonic:(x,y,z)=>Math.sin(x)*Math.cos(y)+Math.sin(y)*Math.cos(z)+Math.sin(z)*Math.cos(x)+0.3*(Math.sin(2*x)*Math.cos(2*y)+Math.sin(2*y)*Math.cos(2*z)+Math.sin(2*z)*Math.cos(2*x)),
+  primitiveC:   (x,y,z)=>2.0*(Math.cos(x)+Math.cos(y)+Math.cos(z))-(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+  octo:         (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)-0.5*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x)),
+  pHarmonic:    (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)+0.25*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+  lidinoid:     (x,y,z)=>1.1*(Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z))-0.2*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x))-0.4*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+};
+
 function buildTPMSSDF(json){
   const s=json.surface,g=json.geometry||{};
   const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
-  const ps=g.phase_shift||{x:0,y:0,z:0},terms=s.terms||[],mode=g.mode||'shell';
+  const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
   const TP=2*Math.PI;
+
+  // Raw preset path — use the precomputed _fn directly
+  const rawFn = (s.type==='raw_preset') ? (RAW_PRESETS[s.preset]||null) : null;
+  if(s.type==='raw_preset'&&!rawFn)
+    throw new Error('Unknown raw preset: '+s.preset+'. Supported: '+Object.keys(RAW_PRESETS).join(', '));
+
+  // Term-tree path
+  const terms=s.terms||[];
   function evalFactor(factor,tx,ty,tz){
     const t=factor.trig;
     let val=t.includes('(x)')?tx*(factor.fx||1):t.includes('(y)')?ty*(factor.fy||1):t.includes('(z)')?tz*(factor.fz||1):0;
@@ -333,11 +353,16 @@ function buildTPMSSDF(json){
     for(const term of terms){if(!term.on)continue;let prod=term.coef??1;for(const f of term.factors)prod*=evalFactor(f,tx,ty,tz);sum+=prod;}
     return sum;
   }
+
+  function evalPhi(tx,ty,tz){
+    return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
+  }
+
   return p=>{
     const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
-    const phiA=evalTerms(tx,ty,tz);
+    const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
-      const phiB=evalTerms(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
+      const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
       return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
     }
     if(mode==='solid') return (g.offset||0)-phiA;

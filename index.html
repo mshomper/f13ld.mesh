@@ -368,7 +368,7 @@ function buildNoiseSDF(json){
     // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
     const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
     const norm=(raw-mid)/halfR;
-    if(mode==='half')   return norm-center;              // positive above threshold
+    if(mode==='half')   return (geom.half_invert?norm-center:center-norm); // flip side support
     if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
     return halfW-Math.abs(norm-center);                  // sheet (default)
   };
@@ -444,7 +444,7 @@ function buildGrainSDF(json){
       const v=frac((p[1]/10+0.5)*tile);
       const w=frac((p[2]/10+0.5)*tile);
       const raw=evalRDField(grid,N,u,v,w);
-      if(topo==='half') return raw-center;
+      if(topo==='half') return g.half_invert?(center-raw):(raw-center);
       if(topo==='solid') return center-raw;
       return halfW-Math.abs(raw-center);
     };
@@ -469,7 +469,7 @@ function buildGrainSDF(json){
     }else{
       raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
     }
-    if(topo==='half') return raw-center;
+    if(topo==='half') return g.half_invert?(center-raw):(raw-center);
     return halfW-Math.abs(raw-center);
   };
 }

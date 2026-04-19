@@ -352,20 +352,25 @@ function evalNoiseRaw(surf,nx,ny,nz){
 function buildNoiseSDF(json){
   const surf=json.surface,geom=json.geometry||{};
   const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
-  const PP=16;let mn=Infinity,mx=-Infinity;
+  const PP=16,SCALE=5.0/Math.PI;let mn=Infinity,mx=-Infinity;
   for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
-    const px=((xi/(PP-1))*2-1)*5,py=((yi/(PP-1))*2-1)*5,pz=((zi/(PP-1))*2-1)*5;
-    const raw=evalNoiseRaw(surf,px*freq*sx,py*freq*sy,pz*freq*sz);
+    const px=((xi/(PP-1))*2-1)*Math.PI;
+    const py=((yi/(PP-1))*2-1)*Math.PI;
+    const pz=((zi/(PP-1))*2-1)*Math.PI;
+    const raw=evalNoiseRaw(surf,px*SCALE*freq*sx,py*SCALE*freq*sy,pz*SCALE*freq*sz);
     if(raw<mn)mn=raw;if(raw>mx)mx=raw;
   }
   const range=mx-mn,noiseMin=mn-range*.05,noiseMax=mx+range*.05;
   const mid=(noiseMin+noiseMax)*.5,halfR=Math.max((noiseMax-noiseMin)*.5,.001);
-  const center=surf.center??0,halfW=surf.half_width??.15,solid=(geom.mode==='solid');
+  const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
+  const SCALE2=5.0/Math.PI;
   return p=>{
-    const raw=evalNoiseRaw(surf,p[0]*freq*sx,p[1]*freq*sy,p[2]*freq*sz);
+    // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
+    const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
     const norm=(raw-mid)/halfR;
-    const scaffold=(solid?-1:1)*(Math.abs(norm-center)-halfW);
-    return -scaffold; // negate: mesher.js is negative-inside; Manifold wants positive-inside
+    if(mode==='half')   return norm-center;              // positive above threshold
+    if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
+    return halfW-Math.abs(norm-center);                  // sheet (default)
   };
 }
 

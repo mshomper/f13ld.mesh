@@ -286,6 +286,56 @@ function evalField(waves,x,y,z,kernels){
   var s=0,N=waves.length;for(var i=0;i<N;i++)s+=Math.cos(waves[i].kx*x+waves[i].ky*y+waves[i].kz*z+waves[i].phase);return s/Math.sqrt(N);
 }
 
+// ── Gray-Scott reaction-diffusion ────────────────────────────────────────
+function buildGrayScott(params, N) {
+  var rng = mulberry32(params.rngSeed||42);
+  var F = params.rdF||0.030, k = params.rdK||0.057;
+  var Du = params.rdDu||0.14, Dv = Du*0.5;
+  var dt = Math.min(1.0, 0.9/(6.0*Du));
+  var steps = params.rdSteps||3000;
+  var u = new Float32Array(N*N*N), v = new Float32Array(N*N*N);
+  for (var i = 0; i < N*N*N; i++) u[i] = 1.0 + (rng()-0.5)*0.02;
+  var nS = Math.max(3, Math.floor(N*N/20));
+  for (var s = 0; s < nS; s++) {
+    var cx=Math.floor(rng()*(N-4))+2, cy=Math.floor(rng()*(N-4))+2, cz=Math.floor(rng()*(N-4))+2;
+    for (var dz=-1;dz<=1;dz++) for (var dy=-1;dy<=1;dy++) for (var dx=-1;dx<=1;dx++) {
+      var ix=(cx+dx+N)%N, iy=(cy+dy+N)%N, iz=(cz+dz+N)%N, id=ix+iy*N+iz*N*N;
+      u[id]=0.5+(rng()-0.5)*0.1; v[id]=0.25+(rng()-0.5)*0.05;
+    }
+  }
+  var u2 = new Float32Array(N*N*N), v2 = new Float32Array(N*N*N), tmp;
+  for (var step = 0; step < steps; step++) {
+    for (var iz=0;iz<N;iz++) { var izm=(iz-1+N)%N, izp=(iz+1)%N;
+      for (var iy=0;iy<N;iy++) { var iym=(iy-1+N)%N, iyp=(iy+1)%N;
+        for (var ix=0;ix<N;ix++) { var ixm=(ix-1+N)%N, ixp=(ix+1)%N;
+          var idx=ix+iy*N+iz*N*N, uc=u[idx], vc=v[idx];
+          var lu=u[ixp+iy*N+iz*N*N]+u[ixm+iy*N+iz*N*N]+u[ix+iyp*N+iz*N*N]+u[ix+iym*N+iz*N*N]+u[ix+iy*N+izp*N*N]+u[ix+iy*N+izm*N*N]-6.0*uc;
+          var lv=v[ixp+iy*N+iz*N*N]+v[ixm+iy*N+iz*N*N]+v[ix+iyp*N+iz*N*N]+v[ix+iym*N+iz*N*N]+v[ix+iy*N+izp*N*N]+v[ix+iy*N+izm*N*N]-6.0*vc;
+          var uv2=uc*vc*vc, nu=uc+dt*(Du*lu-uv2+F*(1.0-uc)), nv=vc+dt*(Dv*lv+uv2-(F+k)*vc);
+          u2[idx]=nu<0?0:nu>1?1:nu; v2[idx]=nv<0?0:nv>1?1:nv;
+        }
+      }
+    }
+    tmp=u; u=u2; u2=tmp; tmp=v; v=v2; v2=tmp;
+  }
+  return u;
+}
+function evalRDField(grid, N, u, v, w) {
+  // u,v,w already in [0,1] (post-tile fract applied by caller)
+  var fx=u*(N-1), fy=v*(N-1), fz=w*(N-1);
+  var x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
+  var x1=(x0+1)%N, y1=(y0+1)%N, z1=(z0+1)%N;
+  var dx=fx-x0, dy=fy-y0, dz=fz-z0;
+  return grid[x0+y0*N+z0*N*N]*(1-dx)*(1-dy)*(1-dz)
+        +grid[x1+y0*N+z0*N*N]*dx*(1-dy)*(1-dz)
+        +grid[x0+y1*N+z0*N*N]*(1-dx)*dy*(1-dz)
+        +grid[x1+y1*N+z0*N*N]*dx*dy*(1-dz)
+        +grid[x0+y0*N+z1*N*N]*(1-dx)*(1-dy)*dz
+        +grid[x1+y0*N+z1*N*N]*dx*(1-dy)*dz
+        +grid[x0+y1*N+z1*N*N]*(1-dx)*dy*dz
+        +grid[x1+y1*N+z1*N*N]*dx*dy*dz;
+}
+
 // ── SDF closures — all return positive-inside (Manifold convention) ───────
 
 function evalNoiseRaw(surf,nx,ny,nz){
@@ -375,6 +425,27 @@ function buildTPMSSDF(json){
 
 function buildGrainSDF(json){
   const f=json.field,g=json.geometry||{};
+  const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
+
+  // ── Reaction-diffusion branch ──────────────────────────────────────
+  if(f.type==='reactiondiffusion'){
+    const N=48;
+    const rdParams={rdF:f.rd_F||0.030,rdK:f.rd_k||0.057,rdDu:f.rd_Du||0.14,rdSteps:f.rd_steps||3000,rngSeed:f.rng_seed||42};
+    const tile=f.rd_tile||1;
+    const grid=buildGrayScott(rdParams,N);
+    function frac(x){return x-Math.floor(x);}
+    return p=>{
+      const u=frac((p[0]/10+0.5)*tile);
+      const v=frac((p[1]/10+0.5)*tile);
+      const w=frac((p[2]/10+0.5)*tile);
+      const raw=evalRDField(grid,N,u,v,w);
+      if(topo==='half') return raw-center;
+      if(topo==='solid') return center-raw;
+      return halfW-Math.abs(raw-center);
+    };
+  }
+
+  // ── Wave / kernel branch ───────────────────────────────────────────
   let dirTheta=0,dirPhi=0;
   if(f.dir_mode==='single'&&f.principal_direction){
     const[mx,my,mz]=f.principal_direction;
@@ -385,10 +456,6 @@ function buildGrainSDF(json){
   const isHU=f.type==='hyperuniform';
   const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
   const kernels=isHU?buildHUKernels(params):null;
-  const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
-  // Grain 3D shader uses H=pi world box — map [-5,5] to [-pi,pi] (scale=pi/5), same as TPMS.
-  // No normalization: exported center/half_width are calibrated for raw field values.
-  // HU: evalHUField expects [0,1] and remaps to [-pi,pi] internally — pass 0.5+p/10.
   const PI5=Math.PI/5;
   return p=>{
     let raw;
@@ -464,7 +531,7 @@ async function triggerMesh(edgeLength){
 
 // ── Recipe router ─────────────────────────────────────────────────────────
 function routeRecipe(json){
-  if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform'].includes(ft))return{family:'grain',subtype:ft,json};}
+  if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform','reactiondiffusion'].includes(ft))return{family:'grain',subtype:ft,json};}
   if(json.surface&&json.surface.type){const st=json.surface.type;if(st==='noise')return{family:'noise',subtype:json.surface.noise_type||'simplex',json};if(st==='terms'||st==='raw_preset')return{family:'tpms',subtype:json.surface.preset||json.geometry?.mode||'custom',json};}
   throw new Error('Unrecognized recipe format — expected surface.type ("noise"/"terms") or field.type ("spinodoid"/"gaussian"/"hyperuniform").');
 }
@@ -494,7 +561,23 @@ function exportPanel(){
 <div id="expReport"></div>`;}
 function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${homoSection(h)}${exportPanel()}`;}
 function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${homoSection(h)}${exportPanel()}`;}
-function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${homoSection(h)}${exportPanel()}`;}
+function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
+  if(f.type==='reactiondiffusion'){
+    return`<div class="sec-lbl">grain scaffold &middot; reaction-diffusion (gray-scott)</div>
+    <div class="meta-grid">
+    ${card('feature scale (Du)',f.rd_Du!=null?f.rd_Du.toFixed(2):'—')}
+    ${card('feed rate F',f.rd_F!=null?f.rd_F.toFixed(3):'—')}
+    ${card('kill rate k',f.rd_k!=null?f.rd_k.toFixed(3):'—')}
+    ${card('sim steps',f.rd_steps)}
+    ${card('tile factor',f.rd_tile)}
+    ${card('RNG seed',f.rng_seed)}
+    ${card('topology',g.topology)}
+    ${card('center',g.center)}
+    ${card('half-width',g.half_width)}
+    </div>${homoSection(h)}${exportPanel()}`;
+  }
+  const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';
+  return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${homoSection(h)}${exportPanel()}`;}
 function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);}
 
 // ── UI helpers ────────────────────────────────────────────────────────────

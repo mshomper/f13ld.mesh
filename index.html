@@ -36,13 +36,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 .dz-sub{font-size:11px;color:var(--muted);letter-spacing:.04em}
 .dz-pick{font-size:11px;color:var(--cyan);margin-top:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 #fileInput{display:none}
-#recipeView{display:none;flex-direction:column;flex:1;margin:0 16px;min-height:0}
-#previewArea{flex:1;min-height:120px;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px 12px 0 0}
+#recipeView{display:none;flex-direction:row;flex:1;margin:0 16px 16px;min-height:0;gap:12px;align-items:stretch}
+#previewArea{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px}
 #threeCanvas{position:absolute;inset:0;display:block;width:100%;height:100%}
 #computeOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;background:rgba(6,8,15,.82);z-index:4}
 #computeOverlay.hidden{display:none}
-.co-main{font-size:12px;color:var(--dim)}
-.co-sub{font-size:10px;color:var(--muted)}
+.co-main{font-size:15px;color:var(--amber);font-weight:500;letter-spacing:.04em}
+.co-sub{font-size:12px;color:var(--amber);opacity:.75;margin-top:3px}
 #typeBadge{position:absolute;top:10px;left:10px;z-index:3;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 10px;border-radius:20px}
 #typeBadge.noise{background:rgba(34,211,238,.1);color:var(--cyan);border:.5px solid var(--cyan)}
 #typeBadge.tpms{background:rgba(124,111,247,.1);color:var(--purple);border:.5px solid var(--purple)}
@@ -54,7 +54,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 .res-btn.active{color:var(--cyan);border-color:var(--cyan)}
 .res-btn:disabled{opacity:.4;cursor:default}
 #triPill{display:none;position:absolute;bottom:10px;left:10px;z-index:3;font-size:10px;color:var(--dim);background:rgba(6,8,15,.85);border:.5px solid var(--border);border-radius:5px;padding:3px 8px}
-#panel{background:var(--panel);border:.5px solid var(--border);border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;overflow-y:auto;max-height:46vh;margin-bottom:16px;flex-shrink:0}
+#panel{background:var(--panel);border:.5px solid var(--border);border-radius:12px;padding:12px 14px;overflow-y:auto;width:240px;flex-shrink:0;min-height:0}
 .sec-lbl{font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
 hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .meta-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:10px}
@@ -70,11 +70,11 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .exp-label{font-size:12px;color:var(--dim);min-width:80px}
 .exp-num{font-size:12px;padding:2px 6px;background:#1a1a2e;border:.5px solid var(--border);border-radius:5px;color:var(--text);width:60px;text-align:center;font-family:inherit}
 .exp-unit{font-size:11px;color:var(--muted)}
-.qual-strip{display:flex;gap:4px;flex:1}
-.qual-btn{font-size:11px;padding:4px 0;border:.5px solid var(--border);border-radius:20px;background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;flex:1;text-align:center;transition:color .1s,border-color .1s;line-height:1.2}
-.qual-btn .ql{display:block;font-size:9px;color:var(--muted);opacity:.7}
-.qual-btn.active{color:var(--cyan);border-color:var(--cyan)}
-.qual-btn.active .ql{color:var(--cyan)}
+.qual-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%}
+.qual-btn{font-size:11px;padding:0;min-height:36px;border:.5px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;width:100%;text-align:center;transition:color .1s,border-color .1s,background .1s;line-height:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.qual-btn .ql{display:none}
+.qual-btn.active{color:var(--purple);border-color:var(--purple);background:rgba(124,111,247,.1)}
+.qual-btn.active .ql{color:var(--purple)}
 #expBtn{width:100%;padding:7px 14px;border:.5px solid var(--cyan);border-radius:20px;background:rgba(34,211,238,.08);color:var(--cyan);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;transition:background .15s;position:relative;overflow:hidden}
 #expBtn:hover:not(:disabled){background:rgba(34,211,238,.18)}
 #expBtn:disabled{opacity:.4;cursor:not-allowed;background:transparent;border-color:var(--border);color:var(--muted)}
@@ -85,6 +85,57 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .exp-chip{background:#0e0e1a;border:.5px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .exp-chip b{color:var(--text);font-weight:500}
 .exp-err{font-size:11px;color:#ffb4b4;margin-top:6px;line-height:1.5}
+
+/* ── Shape import strip ─────────────────────────────────────────────────── */
+#shapeStrip{margin:0 16px;flex-shrink:0}
+#shapeDZ{display:flex;align-items:center;gap:10px;padding:8px 12px;border:.5px dashed var(--border);border-radius:0 0 0 0;background:rgba(24,243,112,.025);cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
+#shapeDZ:hover,#shapeDZ.dragover{border-color:var(--green);background:rgba(24,243,112,.045)}
+#shapeDZ.dragover{border-style:solid}
+.sdz-icon{font-size:16px;opacity:.55;flex-shrink:0;line-height:1}
+.sdz-label{font-size:16px;color:var(--dim);white-space:nowrap;font-weight:500}
+.sdz-sub{font-size:14px;color:var(--muted);white-space:nowrap}
+.sdz-pills{display:flex;gap:3px;flex-shrink:0}
+.sdz-pill{font-size:8px;letter-spacing:.08em;padding:1px 5px;border-radius:3px;border:.5px solid}
+.sdz-pill.mesh{color:#5a8ae0;border-color:#2a3a5a}
+.sdz-pill.cad{color:#a05ae0;border-color:#3a2a5a}
+.sdz-sep{flex:1}
+.sdz-hint{font-size:10px;color:var(--muted);white-space:nowrap}
+#shapeInput{display:none}
+/* loaded card */
+#shapeCard{display:none;padding:7px 12px;border:.5px solid var(--border);border-top:none;background:var(--panel);border-radius:0}
+.sc-row{display:flex;align-items:center;gap:8px}
+.sc-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.sc-dot.ok{background:var(--green)}
+.sc-dot.err{background:var(--fail)}
+.sc-dot.warn{background:var(--amber)}
+.sc-name{font-size:15px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:500}
+.sc-chips{display:flex;gap:4px;flex-wrap:wrap}
+.sc-chip{font-size:12px;color:var(--dim);background:#0e0e1a;border:.5px solid var(--border);border-radius:4px;padding:2px 7px;font-variant-numeric:tabular-nums}
+.sc-chip b{color:var(--text);font-weight:500}
+.sc-status{font-size:13px;margin-top:4px}
+.sc-status.ok{color:var(--green)}
+.sc-status.err{color:#ffb4b4}
+.sc-clear{font-size:10px;color:var(--muted);background:transparent;border:.5px solid var(--border);border-radius:4px;padding:2px 7px;cursor:pointer;font-family:inherit;transition:color .1s,border-color .1s;flex-shrink:0}
+.sc-clear:hover{color:#ffb4b4;border-color:var(--fail)}
+
+#cancelMeshBtn:hover{background:rgba(248,113,113,.2)}
+#staleBanner{position:absolute;bottom:44px;left:0;right:0;z-index:5;display:flex;align-items:center;justify-content:center;gap:8px;padding:6px 14px;background:rgba(245,158,11,.13);border-top:.5px solid var(--amber);border-bottom:.5px solid var(--amber);font-size:11px;color:var(--amber);pointer-events:auto}
+#staleRefreshBtn{font-size:10px;font-family:inherit;padding:3px 10px;border:.5px solid var(--amber);border-radius:4px;background:rgba(245,158,11,.15);color:var(--amber);cursor:pointer;transition:background .15s}
+#staleRefreshBtn:hover{background:rgba(245,158,11,.3)}
+@keyframes stalePulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}60%{box-shadow:0 0 0 5px rgba(245,158,11,0)}}
+#staleRefreshBtn.pulsing{animation:stalePulse 1.4s ease-out infinite}
+.preview-stale #threeCanvas{opacity:.35;transition:opacity .25s}
+#threeCanvas{transition:opacity .25s}
+
+#cellOverlay{position:absolute;bottom:44px;left:10px;z-index:6;display:none;align-items:center;gap:8px;background:rgba(6,8,15,.88);border:.5px solid var(--amber);border-radius:6px;padding:6px 12px}
+#cellOverlay label{font-size:10px;color:var(--amber);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+#cellSizeDisplay{font-size:18px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
+#cellSizeUnit{font-size:10px;color:var(--amber);opacity:.7}
+#cellOverlay input[type=number]{width:60px;font-size:14px;background:transparent;border:none;border-bottom:.5px solid var(--amber);color:var(--amber);font-family:inherit;font-variant-numeric:tabular-nums;text-align:right;outline:none;padding:0 2px}
+#cellOverlay input[type=number]::-webkit-inner-spin-button{opacity:.4}
+
+#expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
+#expElapsed{display:none;font-size:10px;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -102,20 +153,44 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
   <div id="recipeView">
-    <div id="previewArea">
+    <div style="display:flex;flex-direction:column;flex:1;min-height:0;gap:0">
+    <div id="previewArea" style="flex:1;min-height:0">
       <canvas id="threeCanvas"></canvas>
       <div id="computeOverlay">
         <div class="co-main" id="coMain">awaiting recipe…</div>
         <div class="co-sub"  id="coSub"></div>
+        <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer">✕ cancel</button>
       </div>
       <div id="typeBadge"></div>
       <button id="reloadBtn">↩ load different</button>
       <div id="resStrip">
-        <button class="res-btn active" id="btnLow">Low</button>
-        <button class="res-btn"       id="btnExact">Exact</button>
+        <button class="res-btn active" id="btnDraft">Draft</button>
+        <button class="res-btn"       id="btnStandard">Standard</button>
+        <button class="res-btn"       id="btnFine">Fine</button>
       </div>
       <div id="triPill"></div>
+      <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span></div>
+      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerMesh(window.currentEdgeFraction||0.05)">↻ Update Preview</button></div>
     </div>
+    <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
+    <div id="shapeStrip" style="display:none">
+      <div id="shapeDZ">
+        <span class="sdz-icon">⬡</span>
+        <span class="sdz-label">Bounding Shape</span>
+        <span class="sdz-sep"></span>
+        <span class="sdz-pills">
+          <span class="sdz-pill mesh">STL</span>
+          <span class="sdz-pill mesh">OBJ</span>
+          <span class="sdz-pill mesh">3MF</span>
+          <span class="sdz-pill cad">STEP</span>
+          <span class="sdz-pill cad">IGES</span>
+        </span>
+        <span class="sdz-sub">drop a shape · or click to browse</span>
+        <input type="file" id="shapeInput" accept=".stl,.obj,.3mf,.step,.stp,.iges,.igs">
+      </div>
+      <div id="shapeCard"></div>
+    </div>
+    </div><!-- end previewArea+shapeStrip column -->
     <div id="panel"><div id="summaryContent"></div></div>
   </div>
 </div>
@@ -123,6 +198,10 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as fflate from 'fflate';
 
 // ── Manifold ──────────────────────────────────────────────────────────────
@@ -503,9 +582,17 @@ function resizeRenderer(){
   const w=area.clientWidth,h=area.clientHeight;if(!w||!h)return;
   camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
 }
-function displayMesh(mMesh){
+function displayMesh(mMesh, displayNorm){
   if(meshObj){scene.remove(meshObj);meshObj.geometry.dispose();meshObj.material.dispose();meshObj=null;}
   const positions=new Float32Array(mMesh.vertProperties);
+  // when shape is loaded, levelSet output is in mm — normalise to [-5,5] for display only
+  if(displayNorm){
+    for(let i=0;i<positions.length;i+=3){
+      positions[i]   =(positions[i]   -displayNorm.cx)*displayNorm.scale;
+      positions[i+1] =(positions[i+1] -displayNorm.cy)*displayNorm.scale;
+      positions[i+2] =(positions[i+2] -displayNorm.cz)*displayNorm.scale;
+    }
+  }
   const indices=new Uint32Array(mMesh.triVerts);
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
@@ -515,24 +602,875 @@ function displayMesh(mMesh){
   meshObj=new THREE.Mesh(geo,mat);scene.add(meshObj);
 }
 
+// ── Imported shape state ──────────────────────────────────────────────────
+let importedShape = null;
+// importedShape = { manifold, posArr, idxArr, bbox, displayNorm, meta }
+let shapeWireObj = null;
+let occtModule = null;
+
+// Takes mm positions, normalises to [-5,5] for Three.js display only — shape itself stays in mm
+function displayShapeWire(pos, idx, displayNorm) {
+  if(shapeWireObj){scene.remove(shapeWireObj);shapeWireObj.geometry.dispose();shapeWireObj.material.dispose();shapeWireObj=null;}
+  const dispPos = new Float32Array(pos.length);
+  for(let i=0;i<pos.length;i+=3){
+    dispPos[i]   = (pos[i]   - displayNorm.cx) * displayNorm.scale;
+    dispPos[i+1] = (pos[i+1] - displayNorm.cy) * displayNorm.scale;
+    dispPos[i+2] = (pos[i+2] - displayNorm.cz) * displayNorm.scale;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(dispPos, 3));
+  if(idx) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+  const wire = new THREE.WireframeGeometry(geo);
+  const mat = new THREE.LineBasicMaterial({color:0x18f370, opacity:0.22, transparent:true});
+  shapeWireObj = new THREE.LineSegments(wire, mat);
+  scene.add(shapeWireObj);
+}
+
+function clearShapeWire(){
+  if(shapeWireObj){scene.remove(shapeWireObj);shapeWireObj.geometry.dispose();shapeWireObj.material.dispose();shapeWireObj=null;}
+}
+
+// ── Lazy-load occt-import-js (only when STEP/IGES dropped) ───────────────
+async function getOCCT(){
+  if(occtModule) return occtModule;
+  await new Promise((res, rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
+    s.onload=res; s.onerror=()=>rej(new Error('Failed to load occt-import-js'));
+    document.head.appendChild(s);
+  });
+  // Global is 'occtimportjs' (lowercase) per official docs — not OcctImportJs
+  if(typeof window.occtimportjs !== 'function')
+    throw new Error('occt-import-js loaded but occtimportjs() not found — check CDN version');
+  occtModule = await window.occtimportjs();
+  return occtModule;
+}
+
+// ── Extract flat position + index arrays from any Three.js geometry ───────
+function geometryToArrays(geo){
+  if(!geo.attributes.position) return null;
+  // STL (and some OBJ) files have unwelded vertices — every triangle owns 3 unique
+  // verts with no sharing. Manifold requires welded topology or it throws ManifoldError.
+  // mergeVertices() welds coincident vertices and produces a proper indexed geometry.
+  const welded = mergeVertices(geo, 1e-6); // 1 micron tolerance
+  console.log(`[F13LD.mesh] mergeVertices: ${geo.attributes.position.count} → ${welded.attributes.position.count} verts`);
+  const pos = Array.from(welded.attributes.position.array);
+  const idx = welded.index ? Array.from(welded.index.array)
+    : Array.from({length: pos.length/3}, (_,i) => i);
+  return {pos, idx};
+}
+
+function mergeArrays(list){
+  const allPos=[], allIdx=[];
+  let offset=0;
+  for(const {pos,idx} of list){
+    allPos.push(...pos);
+    allIdx.push(...idx.map(i=>i+offset));
+    offset += pos.length/3;
+  }
+  return {pos:allPos, idx:allIdx};
+}
+
+function groupToArrays(obj){
+  const list=[];
+  obj.traverse(child=>{
+    if(child.isMesh && child.geometry){
+      const r=geometryToArrays(child.geometry);
+      if(r) list.push(r);
+    }
+  });
+  return mergeArrays(list);
+}
+
+// ── Compute shape bounding box (mm). Returns bbox + a display-only normaliser ──
+function computeShapeBbox(pos){
+  let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
+  for(let i=0;i<pos.length;i+=3){
+    if(pos[i]<mnx)mnx=pos[i]; if(pos[i]>mxx)mxx=pos[i];
+    if(pos[i+1]<mny)mny=pos[i+1]; if(pos[i+1]>mxy)mxy=pos[i+1];
+    if(pos[i+2]<mnz)mnz=pos[i+2]; if(pos[i+2]>mxz)mxz=pos[i+2];
+  }
+  const cx=(mnx+mxx)/2, cy=(mny+mxy)/2, cz=(mnz+mxz)/2;
+  const dx=mxx-mnx, dy=mxy-mny, dz=mxz-mnz;
+  const maxDim=Math.max(dx,dy,dz,0.001);
+  // displayNorm is used ONLY to fit the shape into Three.js [-5,5] view — never for Manifold
+  const displayNorm={cx,cy,cz,scale:10/maxDim};
+  const bboxStr=`${dx.toFixed(1)}×${dy.toFixed(1)}×${dz.toFixed(1)} mm`;
+  return {mnx,mny,mnz,mxx,mxy,mxz,cx,cy,cz,dx,dy,dz,maxDim,bboxStr,displayNorm};
+}
+
+// ── Build Manifold from raw mm positions ─────────────────────────────────
+async function buildShapeManifold(pos, idx){
+  await manifoldReady;
+  if(!ManifoldAPI) throw new Error('Manifold not ready');
+  const vertProperties = pos instanceof Float32Array ? pos : new Float32Array(pos);
+  const triVerts = new Uint32Array(idx);
+  console.log('[F13LD.mesh] buildShapeManifold:', vertProperties.length/3, 'verts,', triVerts.length/3, 'tris');
+  console.log('[F13LD.mesh] ManifoldAPI.Mesh available:', typeof ManifoldAPI.Mesh);
+
+  // Manifold requires mergeFromVert/mergeToVert to understand mesh topology when
+  // vertices are duplicated (as in STL/graphics-library meshes). The correct pattern
+  // per Manifold docs: construct a WASM Mesh object, call .merge() to auto-fill
+  // the merge vectors from geometry, then pass to the Manifold constructor.
+  let mfld;
+  try{
+    const wasmMesh = new ManifoldAPI.Mesh({ numProp: 3, vertProperties, triVerts });
+    console.log('[F13LD.mesh] ManifoldAPI.Mesh constructed OK, calling .merge()...');
+    wasmMesh.merge();
+    console.log('[F13LD.mesh] .merge() complete, constructing Manifold...');
+    mfld = new ManifoldAPI.Manifold(wasmMesh);
+    console.log('[F13LD.mesh] Manifold constructed OK, isEmpty:', mfld.isEmpty());
+  }catch(e){
+    console.error('[F13LD.mesh] Mesh/merge/Manifold construction failed:', e);
+    throw new Error('Manifold construction failed -- see console for details.');
+  }
+  if(mfld.isEmpty()) throw new Error('Manifold reports empty -- mesh may have unresolvable topology errors.');
+  return mfld;
+}
+// ── Main shape file dispatcher ────────────────────────────────────────────
+async function handleShapeFile(file){
+  const name=file.name, ext=name.split('.').pop().toLowerCase();
+  setShapeUI('loading', name);
+  clearShapeWire();
+  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  try{
+    let pos, idx, format;
+    if(ext==='stl'){
+      format='STL';
+      const buf=await file.arrayBuffer();
+      const geo = new STLLoader().parse(buf);
+      ({pos,idx}=geometryToArrays(geo));
+    } else if(ext==='obj'){
+      format='OBJ';
+      const text=await file.text();
+      const group=new OBJLoader().parse(text);
+      ({pos,idx}=groupToArrays(group));
+    } else if(ext==='3mf'){
+      format='3MF';
+      const buf=await file.arrayBuffer();
+      // ⚠ API UNCERTAIN: ThreeMFLoader may not have parseAsync — if this throws,
+      // it may be .parse(buf) only; check console
+      console.log('[F13LD.mesh] ThreeMFLoader: calling parseAsync…');
+      let group;
+      try{
+        group=await new ThreeMFLoader().parseAsync(buf);
+      }catch(e){
+        console.warn('[F13LD.mesh] parseAsync failed, trying sync parse:', e);
+        group=new ThreeMFLoader().parse(buf);
+      }
+      ({pos,idx}=groupToArrays(group));
+    } else if(['step','stp'].includes(ext)){
+      format='STEP';
+      ({pos,idx}=await loadCADFormat(file,'step'));
+    } else if(['iges','igs'].includes(ext)){
+      format='IGES';
+      ({pos,idx}=await loadCADFormat(file,'iges'));
+    } else {
+      throw new Error('Unsupported format: .'+ext);
+    }
+    if(!pos||pos.length===0) throw new Error('No geometry found in file.');
+    const posArr = new Float32Array(pos);
+    const idxArr = new Uint32Array(idx);
+    const tris=Math.floor(idxArr.length/3);
+    const bbox=computeShapeBbox(posArr); // shape stays in mm — no vertex transform
+    const manifold=await buildShapeManifold(posArr, idxArr);
+    // suggest cell size as ~1/5 of the longest dimension (user can override)
+    const suggestedCell=Math.max(0.5, parseFloat((bbox.maxDim/5).toFixed(1)));
+    importedShape={manifold, posArr, idxArr, bbox, meta:{name,format,tris,bbox:bbox.bboxStr}};
+    if(threeReady) displayShapeWire(posArr, idxArr, bbox.displayNorm);
+    setShapeUI('ok', name, {format,tris,bbox:bbox.bboxStr}, null, suggestedCell);
+    updateExportEstimate();
+    if(currentRecipe) triggerMesh(0.05);
+  } catch(e){
+    importedShape=null;
+    setShapeUI('err', name, null, e.message||String(e));
+    console.error(e);
+  }
+}
+
+async function loadCADFormat(file, type){
+  const occt=await getOCCT();
+  const buf=await file.arrayBuffer();
+  const bytes=new Uint8Array(buf);
+  // Result schema (Three.js-compatible per official docs):
+  //   result.meshes[i].attributes.position.array — flat vertex positions
+  //   result.meshes[i].index.array               — flat triangle indices
+  const result=type==='step' ? occt.ReadStepFile(bytes) : occt.ReadIgesFile(bytes);
+  console.log('[OCCT] success:',result.success,'meshes:',result.meshes?.length,'keys:',Object.keys(result));
+  if(!result.success) throw new Error('OCCT could not parse '+type.toUpperCase()+' file.');
+  const allPos=[], allIdx=[];
+  let offset=0;
+  for(const mesh of result.meshes||[]){
+    const pos=mesh.attributes?.position?.array;
+    const idx=mesh.index?.array;
+    if(!pos||!idx){console.warn('[OCCT] mesh missing position/index, keys:',Object.keys(mesh));continue;}
+    for(let i=0;i<pos.length;i++) allPos.push(pos[i]);
+    for(let i=0;i<idx.length;i++) allIdx.push(idx[i]+offset);
+    offset+=pos.length/3;
+  }
+  return {pos:allPos, idx:allIdx};
+}
+
+// ── Shape strip UI state renderer ─────────────────────────────────────────
+function setShapeUI(state, name, meta, errMsg, suggestedCell){
+  const dz=document.getElementById('shapeDZ');
+  const card=document.getElementById('shapeCard');
+  if(state==='loading'){
+    dz.querySelector('.sdz-sub').textContent='loading…';
+    card.style.display='none';
+    return;
+  }
+  if(state==='idle'){
+    dz.querySelector('.sdz-sub').textContent='drop a shape · or click to browse';
+    card.style.display='none';
+    return;
+  }
+  dz.querySelector('.sdz-sub').textContent='drop a shape · or click to browse';
+  // show/hide cell size overlay
+  const cellOv=document.getElementById('cellOverlay');
+  if(state==='ok'&&cellOv){
+    cellOv.style.display='flex';
+    const inp=document.getElementById('shapeCellSizeMm');
+    if(inp&&suggestedCell) inp.value=suggestedCell;
+  } else if(cellOv && (state==='err'||state==='idle')){
+    cellOv.style.display='none';
+  }
+  const dotCls = state==='ok' ? 'ok' : 'err';
+  const statusText = state==='ok'
+    ? '✓ manifold valid — Boolean intersection ready'
+    : '⚠ '+errMsg+' — using cube boundary';
+  const chips = meta ? `
+    <span class="sc-chip">${meta.format}</span>
+    <span class="sc-chip">tris <b>${meta.tris.toLocaleString()}</b></span>
+    <span class="sc-chip">bbox <b>${meta.bbox}</b></span>` : '';
+  // cell size lives in previewArea overlay
+  card.innerHTML=`
+    <div class="sc-row">
+      <span class="sc-dot ${dotCls}"></span>
+      <span class="sc-name">${name}</span>
+      <div class="sc-chips">${chips}</div>
+      <button class="sc-clear" onclick="window.clearImportedShape()">&#10005; clear</button>
+    </div>
+    <div class="sc-status ${dotCls}">${statusText}</div>`;
+    card.style.display='block';
+}
+
+window.clearImportedShape=function(){
+  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  clearShapeWire();
+  const cellOv=document.getElementById('cellOverlay');if(cellOv)cellOv.style.display='none';
+  setShapeUI('idle');
+  updateExportEstimate();
+  if(currentRecipe) triggerMesh(0.05);
+};
+
+
+// ── Mesh worker ───────────────────────────────────────────────────────────────
+const QUAL_EDGE_FRAC={draft:0.25,standard:0.15,fine:0.08};
+const EXPORT_EDGE_FRAC={draft:0.12,standard:0.06,fine:0.03};
+const EXPORT_SIMPLIFY_FRAC={draft:0.04,standard:0.02,fine:0.01};
+// ── Resolution multiplier from recipe geometry ────────────────────────────────
+// Thinner walls and lower VF = more triangles needed per cell period.
+// Returns a multiplier > 1 that divides the base edge fraction (finer mesh).
+function extractResolutionMultiplier(recipe){
+  if(!recipe) return 1;
+  const j=recipe.json, g=j.geometry||{}, h=j.homogenization;
+
+  // ── Wall fraction signal ──────────────────────────────────────────────────
+  // Normalise each geometry param to a [0.1, 1.0] "wall fullness" fraction.
+  // Reference "full" values chosen from typical mid-range design parameters.
+  let wallFrac=1.0;
+  if(g.wall_thickness!=null){
+    wallFrac=Math.max(0.1, Math.min(1.0, g.wall_thickness/0.30));
+  } else if(g.half_width!=null){
+    // half_width is half the wall as fraction of field range; *2 for full wall
+    wallFrac=Math.max(0.1, Math.min(1.0, (g.half_width*2)/0.30));
+  } else if(g.pipe_radius!=null){
+    wallFrac=Math.max(0.1, Math.min(1.0, g.pipe_radius/0.18));
+  }
+  const wallMult=Math.min(4, Math.max(1, 0.3/wallFrac));
+
+  // ── Volume fraction signal (bonus refinement when homogenization present) ──
+  let vfMult=1.0;
+  if(h && h.volume_fraction!=null){
+    const vf=h.volume_fraction/100; // convert % to fraction
+    if(vf>0) vfMult=Math.min(3, Math.max(1, Math.sqrt(0.15/vf)));
+  }
+
+  const mult=wallMult*vfMult;
+  console.log(`[F13LD.mesh] resolutionMult: wall=${wallFrac.toFixed(2)} wallMult=${wallMult.toFixed(2)} vfMult=${vfMult.toFixed(2)} total=${mult.toFixed(2)}`);
+  return mult;
+}
+
+let meshWorker=null;
+let currentEdgeFraction=0.05;
+let _workerBlobUrl=null;
+function getWorkerBlobUrl(){
+  if(!_workerBlobUrl){
+    const src=`
+let ManifoldAPI=null;
+const manifoldReady=(async()=>{
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/+esm');
+    const wasm=await mod.default();wasm.setup();ManifoldAPI=wasm;
+  }catch(e){console.error('[worker] Manifold load failed:',e);}
+})();
+
+const Noise=(()=>{
+  function mod289(x){return x-Math.floor(x/289)*289;}
+  function permute(x){return mod289(((x*34)+1)*x);}
+  function tis(r){return 1.79284291400159-0.85373472095314*r;}
+  function snoise(vx,vy,vz){
+    var C0=1/6,C1=1/3,s=(vx+vy+vz)*C1;
+    var ix=Math.floor(vx+s),iy=Math.floor(vy+s),iz=Math.floor(vz+s);
+    var t=(ix+iy+iz)*C0,x0x=vx-ix+t,x0y=vy-iy+t,x0z=vz-iz+t;
+    var gx=x0x>=x0y?1:0,gy=x0y>=x0z?1:0,gz=x0z>=x0x?1:0,lx=1-gx,ly=1-gy,lz=1-gz;
+    var i1x=Math.min(gx,lz),i1y=Math.min(gy,lx),i1z=Math.min(gz,ly);
+    var i2x=Math.max(gx,lz),i2y=Math.max(gy,lx),i2z=Math.max(gz,ly);
+    var x1x=x0x-i1x+C0,x1y=x0y-i1y+C0,x1z=x0z-i1z+C0;
+    var x2x=x0x-i2x+C1,x2y=x0y-i2y+C1,x2z=x0z-i2z+C1;
+    var x3x=x0x-0.5,x3y=x0y-0.5,x3z=x0z-0.5;
+    ix=mod289(ix);iy=mod289(iy);iz=mod289(iz);
+    var p0=permute(permute(permute(iz)+iy)+ix);
+    var p1=permute(permute(permute(iz+i1z)+iy+i1y)+ix+i1x);
+    var p2=permute(permute(permute(iz+i2z)+iy+i2y)+ix+i2x);
+    var p3=permute(permute(permute(iz+1)+iy+1)+ix+1);
+    var nx=0.285714285714,ny=-0.928571428571,nz=0.142857142857;
+    var j0=p0-49*Math.floor(p0*nz*nz),j1=p1-49*Math.floor(p1*nz*nz);
+    var j2=p2-49*Math.floor(p2*nz*nz),j3=p3-49*Math.floor(p3*nz*nz);
+    var x0_=Math.floor(j0*nz),y0_=Math.floor(j0-7*x0_);
+    var x1_=Math.floor(j1*nz),y1_=Math.floor(j1-7*x1_);
+    var x2_=Math.floor(j2*nz),y2_=Math.floor(j2-7*x2_);
+    var x3_=Math.floor(j3*nz),y3_=Math.floor(j3-7*x3_);
+    function grad(xs,ys){var h=1-Math.abs(xs)-Math.abs(ys),sh=h<=0?-1:0;return[xs+(Math.floor(xs)*2+1)*sh,ys+(Math.floor(ys)*2+1)*sh,h];}
+    var g0=grad(x0_*nx+ny,y0_*nx+ny),g1=grad(x1_*nx+ny,y1_*nx+ny),g2=grad(x2_*nx+ny,y2_*nx+ny),g3=grad(x3_*nx+ny,y3_*nx+ny);
+    var n0=tis(g0[0]*g0[0]+g0[1]*g0[1]+g0[2]*g0[2]),n1=tis(g1[0]*g1[0]+g1[1]*g1[1]+g1[2]*g1[2]);
+    var n2=tis(g2[0]*g2[0]+g2[1]*g2[1]+g2[2]*g2[2]),n3=tis(g3[0]*g3[0]+g3[1]*g3[1]+g3[2]*g3[2]);
+    g0[0]*=n0;g0[1]*=n0;g0[2]*=n0;g1[0]*=n1;g1[1]*=n1;g1[2]*=n1;
+    g2[0]*=n2;g2[1]*=n2;g2[2]*=n2;g3[0]*=n3;g3[1]*=n3;g3[2]*=n3;
+    var m0=Math.max(0.6-(x0x*x0x+x0y*x0y+x0z*x0z),0);m0*=m0;
+    var m1=Math.max(0.6-(x1x*x1x+x1y*x1y+x1z*x1z),0);m1*=m1;
+    var m2=Math.max(0.6-(x2x*x2x+x2y*x2y+x2z*x2z),0);m2*=m2;
+    var m3=Math.max(0.6-(x3x*x3x+x3y*x3y+x3z*x3z),0);m3*=m3;
+    return 42*(m0*m0*(g0[0]*x0x+g0[1]*x0y+g0[2]*x0z)+m1*m1*(g1[0]*x1x+g1[1]*x1y+g1[2]*x1z)+
+               m2*m2*(g2[0]*x2x+g2[1]*x2y+g2[2]*x2z)+m3*m3*(g3[0]*x3x+g3[1]*x3y+g3[2]*x3z));
+  }
+  function frac(x){return x-Math.floor(x);}
+  function cellular(px,py,pz,metric){
+    var pix=Math.floor(px),piy=Math.floor(py),piz=Math.floor(pz),pfx=px-pix,pfy=py-piy,pfz=pz-piz,d1=10,d2=10;
+    for(var oz=-1;oz<=1;oz++)for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
+      var cx=pix+ox,cy=piy+oy,cz=piz+oz;
+      var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
+      var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
+      var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
+      var dx=ox+rpx-pfx,dy=oy+rpy-pfy,dz=oz+rpz-pfz;
+      var d=metric==='euclidean'?Math.sqrt(dx*dx+dy*dy+dz*dz):metric==='manhattan'?Math.abs(dx)+Math.abs(dy)+Math.abs(dz):Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
+      if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
+    }
+    return Math.max(Math.min((d2-d1)*2-1,1),-1);
+  }
+  function fbm(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=snoise(px*f,py*f,pz*f)*a;mx+=a;a*=g;f*=l;}return v/mx;}
+  function ridged(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=(1-Math.abs(snoise(px*f,py*f,pz*f)))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
+  function billow(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=Math.abs(snoise(px*f,py*f,pz*f))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
+  function warp(px,py,pz,strength,o,l,g){var qx=fbm(px,py,pz,o,l,g),qy=fbm(px+5.2,py+1.3,pz+8.1,o,l,g),qz=fbm(px+3.7,py+9.4,pz+2.8,o,l,g);return fbm(px+strength*qx,py+strength*qy,pz+strength*qz,o,l,g);}
+  function curl(px,py,pz,step,ps){var s=ps,e=step,psi_x=snoise(px*s,py*s,pz*s),psi_y=snoise(px*s+3.7,py*s+1.5,pz*s+2.8),psi_z=snoise(px*s+1.2,py*s+4.6,pz*s+0.9);var pzy=snoise(px*s+1.2,(py+e)*s+4.6,pz*s+0.9),pyz=snoise(px*s+3.7,py*s+1.5,(pz+e)*s+2.8),pxz=snoise(px*s,py*s,(pz+e)*s),pzx=snoise((px+e)*s+1.2,py*s+4.6,pz*s+0.9),pyx=snoise((px+e)*s+3.7,py*s+1.5,pz*s+2.8),pxy=snoise(px*s,(py+e)*s,pz*s);var cx=(pzy-psi_z)/e-(pyz-psi_y)/e,cy=(pxz-psi_x)/e-(pzx-psi_z)/e,cz=(pyx-psi_y)/e-(pxy-psi_x)/e;return Math.sqrt(cx*cx+cy*cy+cz*cz);}
+  return{snoise,cellular,fbm,ridged,billow,warp,curl};
+})();
+
+// ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
+function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
+function sampleVMF(rng,kappa){
+  if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
+  var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);
+  if(w<-1)w=-1;if(w>1)w=1;var phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-w*w));return[sr*Math.cos(phi),sr*Math.sin(phi),w];
+}
+function rotateTo(v,mux,muy,muz){
+  if(Math.abs(muz+1)<1e-6)return[-v[0],-v[1],-v[2]];if(Math.abs(muz-1)<1e-6)return v.slice();
+  var ax=-muy,ay=mux,al=Math.sqrt(ax*ax+ay*ay);ax/=al;ay/=al;
+  var angle=Math.acos(Math.min(Math.max(muz,-1),1)),c=Math.cos(angle),s=Math.sin(angle),t=1-c,vx=v[0],vy=v[1],vz=v[2];
+  return[(t*ax*ax+c)*vx+(t*ax*ay)*vy+(s*ay)*vz,(t*ax*ay)*vx+(t*ay*ay+c)*vy+(-s*ax)*vz,(-s*ay)*vx+(s*ax)*vy+c*vz];
+}
+function buildSpinodoidWaves(params){
+  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,kappa=params.kappa,mode=params.dirMode;
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34],totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6),waves=[];
+  for(var i=0;i<N;i++){
+    var dir;
+    if(mode==='iso')dir=sampleVMF(rng,0);
+    else if(mode==='single')dir=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,chosen=0;for(var a=0;a<3;a++){cum+=weights[a];if(r<=cum){chosen=a;break;}}dir=rotateTo(sampleVMF(rng,kappa),axes[chosen][0],axes[chosen][1],axes[chosen][2]);}
+    var mag=2*Math.PI*freq*(0.85+0.3*rng()),phase=2*Math.PI*rng();
+    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase});
+  }
+  return waves;
+}
+function buildGRFWaves(params){
+  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,mode=params.dirMode;
+  var sigmafrac=params.grfSigma||.45,k0base=2*Math.PI*freq,waves=[];
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  function randn(){var u=Math.max(rng(),1e-10),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  for(var i=0;i<N;i++){
+    var dir=sampleVMF(rng,0),k0;
+    if(mode==='ortho'){var wx=params.wX||.33,wy=params.wY||.33,wz=params.wZ||.34;var tot=Math.max(wx+wy+wz,1e-6);wx/=tot;wy/=tot;wz/=tot;var mW=Math.max(wx,wy,wz);var kS=1/(Math.max(wx*dir[0]*dir[0]+wy*dir[1]*dir[1]+wz*dir[2]*dir[2],.05)/mW);kS=Math.min(Math.max(kS,.3),3);k0=k0base*kS;}
+    else if(mode==='single'){var align=Math.abs(dir[0]*mux+dir[1]*muy+dir[2]*muz);k0=k0base*(1.5-align);}
+    else k0=k0base;
+    var sigma=sigmafrac*k0,mag,tries=0;do{mag=k0+randn()*sigma;tries++;}while(mag<=0&&tries<30);
+    if(mag<=0)mag=k0*.1;
+    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase:2*Math.PI*rng()});
+  }
+  return waves;
+}
+function jitteredGrid3D(N,rng){
+  var cells=Math.ceil(Math.pow(N,1/3)),cs=1/cells,pts=[];
+  for(var ix=0;ix<cells;ix++)for(var iy=0;iy<cells;iy++)for(var iz=0;iz<cells;iz++){
+    var px=(ix+.5+(rng()-.5)*.9)*cs,py=(iy+.5+(rng()-.5)*.9)*cs,pz=(iz+.5+(rng()-.5)*.9)*cs;
+    pts.push([Math.max(.01,Math.min(.99,px)),Math.max(.01,Math.min(.99,py)),Math.max(.01,Math.min(.99,pz))]);
+  }
+  for(var i=pts.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var tmp=pts[i];pts[i]=pts[j];pts[j]=tmp;}
+  return pts.slice(0,N);
+}
+function buildHUKernels(params){
+  var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
+  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
+  function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+  function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}
+  var kernels=[],TP=2*Math.PI;
+  for(var i=0;i<N;i++){
+    var t2;
+    if(mode==='iso')t2=sampleVMF(rng,0);
+    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
+    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
+    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
+    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
+  }
+  return kernels;
+}
+function evalHUField(kernels,x,y,z){
+  x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
+  var s=0;
+  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
+  return s-.3;
+}
+function evalField(waves,x,y,z,kernels){
+  if(kernels)return evalHUField(kernels,x,y,z);
+  var s=0,N=waves.length;for(var i=0;i<N;i++)s+=Math.cos(waves[i].kx*x+waves[i].ky*y+waves[i].kz*z+waves[i].phase);return s/Math.sqrt(N);
+}
+
+// ── Gray-Scott reaction-diffusion ────────────────────────────────────────
+function buildGrayScott(params, N) {
+  var rng = mulberry32(params.rngSeed||42);
+  var F = params.rdF||0.030, k = params.rdK||0.057;
+  var Du = params.rdDu||0.14, Dv = Du*0.5;
+  var dt = Math.min(1.0, 0.9/(6.0*Du));
+  var steps = params.rdSteps||3000;
+  var u = new Float32Array(N*N*N), v = new Float32Array(N*N*N);
+  for (var i = 0; i < N*N*N; i++) u[i] = 1.0 + (rng()-0.5)*0.02;
+  var nS = Math.max(3, Math.floor(N*N/20));
+  for (var s = 0; s < nS; s++) {
+    var cx=Math.floor(rng()*(N-4))+2, cy=Math.floor(rng()*(N-4))+2, cz=Math.floor(rng()*(N-4))+2;
+    for (var dz=-1;dz<=1;dz++) for (var dy=-1;dy<=1;dy++) for (var dx=-1;dx<=1;dx++) {
+      var ix=(cx+dx+N)%N, iy=(cy+dy+N)%N, iz=(cz+dz+N)%N, id=ix+iy*N+iz*N*N;
+      u[id]=0.5+(rng()-0.5)*0.1; v[id]=0.25+(rng()-0.5)*0.05;
+    }
+  }
+  var u2 = new Float32Array(N*N*N), v2 = new Float32Array(N*N*N), tmp;
+  for (var step = 0; step < steps; step++) {
+    for (var iz=0;iz<N;iz++) { var izm=(iz-1+N)%N, izp=(iz+1)%N;
+      for (var iy=0;iy<N;iy++) { var iym=(iy-1+N)%N, iyp=(iy+1)%N;
+        for (var ix=0;ix<N;ix++) { var ixm=(ix-1+N)%N, ixp=(ix+1)%N;
+          var idx=ix+iy*N+iz*N*N, uc=u[idx], vc=v[idx];
+          var lu=u[ixp+iy*N+iz*N*N]+u[ixm+iy*N+iz*N*N]+u[ix+iyp*N+iz*N*N]+u[ix+iym*N+iz*N*N]+u[ix+iy*N+izp*N*N]+u[ix+iy*N+izm*N*N]-6.0*uc;
+          var lv=v[ixp+iy*N+iz*N*N]+v[ixm+iy*N+iz*N*N]+v[ix+iyp*N+iz*N*N]+v[ix+iym*N+iz*N*N]+v[ix+iy*N+izp*N*N]+v[ix+iy*N+izm*N*N]-6.0*vc;
+          var uv2=uc*vc*vc, nu=uc+dt*(Du*lu-uv2+F*(1.0-uc)), nv=vc+dt*(Dv*lv+uv2-(F+k)*vc);
+          u2[idx]=nu<0?0:nu>1?1:nu; v2[idx]=nv<0?0:nv>1?1:nv;
+        }
+      }
+    }
+    tmp=u; u=u2; u2=tmp; tmp=v; v=v2; v2=tmp;
+  }
+  return u;
+}
+function evalRDField(grid, N, u, v, w) {
+  // u,v,w already in [0,1] (post-tile fract applied by caller)
+  var fx=u*(N-1), fy=v*(N-1), fz=w*(N-1);
+  var x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
+  var x1=(x0+1)%N, y1=(y0+1)%N, z1=(z0+1)%N;
+  var dx=fx-x0, dy=fy-y0, dz=fz-z0;
+  return grid[x0+y0*N+z0*N*N]*(1-dx)*(1-dy)*(1-dz)
+        +grid[x1+y0*N+z0*N*N]*dx*(1-dy)*(1-dz)
+        +grid[x0+y1*N+z0*N*N]*(1-dx)*dy*(1-dz)
+        +grid[x1+y1*N+z0*N*N]*dx*dy*(1-dz)
+        +grid[x0+y0*N+z1*N*N]*(1-dx)*(1-dy)*dz
+        +grid[x1+y0*N+z1*N*N]*dx*(1-dy)*dz
+        +grid[x0+y1*N+z1*N*N]*(1-dx)*dy*dz
+        +grid[x1+y1*N+z1*N*N]*dx*dy*dz;
+}
+
+// ── SDF closures — all return positive-inside (Manifold convention) ───────
+
+function evalNoiseRaw(surf,nx,ny,nz){
+  const t=surf.noise_type||'simplex',o=surf.octaves||4,l=surf.lacunarity||2,g=surf.gain||.5;
+  if(t==='simplex') return Noise.snoise(nx,ny,nz);
+  if(t==='cellular')return Noise.cellular(nx,ny,nz,surf.distance_metric||'euclidean');
+  if(t==='fbm')     return Noise.fbm(nx,ny,nz,o,l,g);
+  if(t==='ridged')  return Noise.ridged(nx,ny,nz,o,l,g);
+  if(t==='billow')  return Noise.billow(nx,ny,nz,o,l,g);
+  if(t==='curl')    return Noise.curl(nx,ny,nz,surf.curl_step||.1,surf.potential_scale||1);
+  return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
+}
+
+function buildNoiseSDF(json){
+  const surf=json.surface,geom=json.geometry||{};
+  const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
+  const PP=16,SCALE=5.0/Math.PI;let mn=Infinity,mx=-Infinity;
+  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
+    const px=((xi/(PP-1))*2-1)*Math.PI;
+    const py=((yi/(PP-1))*2-1)*Math.PI;
+    const pz=((zi/(PP-1))*2-1)*Math.PI;
+    const raw=evalNoiseRaw(surf,px*SCALE*freq*sx,py*SCALE*freq*sy,pz*SCALE*freq*sz);
+    if(raw<mn)mn=raw;if(raw>mx)mx=raw;
+  }
+  const range=mx-mn,noiseMin=mn-range*.05,noiseMax=mx+range*.05;
+  const mid=(noiseMin+noiseMax)*.5,halfR=Math.max((noiseMax-noiseMin)*.5,.001);
+  const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
+  const SCALE2=5.0/Math.PI;
+  return p=>{
+    // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
+    const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
+    const norm=(raw-mid)/halfR;
+    if(mode==='half')   return (geom.half_invert?norm-center:center-norm); // flip side support
+    if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
+    return halfW-Math.abs(norm-center);                  // sheet (default)
+  };
+}
+
+// Raw preset field functions — verbatim from TPMS builder _fn definitions
+const RAW_PRESETS={
+  splitP:       (x,y,z)=>Math.sin(x)*Math.sin(y)*Math.cos(z)+Math.sin(y)*Math.sin(z)*Math.cos(x)+Math.sin(z)*Math.sin(x)*Math.cos(y)-0.3,
+  frd:          (x,y,z)=>Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z)-Math.cos(2*x)*Math.cos(2*y)-Math.cos(2*y)*Math.cos(2*z)-Math.cos(2*z)*Math.cos(2*x)+0.3,
+  fks:          (x,y,z)=>Math.cos(2*x)*Math.sin(y)*Math.cos(z)+Math.cos(2*y)*Math.sin(z)*Math.cos(x)+Math.cos(2*z)*Math.sin(x)*Math.cos(y),
+  gyroidHarmonic:(x,y,z)=>Math.sin(x)*Math.cos(y)+Math.sin(y)*Math.cos(z)+Math.sin(z)*Math.cos(x)+0.3*(Math.sin(2*x)*Math.cos(2*y)+Math.sin(2*y)*Math.cos(2*z)+Math.sin(2*z)*Math.cos(2*x)),
+  primitiveC:   (x,y,z)=>2.0*(Math.cos(x)+Math.cos(y)+Math.cos(z))-(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+  octo:         (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)-0.5*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x)),
+  pHarmonic:    (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)+0.25*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+  lidinoid:     (x,y,z)=>1.1*(Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z))-0.2*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x))-0.4*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
+};
+
+function buildTPMSSDF(json){
+  const s=json.surface,g=json.geometry||{};
+  const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
+  const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
+  const TP=2*Math.PI;
+
+  // Raw preset path — use the precomputed _fn directly
+  const rawFn = (s.type==='raw_preset') ? (RAW_PRESETS[s.preset]||null) : null;
+  if(s.type==='raw_preset'&&!rawFn)
+    throw new Error('Unknown raw preset: '+s.preset+'. Supported: '+Object.keys(RAW_PRESETS).join(', '));
+
+  // Term-tree path
+  const terms=s.terms||[];
+  function evalFactor(factor,tx,ty,tz){
+    const t=factor.trig;
+    let val=t.includes('(x)')?tx*(factor.fx||1):t.includes('(y)')?ty*(factor.fy||1):t.includes('(z)')?tz*(factor.fz||1):0;
+    if(t.startsWith('sin'))return Math.sin(val);
+    if(t.startsWith('cos'))return Math.cos(val);
+    return 1;
+  }
+  function evalTerms(tx,ty,tz){
+    let sum=0;
+    for(const term of terms){if(!term.on)continue;let prod=term.coef??1;for(const f of term.factors)prod*=evalFactor(f,tx,ty,tz);sum+=prod;}
+    return sum;
+  }
+
+  function evalPhi(tx,ty,tz){
+    return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
+  }
+
+  return p=>{
+    const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
+    const phiA=evalPhi(tx,ty,tz);
+    if(mode==='pi-tpms'){
+      const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
+      return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
+    }
+    if(mode==='solid') return (g.offset||0)-phiA;
+    return ((g.wall_thickness||.3)/2)-Math.abs(phiA-(g.offset||0));
+  };
+}
+
+function buildGrainSDF(json){
+  const f=json.field,g=json.geometry||{};
+  const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
+
+  // ── Reaction-diffusion branch ──────────────────────────────────────
+  if(f.type==='reactiondiffusion'){
+    const N=48;
+    const rdParams={rdF:f.rd_F||0.030,rdK:f.rd_k||0.057,rdDu:f.rd_Du||0.14,rdSteps:f.rd_steps||3000,rngSeed:f.rng_seed||42};
+    const tile=f.rd_tile||1;
+    const grid=buildGrayScott(rdParams,N);
+    function frac(x){return x-Math.floor(x);}
+    return p=>{
+      const u=frac((p[0]/10+0.5)*tile);
+      const v=frac((p[1]/10+0.5)*tile);
+      const w=frac((p[2]/10+0.5)*tile);
+      const raw=evalRDField(grid,N,u,v,w);
+      if(topo==='half') return g.half_invert?(center-raw):(raw-center);
+      if(topo==='solid') return center-raw;
+      return halfW-Math.abs(raw-center);
+    };
+  }
+
+  // ── Wave / kernel branch ───────────────────────────────────────────
+  let dirTheta=0,dirPhi=0;
+  if(f.dir_mode==='single'&&f.principal_direction){
+    const[mx,my,mz]=f.principal_direction;
+    dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
+    dirPhi=Math.atan2(my,mx)*180/Math.PI;
+  }
+  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
+  const isHU=f.type==='hyperuniform';
+  const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
+  const kernels=isHU?buildHUKernels(params):null;
+  const PI5=Math.PI/5;
+  return p=>{
+    let raw;
+    if(isHU){
+      raw=evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10);
+    }else{
+      raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
+    }
+    if(topo==='half') return g.half_invert?(center-raw):(raw-center);
+    return halfW-Math.abs(raw-center);
+  };
+}
+
+function buildSDF(recipe){
+  if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
+  if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
+  if(recipe.family==='grain')return buildGrainSDF(recipe.json);
+  throw new Error('No evaluator for family: '+recipe.family);
+}
+
+self.onmessage=async function(e){
+  const d=e.data,t0=performance.now();
+  try{
+    await manifoldReady;
+    if(!ManifoldAPI)throw new Error('Manifold not available in worker.');
+    self.postMessage({type:'progress',stage:'building SDF...'});
+    const sdfFn=buildSDF(d.recipe);
+    let mfld;
+    if(d.mode==='shape'){
+      const{cellSizeMm,edgeFraction,bbox,shapePos,shapeIdx}=d;
+      const mmToWorld=10/cellSizeMm;
+      const wrappedSDF=p=>sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
+      const mmEdge=edgeFraction*cellSizeMm;
+      self.postMessage({type:'progress',stage:'level set ('+(mmEdge).toFixed(2)+'mm edge)...'});
+      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},mmEdge);
+      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — try a smaller cell size or check structure parameters.');}
+      self.postMessage({type:'progress',stage:'boolean intersection...'});
+      const pos=new Float32Array(shapePos),idx=new Uint32Array(shapeIdx);
+      const wasmMesh=new ManifoldAPI.Mesh({numProp:3,vertProperties:pos,triVerts:idx});
+      wasmMesh.merge();
+      const shapeMfld=new ManifoldAPI.Manifold(wasmMesh);
+      let intersected;
+      try{intersected=ManifoldAPI.Manifold.intersection(mfld,shapeMfld);}
+      catch(ie){
+        console.warn('[worker] Manifold.intersection failed, trying instance method:',ie);
+        intersected=mfld.intersect(shapeMfld);
+      }
+      mfld.delete();shapeMfld.delete();mfld=intersected;
+      if(mfld.isEmpty()){mfld.delete();throw new Error('Intersection is empty — check cell size and shape overlap.');}
+    } else if(d.mode==='export'){
+      // ── Export mode: pre-computed edge/simplify lengths, returns scale ───────
+      if(d.shapePos){
+        const{relEdgeMm,simplifyTol,bbox,shapePos,shapeIdx}=d;
+        const mmToWorld=10/d.cellSizeMm;
+        const wrappedSDF=p=>sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
+        self.postMessage({type:'progress',stage:'level set ('+relEdgeMm.toFixed(3)+'mm edge)...'});
+        mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},relEdgeMm);
+        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — try a smaller cell size.');}
+        self.postMessage({type:'progress',stage:'boolean intersection...'});
+        const pos=new Float32Array(shapePos),idx=new Uint32Array(shapeIdx);
+        const wasmMesh=new ManifoldAPI.Mesh({numProp:3,vertProperties:pos,triVerts:idx});
+        wasmMesh.merge();
+        const shapeMfld=new ManifoldAPI.Manifold(wasmMesh);
+        let intersected;
+        try{intersected=ManifoldAPI.Manifold.intersection(mfld,shapeMfld);}
+        catch(ie){intersected=mfld.intersect(shapeMfld);}
+        mfld.delete();shapeMfld.delete();mfld=intersected;
+        if(mfld.isEmpty()){mfld.delete();throw new Error('Intersection is empty.');}
+        if(simplifyTol>0){
+          self.postMessage({type:'progress',stage:'simplifying mesh...'});
+          try{const s=typeof mfld.simplify==='function'?mfld.simplify(simplifyTol):mfld.Simplify(simplifyTol);mfld.delete();mfld=s;}
+          catch(se){console.warn('[worker] export simplify skipped:',se);}
+        }
+      } else {
+        self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
+        mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
+        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
+      }
+      self.postMessage({type:'progress',stage:'extracting mesh...'});
+      const mesh=mfld.getMesh(),triCount=mfld.numTri();
+      const vertProperties=new Float32Array(mesh.vertProperties);
+      const triVerts=new Uint32Array(mesh.triVerts);
+      mfld.delete();
+      const ms=Math.round(performance.now()-t0);
+      self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale},[vertProperties.buffer,triVerts.buffer]);
+      return;
+    } else {
+      self.postMessage({type:'progress',stage:'level set...'});
+      mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
+      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check SDF parameters.');}
+    }
+    if(d.simplifyTol>0){
+      self.postMessage({type:'progress',stage:'simplifying mesh...'});
+      try{
+        const s=typeof mfld.simplify==='function'?mfld.simplify(d.simplifyTol):mfld.Simplify(d.simplifyTol);
+        mfld.delete();mfld=s;
+      }catch(se){console.warn('[worker] simplify skipped:',se);}
+    }
+    self.postMessage({type:'progress',stage:'extracting mesh...'});
+    const mesh=mfld.getMesh(),triCount=mfld.numTri();
+    const vertProperties=new Float32Array(mesh.vertProperties);
+    const triVerts=new Uint32Array(mesh.triVerts);
+    mfld.delete();
+    const ms=Math.round(performance.now()-t0);
+    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms},[vertProperties.buffer,triVerts.buffer]);
+  }catch(e){
+    self.postMessage({type:'error',message:e.message||String(e)});
+  }
+};
+`;
+    _workerBlobUrl=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+  }
+  return _workerBlobUrl;
+}
+function showCancelBtn(show){const b=document.getElementById('cancelMeshBtn');if(b)b.style.display=show?'':'none';}
+window.cancelMesh=function(){
+  if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  hideComputing();setBtns(true);showCancelBtn(false);
+};
+
+
+// ── Grid size safety clamp ────────────────────────────────────────────────────
+// Prevents WASM memory crash when cell size is tiny or resMult is large.
+// Returns { safeEdge, clamped, estVoxels } — safeEdge is always >= minSafeEdge.
+function clampEdgeMm(edgeMm, bbox, maxVoxels){
+  const vol=(bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz);
+  const minSafeEdge=Math.pow(vol/maxVoxels, 1/3);
+  const clamped=edgeMm<minSafeEdge;
+  const safeEdge=clamped?minSafeEdge:edgeMm;
+  const estVoxels=vol/Math.pow(safeEdge,3);
+  return{safeEdge,clamped,estVoxels:Math.round(estVoxels)};
+}
+function clampEdgeWorld(edgeWorld, maxVoxels){
+  // cube mode: domain is 10x10x10 world units
+  const vol=1000;
+  const minSafeEdge=Math.pow(vol/maxVoxels,1/3);
+  const clamped=edgeWorld<minSafeEdge;
+  const safeEdge=clamped?minSafeEdge:edgeWorld;
+  return{safeEdge,clamped};
+}
+const MAX_PREVIEW_VOXELS=20e6;
+const MAX_EXPORT_VOXELS=200e6;
+// ── Live export estimate display ──────────────────────────────────────────────
+function updateExportEstimate(){
+  const el=document.getElementById('expEstimate');
+  if(!el) return;
+  if(!currentRecipe){el.textContent='';return;}
+  try{
+    let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope
+    if(importedShape){
+      cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+      const resMult=extractResolutionMultiplier(currentRecipe);
+      const rawEdge=(EXPORT_EDGE_FRAC[currentExportQual]/resMult)*cellSizeMm;
+      const{safeEdge}=clampEdgeMm(rawEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
+      edgeMm=safeEdge;
+      bbox=importedShape.bbox;
+    } else {
+      const domainEl=document.getElementById('expDomainMm');
+      const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
+      edgeMm=(QUAL_EDGE_MM[currentExportQual]||.10)*10/domainMm;
+    }
+    const{estTris,estSec}=estimateMeshStats(currentRecipe,edgeMm,bbox,cellSizeMm);
+    el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+estSec+'s';
+  }catch(e){el.textContent='';}
+}
+
 // ── Mesh pipeline ─────────────────────────────────────────────────────────
 let currentManifold=null;
-async function triggerMesh(edgeLength){
-  showComputing('computing mesh…','edge length: '+edgeLength);setBtns(false);
+async function triggerMesh(edgeFraction){
+  currentEdgeFraction=edgeFraction;
+  if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  clearStale();
+  showComputing('computing mesh...','starting...');
+  setBtns(false);showCancelBtn(true);
+  const displayNorm=importedShape?importedShape.bbox.displayNorm:null;
   try{
-    await manifoldReady;if(!ManifoldAPI)throw new Error('Manifold not available — check console.');
-    const sdfFn=buildSDF(currentRecipe);
-    const t0=performance.now();
-    const mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},edgeLength);
-    const ms=Math.round(performance.now()-t0);
-    if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — SDF may not intersect domain at this edge length. Check center/half-width/frequency.');}
-    const mMesh=mfld.getMesh(),triCount=mfld.numTri();
-    if(currentManifold){try{currentManifold.delete();}catch(_){}}
-    currentManifold=mfld;
-    displayMesh(mMesh);showTriCount(triCount,ms);hideComputing();
-  }catch(e){hideComputing();showError('Mesh error: '+(e.message||e));console.error(e);}
-  finally{setBtns(true);}
+    const worker=new Worker(getWorkerBlobUrl());
+    meshWorker=worker;
+    const result=await new Promise((resolve,reject)=>{
+      worker.onmessage=e=>{
+        const d=e.data;
+        if(d.type==='progress') coSub.textContent=d.stage;
+        else if(d.type==='done') resolve(d);
+        else if(d.type==='error') reject(new Error(d.message));
+      };
+      worker.onerror=e=>reject(new Error(e.message||'Worker error'));
+      if(importedShape){
+        const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+        const posBuffer=importedShape.posArr.buffer.slice(0);
+        const idxBuffer=importedShape.idxArr.buffer.slice(0);
+        const{mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
+        const resMult=extractResolutionMultiplier(currentRecipe);
+        const rawEdgeMm=(edgeFraction/resMult)*cellSizeMm;
+        const{safeEdge:mmEdge,clamped}=clampEdgeMm(rawEdgeMm,importedShape.bbox,MAX_PREVIEW_VOXELS);
+        if(clamped) coSub.textContent='grid clamped — cell size too small for this domain (using '+mmEdge.toFixed(2)+'mm edge)';
+        const adjEdgeFraction=mmEdge/cellSizeMm;
+        const simplifyTol=mmEdge*0.15;
+        worker.postMessage({
+          mode:'shape',recipe:currentRecipe,
+          shapePos:posBuffer,shapeIdx:idxBuffer,
+          bbox:{mnx,mny,mnz,mxx,mxy,mxz},
+          cellSizeMm,edgeFraction:adjEdgeFraction,simplifyTol
+        },[posBuffer,idxBuffer]);
+      } else {
+        const{safeEdge:edgeWorld,clamped:cubeClamped}=clampEdgeWorld(edgeFraction,MAX_PREVIEW_VOXELS);
+        if(cubeClamped) coSub.textContent='grid clamped — edge floor '+edgeWorld.toFixed(3);
+        worker.postMessage({
+          mode:'cube',recipe:currentRecipe,
+          edgeWorld,
+          simplifyTol:edgeWorld*0.15
+        });
+      }
+    });
+    if(meshWorker===worker){meshWorker=null;}
+    worker.terminate();
+    const vertProperties=new Float32Array(result.vertProperties);
+    const triVerts=new Uint32Array(result.triVerts);
+    if(currentManifold){try{currentManifold.delete();}catch(_){} currentManifold=null;}
+    displayMesh({vertProperties,triVerts},displayNorm);
+    showTriCount(result.triCount,result.ms);
+    hideComputing();
+  }catch(e){
+    if(meshWorker){meshWorker.terminate();meshWorker=null;}
+    hideComputing();
+    if(e.message!=='cancelled') showError('Mesh error: '+(e.message||e));
+    console.error(e);
+  }finally{
+    setBtns(true);showCancelBtn(false);
+  }
 }
+window.triggerMesh=triggerMesh;
+window.onCellSizeInput=function(){if(importedShape){setStale();updateExportEstimate();}};
+Object.defineProperty(window,'currentEdgeFraction',{get:()=>currentEdgeFraction});
 
 // ── Recipe router ─────────────────────────────────────────────────────────
 function routeRecipe(json){
@@ -554,18 +1492,17 @@ function exportPanel(){
   <input type="number" id="expDomainMm" class="exp-num" value="10" min="1" max="100" step="1">
   <span class="exp-unit">mm</span>
 </div>
-<div class="exp-row">
-  <span class="exp-label">quality</span>
-  <div class="qual-strip">
-    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')">Draft<span class="ql">0.20 mm</span></button>
-    <button class="qual-btn${q==='standard'?' active':''}" id="qStd" onclick="setQual('standard')">Standard<span class="ql">0.10 mm</span></button>
-    <button class="qual-btn${q==='fine'?' active':''}" id="qFine" onclick="setQual('fine')">Fine<span class="ql">0.05 mm</span></button>
+<div class="qual-strip" style="margin-bottom:8px">
+    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')">Draft</button>
+    <button class="qual-btn${q==='standard'?' active':''}" id="qStd" onclick="setQual('standard')">Standard</button>
+    <button class="qual-btn${q==='fine'?' active':''}" id="qFine" onclick="setQual('fine')">Fine</button>
   </div>
-</div>
 <button id="expBtn" onclick="triggerExport()">Export 3MF</button>
+<div id="expEstimate"></div>
+<div id="expElapsed"></div>
 <div id="expReport"></div>`;}
-function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${homoSection(h)}${exportPanel()}`;}
-function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${homoSection(h)}${exportPanel()}`;}
+function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${exportPanel()}`;}
+function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
 function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
   if(f.type==='reactiondiffusion'){
     return`<div class="sec-lbl">grain scaffold &middot; reaction-diffusion (gray-scott)</div>
@@ -579,10 +1516,10 @@ function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.jso
     ${card('topology',g.topology)}
     ${card('center',g.center)}
     ${card('half-width',g.half_width)}
-    </div>${homoSection(h)}${exportPanel()}`;
+    </div>${exportPanel()}`;
   }
   const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';
-  return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${homoSection(h)}${exportPanel()}`;}
+  return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${exportPanel()}`;}
 function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);}
 
 // ── UI helpers ────────────────────────────────────────────────────────────
@@ -602,54 +1539,141 @@ window.setQual=function(q){
   currentExportQual=q;
   const ids={draft:'qDraft',standard:'qStd',fine:'qFine'};
   Object.keys(ids).forEach(k=>{const el=document.getElementById(ids[k]);if(el)el.classList.toggle('active',k===q);});
+  updateExportEstimate();
 };
 
+
+// ── Mesh statistics estimator ─────────────────────────────────────────────────
+// Surface-area based estimate — far more accurate than voxel counting.
+// Empirical formula derived from real exports: vol * K / (cellSizeMm * edgeMm²)
+// where K ≈ 1.5 gives ~13% error for typical TPMS/spinodoid at Fine quality.
+function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
+  const g=recipe?.json?.geometry||{};
+  const wallFrac=g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
+                :g.half_width!=null?Math.min(1,(g.half_width*2)/0.30)
+                :g.pipe_radius!=null?Math.min(1,g.pipe_radius/0.18):0.5;
+  let estTris;
+  if(bbox && cellSizeMm){
+    // Shape mode: surface-area model
+    // Triangles ≈ domainVol × wallFrac × 1.5 / (cellSizeMm × edgeMm²)
+    const vol=(bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz);
+    estTris=Math.round(vol*wallFrac*1.5/(cellSizeMm*edgeMm*edgeMm));
+  } else {
+    // Cube mode: small fixed domain, simpler estimate
+    const vol=1000; // 10^3 world units
+    const surfFactor=Math.min(0.3, wallFrac*0.3);
+    estTris=Math.round(vol/Math.pow(edgeMm,3)*surfFactor);
+  }
+  estTris=Math.max(1000, estTris);
+  // Empirical: ~0.08ms per triangle (validated: 305k tris → ~25s)
+  const estSec=Math.max(1,Math.round(estTris*0.00008));
+  return{estTris,estSec};
+}
 window.triggerExport=async function(){
   if(!currentRecipe)return;
+  if(meshWorker){meshWorker.terminate();meshWorker=null;}
   const btn=document.getElementById('expBtn');
   const report=document.getElementById('expReport');
-  const domainEl=document.getElementById('expDomainMm');
-  const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
-  const edgeMm=QUAL_EDGE_MM[currentExportQual]||.10;
-  const edgeWorld=edgeMm*10/domainMm;
-  btn.disabled=true;btn.classList.add('sweeping');btn.textContent='computing…';report.innerHTML='';
-  await new Promise(r=>setTimeout(r,50));
+  btn.disabled=true;btn.classList.add('sweeping');btn.textContent='computing...';report.innerHTML='';
+  // elapsed counter
+  const elapsedEl=document.getElementById('expElapsed');
+  let elapsedSec=0,elapsedTimer=null;
+  if(elapsedEl){elapsedEl.style.display='block';elapsedEl.textContent='elapsed: 0s';
+    elapsedTimer=setInterval(()=>{elapsedSec++;elapsedEl.textContent='elapsed: '+elapsedSec+'s';},1000);}
+
+  // Compute params on main thread (lightweight math only)
+  let workerMsg, scale, domainLabel, edgeLabel;
+  if(importedShape){
+    const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+    const resMult=extractResolutionMultiplier(currentRecipe);
+    const rawRelEdgeMm=(EXPORT_EDGE_FRAC[currentExportQual]/resMult)*cellSizeMm;
+    const {mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
+    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(rawRelEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
+    const simplifyTol=(EXPORT_SIMPLIFY_FRAC[currentExportQual]/resMult)*cellSizeMm;
+    const posBuffer=importedShape.posArr.buffer.slice(0);
+    const idxBuffer=importedShape.idxArr.buffer.slice(0);
+    const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
+    if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
+    coMain.textContent='exporting...';
+    coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
+    overlay.classList.remove('hidden');showCancelBtn(true);
+    scale=1.0;
+    domainLabel=importedShape.meta.bbox;
+    edgeLabel=relEdgeMm.toFixed(2)+'mm';
+    workerMsg={
+      mode:'export',recipe:currentRecipe,
+      shapePos:posBuffer,shapeIdx:idxBuffer,
+      bbox:{mnx,mny,mnz,mxx,mxy,mxz},
+      cellSizeMm,relEdgeMm,simplifyTol,scale
+    };
+  } else {
+    const domainEl=document.getElementById('expDomainMm');
+    const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
+    const edgeMm=QUAL_EDGE_MM[currentExportQual]||.10;
+    const edgeWorld=edgeMm*10/domainMm;
+    const {estTris,estSec}=estimateMeshStats(currentRecipe,edgeWorld,null);
+    coMain.textContent='exporting...';
+    coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
+    overlay.classList.remove('hidden');showCancelBtn(true);
+    scale=domainMm/10;
+    domainLabel=domainMm+'mm';
+    edgeLabel=edgeMm+'mm';
+    workerMsg={mode:'export',recipe:currentRecipe,edgeWorld,simplifyTol:0,scale};
+  }
+
   try{
-    await manifoldReady;
-    if(!ManifoldAPI)throw new Error('Manifold not available.');
-    const sdfFn=buildSDF(currentRecipe);
-    const t0=performance.now();
-    const mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},edgeWorld);
-    const ms=Math.round(performance.now()-t0);
-    if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
-    const mesh=mfld.getMesh(),triCount=mfld.numTri();
-    mfld.delete();
-    btn.textContent='building 3MF…';
-    const scale=domainMm/10;
-    const blob=await buildMinimal3MF(mesh.vertProperties,mesh.triVerts,scale);
+    const worker=new Worker(getWorkerBlobUrl());
+    meshWorker=worker;
+    const result=await new Promise((resolve,reject)=>{
+      worker.onmessage=e=>{
+        const d=e.data;
+        if(d.type==='progress') coSub.textContent=d.stage;
+        else if(d.type==='done') resolve(d);
+        else if(d.type==='error') reject(new Error(d.message));
+      };
+      worker.onerror=e=>reject(new Error(e.message||'Worker error'));
+      if(workerMsg.shapePos){
+        worker.postMessage(workerMsg,[workerMsg.shapePos,workerMsg.shapeIdx]);
+      } else {
+        worker.postMessage(workerMsg);
+      }
+    });
+    if(meshWorker===worker){meshWorker=null;}
+    worker.terminate();
+    if(elapsedTimer)clearInterval(elapsedTimer);
+    hideComputing();showCancelBtn(false);
+    btn.textContent='building 3MF...';
+    const vertProps=new Float32Array(result.vertProperties);
+    const triVerts=new Uint32Array(result.triVerts);
+    const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??scale);
     const j=currentRecipe.json;
     const preset=j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype;
+    const shapeSuffix=importedShape?('_'+importedShape.meta.name.replace(/\.[^.]+$/,'')):'';
     const ts=new Date().toISOString().slice(0,10);
-    const filename=`${currentRecipe.family}_${preset}_${domainMm}mm_${ts}.3mf`;
+    const filename=currentRecipe.family+'_'+preset+shapeSuffix+'_'+ts+'.3mf';
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=filename;a.click();
     URL.revokeObjectURL(url);
-    report.innerHTML=`<div class="exp-report">
-      ${expChip('triangles',triCount.toLocaleString())}
-      ${expChip('domain',domainMm+'mm³')}
-      ${expChip('edge',edgeMm+'mm')}
-      ${expChip('file',(blob.size/1024).toFixed(1)+' KB')}
-      ${expChip('time',ms+'ms')}
-    </div>`;
+    report.innerHTML='<div class="exp-report">'+
+      expChip('triangles',result.triCount.toLocaleString())+
+      expChip('domain',domainLabel)+
+      expChip('edge',edgeLabel)+
+      expChip('file',(blob.size/1024).toFixed(1)+' KB')+
+      expChip('time',result.ms+'ms')+
+    '</div>';
+    if(elapsedEl)elapsedEl.style.display='none';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
   }catch(e){
-    report.innerHTML=`<div class="exp-err">⚠ ${e.message||e}</div>`;
+    if(elapsedTimer)clearInterval(elapsedTimer);
+    if(elapsedEl){elapsedEl.style.display='none';}
+    if(meshWorker){meshWorker.terminate();meshWorker=null;}
+    hideComputing();showCancelBtn(false);
+    report.innerHTML='<div class="exp-err">&#9888; '+(e.message||e)+'</div>';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
     console.error(e);
   }
   btn.disabled=false;
 };
-
 function expChip(l,v){return`<div class="exp-chip">${l} <b>${v}</b></div>`;}
 
 async function buildMinimal3MF(vertProps,triVerts,scale){
@@ -669,26 +1693,50 @@ function showError(m){errorBox.style.display='block';errorBox.textContent='⚠ '
 function clearError(){errorBox.style.display='none';}
 function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';}
 function hideComputing(){overlay.classList.add('hidden');}
+
+function setStale(){
+  const banner=document.getElementById('staleBanner');
+  const btn=document.getElementById('staleRefreshBtn');
+  const area=document.getElementById('previewArea');
+  if(banner){banner.style.display='flex';}
+  if(btn){btn.classList.add('pulsing');}
+  if(area){area.classList.add('preview-stale');}
+}
+function clearStale(){
+  const banner=document.getElementById('staleBanner');
+  const btn=document.getElementById('staleRefreshBtn');
+  const area=document.getElementById('previewArea');
+  if(banner){banner.style.display='none';}
+  if(btn){btn.classList.remove('pulsing');}
+  if(area){area.classList.remove('preview-stale');}
+}
 function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';}
-function setBtns(on){document.getElementById('btnLow').disabled=!on;document.getElementById('btnExact').disabled=!on;}
-function setActivBtn(id){document.getElementById('btnLow').classList.toggle('active',id==='btnLow');document.getElementById('btnExact').classList.toggle('active',id==='btnExact');}
+function setBtns(on){['btnDraft','btnStandard','btnFine'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
+function setActivBtn(id){['btnDraft','btnStandard','btnFine'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 
 async function showRecipe(recipe){
   clearError();currentRecipe=recipe;
   dropzone.style.display='none';recipeView.style.display='flex';
+  document.getElementById('shapeStrip').style.display='block';
   typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
   summaryEl.innerHTML=renderSummary(recipe);
   if(!threeReady){await new Promise(r=>setTimeout(r,60));initThreeJS();}
-  resizeRenderer();setActivBtn('btnLow');triggerMesh(0.30);
+  resizeRenderer();setActivBtn('btnDraft');triggerMesh(0.08);
+  setTimeout(updateExportEstimate,0); // panel renders async
 }
 function resetToDropzone(){
   recipeView.style.display='none';dropzone.style.display='flex';
+  document.getElementById('shapeStrip').style.display='none';
   clearError();triPill.style.display='none';
   overlay.classList.remove('hidden');coMain.textContent='awaiting recipe…';coSub.textContent='';
+  // clear any loaded shape on recipe reset
+  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  clearShapeWire();setShapeUI('idle');
 }
 document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
-document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnLow');triggerMesh(0.30);});
-document.getElementById('btnExact').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnExact');triggerMesh(0.07);});
+document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnDraft');triggerMesh(0.08);});
+document.getElementById('btnStandard').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnStandard');triggerMesh(0.05);});
+document.getElementById('btnFine').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnFine');triggerMesh(0.03);});
 
 
 // ── URL ingestion — auto-load recipe from ?r= parameter ──────────────────
@@ -715,6 +1763,20 @@ fileInput.addEventListener('change',()=>{if(fileInput.files[0])handleFile(fileIn
 document.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover');});
 document.addEventListener('dragleave',e=>{if(!e.relatedTarget)dropzone.classList.remove('dragover');});
 document.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f)handleFile(f);});
+
+// ── Shape strip events ────────────────────────────────────────────────────
+const shapeDZ=document.getElementById('shapeDZ');
+const shapeInput=document.getElementById('shapeInput');
+const SHAPE_EXTS=new Set(['stl','obj','3mf','step','stp','iges','igs']);
+function isShapeFile(f){return f&&SHAPE_EXTS.has(f.name.split('.').pop().toLowerCase());}
+shapeDZ.addEventListener('click',()=>shapeInput.click());
+shapeInput.addEventListener('change',()=>{if(shapeInput.files[0])handleShapeFile(shapeInput.files[0]);shapeInput.value='';});
+shapeDZ.addEventListener('dragover',e=>{e.stopPropagation();e.preventDefault();shapeDZ.classList.add('dragover');});
+shapeDZ.addEventListener('dragleave',e=>{shapeDZ.classList.remove('dragover');});
+shapeDZ.addEventListener('drop',e=>{e.stopPropagation();e.preventDefault();shapeDZ.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f&&isShapeFile(f))handleShapeFile(f);});
+
+// ── Cell size stale detection (event delegation — input is dynamically rendered) ──
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='shapeCellSizeMm'&&importedShape){setStale();}});
 </script>
 </body>
 </html>

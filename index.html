@@ -9,24 +9,36 @@
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/",
-    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm"
+    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js"
   }
 }
 </script>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700&display=swap');
 :root{--bg:#06080f;--panel:#111118;--border:#2a2a3a;--text:#e0e0ff;--muted:#555;--dim:#888;--cyan:#22d3ee;--purple:#7c6ff7;--green:#18f370;--amber:#f59e0b;--fail:#f87171}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
 #container{display:flex;flex-direction:column;height:100vh}
-#hdr{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;flex-shrink:0}
-#hdr h1{font-size:13px;font-weight:500;color:#7c8aaa;letter-spacing:.08em;text-transform:uppercase;flex:1}
-.ver{font-size:10px;color:#3a3a5a;margin-left:6px}
+#hdr{display:flex;align-items:center;justify-content:space-between;background:#06080f;border-bottom:0.5px solid #1a2a1a;padding:0 14px;height:48px;flex-shrink:0;font-family:'Exo 2',system-ui,sans-serif}
+.fh-left{display:flex;align-items:center;gap:10px}
+.fh-brand{display:flex;align-items:center;gap:8px;text-decoration:none}
+.fh-wordmark{font-size:17px;font-weight:700;letter-spacing:0.1em;line-height:1}
+.fh-divider{width:0.5px;height:24px;background:#1a2a1a}
+.fh-tool-name{font-size:15px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;line-height:1}
+.fh-right{display:flex;align-items:center;gap:10px}
+.fh-version{font-size:10px;color:#2a3a2a;letter-spacing:0.1em;font-family:'Exo 2',system-ui,sans-serif}
+.fh-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .mpill{display:flex;align-items:center;gap:5px;background:var(--panel);border:.5px solid var(--border);border-radius:20px;padding:3px 10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
 .mdot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background .3s;flex-shrink:0}
 .mdot.loading{background:var(--amber);animation:pulse 1.2s infinite}
 .mdot.ready{background:var(--cyan)}
 .mdot.error{background:var(--fail)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+#orbSpinner{display:block;margin:0 auto 4px}
+@keyframes orbFade{0%,100%{opacity:.85}50%{opacity:.5}}
+#orbSpinner{animation:orbFade 2s ease-in-out infinite}
+
 #errorBox{display:none;background:rgba(248,113,113,.07);border:.5px solid var(--fail);border-radius:7px;padding:9px 12px;font-size:12px;color:#ffb4b4;margin:0 16px 8px;line-height:1.5}
 #dropzone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 16px 16px;border:.5px dashed var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
 #dropzone:hover,#dropzone.dragover{border-color:var(--cyan);background:rgba(34,211,238,.025)}
@@ -37,7 +49,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 .dz-pick{font-size:11px;color:var(--cyan);margin-top:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 #fileInput{display:none}
 #recipeView{display:none;flex-direction:row;flex:1;margin:0 16px 16px;min-height:0;gap:12px;align-items:stretch}
-#previewArea{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px}
+#previewArea{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px}
 #threeCanvas{position:absolute;inset:0;display:block;width:100%;height:100%}
 #computeOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;background:rgba(6,8,15,.82);z-index:4}
 #computeOverlay.hidden{display:none}
@@ -128,11 +140,11 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #threeCanvas{transition:opacity .25s}
 
 #cellOverlay{position:absolute;bottom:44px;left:10px;z-index:6;display:none;align-items:center;gap:8px;background:rgba(6,8,15,.88);border:.5px solid var(--amber);border-radius:6px;padding:6px 12px}
-#cellOverlay label{font-size:10px;color:var(--amber);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+#cellOverlay label{font-size:12px;font-weight:500;color:var(--amber);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
 #cellSizeDisplay{font-size:18px;font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
 #cellSizeUnit{font-size:10px;color:var(--amber);opacity:.7}
-#cellOverlay input[type=number]{width:60px;font-size:14px;background:transparent;border:none;border-bottom:.5px solid var(--amber);color:var(--amber);font-family:inherit;font-variant-numeric:tabular-nums;text-align:right;outline:none;padding:0 2px}
-#cellOverlay input[type=number]::-webkit-inner-spin-button{opacity:.4}
+#cellOverlay input[type=number]{width:60px;font-size:14px;font-weight:600;background:transparent;border:none;border-bottom:.5px solid var(--cyan);color:var(--cyan);font-family:inherit;font-variant-numeric:tabular-nums;text-align:right;outline:none;padding:0 2px;appearance:none;-moz-appearance:textfield}
+#cellOverlay input[type=number]::-webkit-inner-spin-button,#cellOverlay input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0;display:none}
 
 #expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
 #expElapsed{display:none;font-size:10px;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums}
@@ -141,8 +153,60 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 <body>
 <div id="container">
   <div id="hdr">
-    <h1>F13LD.mesh <span class="ver">v0.1 · step 3</span></h1>
-    <div class="mpill"><div class="mdot loading" id="mdot"></div><span id="mLabel">manifold loading</span></div>
+    <div class="fh-left">
+      <a class="fh-brand" href="https://f13ld.app" target="_blank">
+        <svg width="24" height="24" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs><clipPath id="f13-clip"><path d="M50,5 C91,5 95,9 95,50 C95,91 91,95 50,95 C9,95 5,91 5,50 C5,9 9,5 50,5Z"/></clipPath></defs>
+          <path d="M50,5 C91,5 95,9 95,50 C95,91 91,95 50,95 C9,95 5,91 5,50 C5,9 9,5 50,5Z" fill="#111e13" stroke="#1D9E75" stroke-width="5"/>
+          <g clip-path="url(#f13-clip)" fill="none">
+            <path d="M0,50 Q25,40 50,50 Q75,60 100,50" stroke="#c8f542" stroke-width="6"/>
+            <path d="M50,0 Q40,25 50,50 Q60,75 50,100" stroke="#c8f542" stroke-width="6"/>
+            <path d="M0,31 Q25,21 50,31 Q75,41 100,31" stroke="#2c4e30" stroke-width="3"/>
+            <path d="M0,69 Q25,59 50,69 Q75,79 100,69" stroke="#2c4e30" stroke-width="3"/>
+            <path d="M31,0 Q21,25 31,50 Q41,75 31,100" stroke="#2c4e30" stroke-width="3"/>
+            <path d="M69,0 Q59,25 69,50 Q79,75 69,100" stroke="#2c4e30" stroke-width="3"/>
+            <circle cx="50" cy="50" r="7" fill="#c8f542"/>
+          </g>
+          <path d="M50,5 C91,5 95,9 95,50 C95,91 91,95 50,95 C9,95 5,91 5,50 C5,9 9,5 50,5Z" fill="none" stroke="#1D9E75" stroke-width="5"/>
+        </svg>
+        <div class="fh-wordmark"><span style="color:#1D9E75">F</span><span style="color:#c8f542">1</span><span style="color:#c8f542">3</span><span style="color:#1D9E75">LD</span></div>
+      </a>
+      <div class="fh-divider"></div>
+      <div class="fh-tool-name" style="color:#6B0A4C">MESH</div>
+    </div>
+    <div class="fh-right">
+      <div class="mpill"><div class="mdot loading" id="mdot"></div><span id="mLabel">manifold loading</span></div>
+      <span class="fh-version">v0.3.0</span>
+      <div class="fh-icon" style="background:#FCEAF5">
+        <svg width="18" height="18" viewBox="0 0 40 40">
+          <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="22" y1="4" x2="34" y2="8" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="34" y1="8" x2="30" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="30" y1="18" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="10" y1="8" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="22" y1="4" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="30" y1="18" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="10" y1="8" x2="6" y2="22" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="6" y1="22" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="6" y1="22" x2="10" y2="32" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="10" y1="32" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="10" y1="32" x2="24" y2="30" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="24" y1="30" x2="18" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="24" y1="30" x2="30" y2="18" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="30" y1="18" x2="36" y2="28" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="36" y1="28" x2="24" y2="30" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="10" cy="8" r="1.8" fill="#6B0A4C"/>
+          <circle cx="22" cy="4" r="1.8" fill="#6B0A4C"/>
+          <circle cx="34" cy="8" r="1.8" fill="#6B0A4C"/>
+          <circle cx="18" cy="18" r="1.8" fill="#6B0A4C"/>
+          <circle cx="30" cy="18" r="1.8" fill="#6B0A4C"/>
+          <circle cx="6" cy="22" r="1.8" fill="#6B0A4C"/>
+          <circle cx="10" cy="32" r="1.8" fill="#6B0A4C"/>
+          <circle cx="24" cy="30" r="1.8" fill="#6B0A4C"/>
+          <circle cx="36" cy="28" r="1.8" fill="#6B0A4C"/>
+        </svg>
+      </div>
+    </div>
   </div>
   <div id="errorBox"></div>
   <div id="dropzone">
@@ -153,11 +217,13 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
   <div id="recipeView">
-    <div style="display:flex;flex-direction:column;flex:1;min-height:0;gap:0">
+    <div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;gap:0">
     <div id="previewArea" style="flex:1;min-height:0">
-      <canvas id="threeCanvas"></canvas>
+      <canvas id="rmCanvas"></canvas>
+      <canvas id="threeCanvas" style="display:none"></canvas>
       <div id="computeOverlay">
-        <div class="co-main" id="coMain">awaiting recipe…</div>
+  <canvas id="orbSpinner" width="64" height="64"></canvas>
+      <div class="co-main" id="coMain">awaiting recipe…</div>
         <div class="co-sub"  id="coSub"></div>
         <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer">✕ cancel</button>
       </div>
@@ -165,12 +231,14 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
       <button id="reloadBtn">↩ load different</button>
       <div id="resStrip">
         <button class="res-btn active" id="btnDraft">Draft</button>
-        <button class="res-btn"       id="btnStandard">Standard</button>
-        <button class="res-btn"       id="btnFine">Fine</button>
+        <button class="res-btn"       id="btnLow">Low</button>
+        <button class="res-btn"       id="btnMed">Med</button>
+        <button class="res-btn"       id="btnHigh">High</button>
+        <button class="res-btn"       id="btnUltra">Ultra</button>
       </div>
       <div id="triPill"></div>
       <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span></div>
-      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerMesh(window.currentEdgeFraction||0.05)">↻ Update Preview</button></div>
+      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview('med')">↻ Update Preview</button></div>
     </div>
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
     <div id="shapeStrip" style="display:none">
@@ -196,13 +264,53 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 </div>
 
 <script type="module">
+
+// ── Preview spinner orb ──────────────────────────────────────────────────────
+(function(){
+  const cv=document.getElementById('orbSpinner');
+  if(!cv)return;
+  const ctx=cv.getContext('2d');
+  const W=64,H=64,cx=32,cy=32,R=16,STEPS=220;
+  const harmonics=[[2,.7,4.2],[3,.6,6.1],[5,.5,8.7],[7,.4,5.5],[11,.3,9.3]];
+  let t=0,running=false,raf=null;
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);
+    ctx.strokeStyle='#c8f542';ctx.globalAlpha=.12;ctx.lineWidth=.7;ctx.stroke();
+    ctx.beginPath();
+    for(let i=0;i<=STEPS;i++){
+      const theta=(i/STEPS)*Math.PI*2;
+      let r=R;harmonics.forEach(([f,a,ps])=>{r+=a*Math.sin(f*theta+ps*t);});
+      const x=cx+r*Math.cos(theta),y=cy+r*Math.sin(theta);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.strokeStyle='#c8f542';ctx.globalAlpha=.85;ctx.lineWidth=1.2;ctx.stroke();
+    ctx.beginPath();
+    for(let i=0;i<=STEPS;i++){
+      const theta=(i/STEPS)*Math.PI*2;
+      let r=R;harmonics.forEach(([f,a,ps])=>{r+=a*Math.sin(f*theta+ps*t+.6);});
+      r-=5;
+      const x=cx+r*Math.cos(theta),y=cy+r*Math.sin(theta);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.strokeStyle='#a5d8c8';ctx.globalAlpha=.22;ctx.lineWidth=.7;ctx.stroke();
+    ctx.globalAlpha=1;
+    t+=0.014;
+    if(running)raf=requestAnimationFrame(draw);
+  }
+  window._orbStart=function(){if(running)return;running=true;draw();};
+  window._orbStop=function(){running=false;if(raf){cancelAnimationFrame(raf);raf=null;}ctx.clearRect(0,0,W,H);};
+})();
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as fflate from 'fflate';
+import { MeshBVH, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
+// Extend THREE prototypes for BVH
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
 // ── Manifold ──────────────────────────────────────────────────────────────
 let ManifoldAPI = null;
@@ -217,351 +325,9 @@ const manifoldReady = (async()=>{
   }catch(e){setMS('error','manifold failed');console.error(e);return null;}
 })();
 
-// ── Noise primitives (verbatim port from mesher.js) ───────────────────────
-const Noise=(()=>{
-  function mod289(x){return x-Math.floor(x/289)*289;}
-  function permute(x){return mod289(((x*34)+1)*x);}
-  function tis(r){return 1.79284291400159-0.85373472095314*r;}
-  function snoise(vx,vy,vz){
-    var C0=1/6,C1=1/3,s=(vx+vy+vz)*C1;
-    var ix=Math.floor(vx+s),iy=Math.floor(vy+s),iz=Math.floor(vz+s);
-    var t=(ix+iy+iz)*C0,x0x=vx-ix+t,x0y=vy-iy+t,x0z=vz-iz+t;
-    var gx=x0x>=x0y?1:0,gy=x0y>=x0z?1:0,gz=x0z>=x0x?1:0,lx=1-gx,ly=1-gy,lz=1-gz;
-    var i1x=Math.min(gx,lz),i1y=Math.min(gy,lx),i1z=Math.min(gz,ly);
-    var i2x=Math.max(gx,lz),i2y=Math.max(gy,lx),i2z=Math.max(gz,ly);
-    var x1x=x0x-i1x+C0,x1y=x0y-i1y+C0,x1z=x0z-i1z+C0;
-    var x2x=x0x-i2x+C1,x2y=x0y-i2y+C1,x2z=x0z-i2z+C1;
-    var x3x=x0x-0.5,x3y=x0y-0.5,x3z=x0z-0.5;
-    ix=mod289(ix);iy=mod289(iy);iz=mod289(iz);
-    var p0=permute(permute(permute(iz)+iy)+ix);
-    var p1=permute(permute(permute(iz+i1z)+iy+i1y)+ix+i1x);
-    var p2=permute(permute(permute(iz+i2z)+iy+i2y)+ix+i2x);
-    var p3=permute(permute(permute(iz+1)+iy+1)+ix+1);
-    var nx=0.285714285714,ny=-0.928571428571,nz=0.142857142857;
-    var j0=p0-49*Math.floor(p0*nz*nz),j1=p1-49*Math.floor(p1*nz*nz);
-    var j2=p2-49*Math.floor(p2*nz*nz),j3=p3-49*Math.floor(p3*nz*nz);
-    var x0_=Math.floor(j0*nz),y0_=Math.floor(j0-7*x0_);
-    var x1_=Math.floor(j1*nz),y1_=Math.floor(j1-7*x1_);
-    var x2_=Math.floor(j2*nz),y2_=Math.floor(j2-7*x2_);
-    var x3_=Math.floor(j3*nz),y3_=Math.floor(j3-7*x3_);
-    function grad(xs,ys){var h=1-Math.abs(xs)-Math.abs(ys),sh=h<=0?-1:0;return[xs+(Math.floor(xs)*2+1)*sh,ys+(Math.floor(ys)*2+1)*sh,h];}
-    var g0=grad(x0_*nx+ny,y0_*nx+ny),g1=grad(x1_*nx+ny,y1_*nx+ny),g2=grad(x2_*nx+ny,y2_*nx+ny),g3=grad(x3_*nx+ny,y3_*nx+ny);
-    var n0=tis(g0[0]*g0[0]+g0[1]*g0[1]+g0[2]*g0[2]),n1=tis(g1[0]*g1[0]+g1[1]*g1[1]+g1[2]*g1[2]);
-    var n2=tis(g2[0]*g2[0]+g2[1]*g2[1]+g2[2]*g2[2]),n3=tis(g3[0]*g3[0]+g3[1]*g3[1]+g3[2]*g3[2]);
-    g0[0]*=n0;g0[1]*=n0;g0[2]*=n0;g1[0]*=n1;g1[1]*=n1;g1[2]*=n1;
-    g2[0]*=n2;g2[1]*=n2;g2[2]*=n2;g3[0]*=n3;g3[1]*=n3;g3[2]*=n3;
-    var m0=Math.max(0.6-(x0x*x0x+x0y*x0y+x0z*x0z),0);m0*=m0;
-    var m1=Math.max(0.6-(x1x*x1x+x1y*x1y+x1z*x1z),0);m1*=m1;
-    var m2=Math.max(0.6-(x2x*x2x+x2y*x2y+x2z*x2z),0);m2*=m2;
-    var m3=Math.max(0.6-(x3x*x3x+x3y*x3y+x3z*x3z),0);m3*=m3;
-    return 42*(m0*m0*(g0[0]*x0x+g0[1]*x0y+g0[2]*x0z)+m1*m1*(g1[0]*x1x+g1[1]*x1y+g1[2]*x1z)+
-               m2*m2*(g2[0]*x2x+g2[1]*x2y+g2[2]*x2z)+m3*m3*(g3[0]*x3x+g3[1]*x3y+g3[2]*x3z));
-  }
-  function frac(x){return x-Math.floor(x);}
-  function cellular(px,py,pz,metric){
-    var pix=Math.floor(px),piy=Math.floor(py),piz=Math.floor(pz),pfx=px-pix,pfy=py-piy,pfz=pz-piz,d1=10,d2=10;
-    for(var oz=-1;oz<=1;oz++)for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
-      var cx=pix+ox,cy=piy+oy,cz=piz+oz;
-      var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
-      var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
-      var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
-      var dx=ox+rpx-pfx,dy=oy+rpy-pfy,dz=oz+rpz-pfz;
-      var d=metric==='euclidean'?Math.sqrt(dx*dx+dy*dy+dz*dz):metric==='manhattan'?Math.abs(dx)+Math.abs(dy)+Math.abs(dz):Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
-      if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
-    }
-    return Math.max(Math.min((d2-d1)*2-1,1),-1);
-  }
-  function fbm(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=snoise(px*f,py*f,pz*f)*a;mx+=a;a*=g;f*=l;}return v/mx;}
-  function ridged(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=(1-Math.abs(snoise(px*f,py*f,pz*f)))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
-  function billow(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=Math.abs(snoise(px*f,py*f,pz*f))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
-  function warp(px,py,pz,strength,o,l,g){var qx=fbm(px,py,pz,o,l,g),qy=fbm(px+5.2,py+1.3,pz+8.1,o,l,g),qz=fbm(px+3.7,py+9.4,pz+2.8,o,l,g);return fbm(px+strength*qx,py+strength*qy,pz+strength*qz,o,l,g);}
-  function curl(px,py,pz,step,ps){var s=ps,e=step,psi_x=snoise(px*s,py*s,pz*s),psi_y=snoise(px*s+3.7,py*s+1.5,pz*s+2.8),psi_z=snoise(px*s+1.2,py*s+4.6,pz*s+0.9);var pzy=snoise(px*s+1.2,(py+e)*s+4.6,pz*s+0.9),pyz=snoise(px*s+3.7,py*s+1.5,(pz+e)*s+2.8),pxz=snoise(px*s,py*s,(pz+e)*s),pzx=snoise((px+e)*s+1.2,py*s+4.6,pz*s+0.9),pyx=snoise((px+e)*s+3.7,py*s+1.5,pz*s+2.8),pxy=snoise(px*s,(py+e)*s,pz*s);var cx=(pzy-psi_z)/e-(pyz-psi_y)/e,cy=(pxz-psi_x)/e-(pzx-psi_z)/e,cz=(pyx-psi_y)/e-(pxy-psi_x)/e;return Math.sqrt(cx*cx+cy*cy+cz*cz);}
-  return{snoise,cellular,fbm,ridged,billow,warp,curl};
-})();
 
-// ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
-function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
-function sampleVMF(rng,kappa){
-  if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
-  var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);
-  if(w<-1)w=-1;if(w>1)w=1;var phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-w*w));return[sr*Math.cos(phi),sr*Math.sin(phi),w];
-}
-function rotateTo(v,mux,muy,muz){
-  if(Math.abs(muz+1)<1e-6)return[-v[0],-v[1],-v[2]];if(Math.abs(muz-1)<1e-6)return v.slice();
-  var ax=-muy,ay=mux,al=Math.sqrt(ax*ax+ay*ay);ax/=al;ay/=al;
-  var angle=Math.acos(Math.min(Math.max(muz,-1),1)),c=Math.cos(angle),s=Math.sin(angle),t=1-c,vx=v[0],vy=v[1],vz=v[2];
-  return[(t*ax*ax+c)*vx+(t*ax*ay)*vy+(s*ay)*vz,(t*ax*ay)*vx+(t*ay*ay+c)*vy+(-s*ax)*vz,(-s*ay)*vx+(s*ax)*vy+c*vz];
-}
-function buildSpinodoidWaves(params){
-  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,kappa=params.kappa,mode=params.dirMode;
-  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
-  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34],totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6),waves=[];
-  for(var i=0;i<N;i++){
-    var dir;
-    if(mode==='iso')dir=sampleVMF(rng,0);
-    else if(mode==='single')dir=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
-    else{var r=rng()*totalW,cum=0,chosen=0;for(var a=0;a<3;a++){cum+=weights[a];if(r<=cum){chosen=a;break;}}dir=rotateTo(sampleVMF(rng,kappa),axes[chosen][0],axes[chosen][1],axes[chosen][2]);}
-    var mag=2*Math.PI*freq*(0.85+0.3*rng()),phase=2*Math.PI*rng();
-    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase});
-  }
-  return waves;
-}
-function buildGRFWaves(params){
-  var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,mode=params.dirMode;
-  var sigmafrac=params.grfSigma||.45,k0base=2*Math.PI*freq,waves=[];
-  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
-  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  function randn(){var u=Math.max(rng(),1e-10),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
-  for(var i=0;i<N;i++){
-    var dir=sampleVMF(rng,0),k0;
-    if(mode==='ortho'){var wx=params.wX||.33,wy=params.wY||.33,wz=params.wZ||.34;var tot=Math.max(wx+wy+wz,1e-6);wx/=tot;wy/=tot;wz/=tot;var mW=Math.max(wx,wy,wz);var kS=1/(Math.max(wx*dir[0]*dir[0]+wy*dir[1]*dir[1]+wz*dir[2]*dir[2],.05)/mW);kS=Math.min(Math.max(kS,.3),3);k0=k0base*kS;}
-    else if(mode==='single'){var align=Math.abs(dir[0]*mux+dir[1]*muy+dir[2]*muz);k0=k0base*(1.5-align);}
-    else k0=k0base;
-    var sigma=sigmafrac*k0,mag,tries=0;do{mag=k0+randn()*sigma;tries++;}while(mag<=0&&tries<30);
-    if(mag<=0)mag=k0*.1;
-    waves.push({kx:dir[0]*mag,ky:dir[1]*mag,kz:dir[2]*mag,phase:2*Math.PI*rng()});
-  }
-  return waves;
-}
-function jitteredGrid3D(N,rng){
-  var cells=Math.ceil(Math.pow(N,1/3)),cs=1/cells,pts=[];
-  for(var ix=0;ix<cells;ix++)for(var iy=0;iy<cells;iy++)for(var iz=0;iz<cells;iz++){
-    var px=(ix+.5+(rng()-.5)*.9)*cs,py=(iy+.5+(rng()-.5)*.9)*cs,pz=(iz+.5+(rng()-.5)*.9)*cs;
-    pts.push([Math.max(.01,Math.min(.99,px)),Math.max(.01,Math.min(.99,py)),Math.max(.01,Math.min(.99,pz))]);
-  }
-  for(var i=pts.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var tmp=pts[i];pts[i]=pts[j];pts[j]=tmp;}
-  return pts.slice(0,N);
-}
-function buildHUKernels(params){
-  var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
-  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
-  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
-  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
-  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
-  function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
-  function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}
-  var kernels=[],TP=2*Math.PI;
-  for(var i=0;i<N;i++){
-    var t2;
-    if(mode==='iso')t2=sampleVMF(rng,0);
-    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
-    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
-    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
-    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
-    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
-  }
-  return kernels;
-}
-function evalHUField(kernels,x,y,z){
-  x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
-  var s=0;
-  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
-  return s-.3;
-}
-function evalField(waves,x,y,z,kernels){
-  if(kernels)return evalHUField(kernels,x,y,z);
-  var s=0,N=waves.length;for(var i=0;i<N;i++)s+=Math.cos(waves[i].kx*x+waves[i].ky*y+waves[i].kz*z+waves[i].phase);return s/Math.sqrt(N);
-}
-
-// ── Gray-Scott reaction-diffusion ────────────────────────────────────────
-function buildGrayScott(params, N) {
-  var rng = mulberry32(params.rngSeed||42);
-  var F = params.rdF||0.030, k = params.rdK||0.057;
-  var Du = params.rdDu||0.14, Dv = Du*0.5;
-  var dt = Math.min(1.0, 0.9/(6.0*Du));
-  var steps = params.rdSteps||3000;
-  var u = new Float32Array(N*N*N), v = new Float32Array(N*N*N);
-  for (var i = 0; i < N*N*N; i++) u[i] = 1.0 + (rng()-0.5)*0.02;
-  var nS = Math.max(3, Math.floor(N*N/20));
-  for (var s = 0; s < nS; s++) {
-    var cx=Math.floor(rng()*(N-4))+2, cy=Math.floor(rng()*(N-4))+2, cz=Math.floor(rng()*(N-4))+2;
-    for (var dz=-1;dz<=1;dz++) for (var dy=-1;dy<=1;dy++) for (var dx=-1;dx<=1;dx++) {
-      var ix=(cx+dx+N)%N, iy=(cy+dy+N)%N, iz=(cz+dz+N)%N, id=ix+iy*N+iz*N*N;
-      u[id]=0.5+(rng()-0.5)*0.1; v[id]=0.25+(rng()-0.5)*0.05;
-    }
-  }
-  var u2 = new Float32Array(N*N*N), v2 = new Float32Array(N*N*N), tmp;
-  for (var step = 0; step < steps; step++) {
-    for (var iz=0;iz<N;iz++) { var izm=(iz-1+N)%N, izp=(iz+1)%N;
-      for (var iy=0;iy<N;iy++) { var iym=(iy-1+N)%N, iyp=(iy+1)%N;
-        for (var ix=0;ix<N;ix++) { var ixm=(ix-1+N)%N, ixp=(ix+1)%N;
-          var idx=ix+iy*N+iz*N*N, uc=u[idx], vc=v[idx];
-          var lu=u[ixp+iy*N+iz*N*N]+u[ixm+iy*N+iz*N*N]+u[ix+iyp*N+iz*N*N]+u[ix+iym*N+iz*N*N]+u[ix+iy*N+izp*N*N]+u[ix+iy*N+izm*N*N]-6.0*uc;
-          var lv=v[ixp+iy*N+iz*N*N]+v[ixm+iy*N+iz*N*N]+v[ix+iyp*N+iz*N*N]+v[ix+iym*N+iz*N*N]+v[ix+iy*N+izp*N*N]+v[ix+iy*N+izm*N*N]-6.0*vc;
-          var uv2=uc*vc*vc, nu=uc+dt*(Du*lu-uv2+F*(1.0-uc)), nv=vc+dt*(Dv*lv+uv2-(F+k)*vc);
-          u2[idx]=nu<0?0:nu>1?1:nu; v2[idx]=nv<0?0:nv>1?1:nv;
-        }
-      }
-    }
-    tmp=u; u=u2; u2=tmp; tmp=v; v=v2; v2=tmp;
-  }
-  return u;
-}
-function evalRDField(grid, N, u, v, w) {
-  // u,v,w already in [0,1] (post-tile fract applied by caller)
-  var fx=u*(N-1), fy=v*(N-1), fz=w*(N-1);
-  var x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
-  var x1=(x0+1)%N, y1=(y0+1)%N, z1=(z0+1)%N;
-  var dx=fx-x0, dy=fy-y0, dz=fz-z0;
-  return grid[x0+y0*N+z0*N*N]*(1-dx)*(1-dy)*(1-dz)
-        +grid[x1+y0*N+z0*N*N]*dx*(1-dy)*(1-dz)
-        +grid[x0+y1*N+z0*N*N]*(1-dx)*dy*(1-dz)
-        +grid[x1+y1*N+z0*N*N]*dx*dy*(1-dz)
-        +grid[x0+y0*N+z1*N*N]*(1-dx)*(1-dy)*dz
-        +grid[x1+y0*N+z1*N*N]*dx*(1-dy)*dz
-        +grid[x0+y1*N+z1*N*N]*(1-dx)*dy*dz
-        +grid[x1+y1*N+z1*N*N]*dx*dy*dz;
-}
-
-// ── SDF closures — all return positive-inside (Manifold convention) ───────
-
-function evalNoiseRaw(surf,nx,ny,nz){
-  const t=surf.noise_type||'simplex',o=surf.octaves||4,l=surf.lacunarity||2,g=surf.gain||.5;
-  if(t==='simplex') return Noise.snoise(nx,ny,nz);
-  if(t==='cellular')return Noise.cellular(nx,ny,nz,surf.distance_metric||'euclidean');
-  if(t==='fbm')     return Noise.fbm(nx,ny,nz,o,l,g);
-  if(t==='ridged')  return Noise.ridged(nx,ny,nz,o,l,g);
-  if(t==='billow')  return Noise.billow(nx,ny,nz,o,l,g);
-  if(t==='curl')    return Noise.curl(nx,ny,nz,surf.curl_step||.1,surf.potential_scale||1);
-  return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
-}
-
-function buildNoiseSDF(json){
-  const surf=json.surface,geom=json.geometry||{};
-  const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
-  const PP=16,SCALE=5.0/Math.PI;let mn=Infinity,mx=-Infinity;
-  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
-    const px=((xi/(PP-1))*2-1)*Math.PI;
-    const py=((yi/(PP-1))*2-1)*Math.PI;
-    const pz=((zi/(PP-1))*2-1)*Math.PI;
-    const raw=evalNoiseRaw(surf,px*SCALE*freq*sx,py*SCALE*freq*sy,pz*SCALE*freq*sz);
-    if(raw<mn)mn=raw;if(raw>mx)mx=raw;
-  }
-  const range=mx-mn,noiseMin=mn-range*.05,noiseMax=mx+range*.05;
-  const mid=(noiseMin+noiseMax)*.5,halfR=Math.max((noiseMax-noiseMin)*.5,.001);
-  const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
-  const SCALE2=5.0/Math.PI;
-  return p=>{
-    // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
-    const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
-    const norm=(raw-mid)/halfR;
-    if(mode==='half')   return (geom.half_invert?norm-center:center-norm); // flip side support
-    if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
-    return halfW-Math.abs(norm-center);                  // sheet (default)
-  };
-}
-
-// Raw preset field functions — verbatim from TPMS builder _fn definitions
-const RAW_PRESETS={
-  splitP:       (x,y,z)=>Math.sin(x)*Math.sin(y)*Math.cos(z)+Math.sin(y)*Math.sin(z)*Math.cos(x)+Math.sin(z)*Math.sin(x)*Math.cos(y)-0.3,
-  frd:          (x,y,z)=>Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z)-Math.cos(2*x)*Math.cos(2*y)-Math.cos(2*y)*Math.cos(2*z)-Math.cos(2*z)*Math.cos(2*x)+0.3,
-  fks:          (x,y,z)=>Math.cos(2*x)*Math.sin(y)*Math.cos(z)+Math.cos(2*y)*Math.sin(z)*Math.cos(x)+Math.cos(2*z)*Math.sin(x)*Math.cos(y),
-  gyroidHarmonic:(x,y,z)=>Math.sin(x)*Math.cos(y)+Math.sin(y)*Math.cos(z)+Math.sin(z)*Math.cos(x)+0.3*(Math.sin(2*x)*Math.cos(2*y)+Math.sin(2*y)*Math.cos(2*z)+Math.sin(2*z)*Math.cos(2*x)),
-  primitiveC:   (x,y,z)=>2.0*(Math.cos(x)+Math.cos(y)+Math.cos(z))-(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
-  octo:         (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)-0.5*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x)),
-  pHarmonic:    (x,y,z)=>Math.cos(x)+Math.cos(y)+Math.cos(z)+0.25*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
-  lidinoid:     (x,y,z)=>1.1*(Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z))-0.2*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x))-0.4*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
-};
-
-function buildTPMSSDF(json){
-  const s=json.surface,g=json.geometry||{};
-  const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
-  const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
-  const TP=2*Math.PI;
-
-  // Raw preset path — use the precomputed _fn directly
-  const rawFn = (s.type==='raw_preset') ? (RAW_PRESETS[s.preset]||null) : null;
-  if(s.type==='raw_preset'&&!rawFn)
-    throw new Error('Unknown raw preset: '+s.preset+'. Supported: '+Object.keys(RAW_PRESETS).join(', '));
-
-  // Term-tree path
-  const terms=s.terms||[];
-  function evalFactor(factor,tx,ty,tz){
-    const t=factor.trig;
-    let val=t.includes('(x)')?tx*(factor.fx||1):t.includes('(y)')?ty*(factor.fy||1):t.includes('(z)')?tz*(factor.fz||1):0;
-    if(t.startsWith('sin'))return Math.sin(val);
-    if(t.startsWith('cos'))return Math.cos(val);
-    return 1;
-  }
-  function evalTerms(tx,ty,tz){
-    let sum=0;
-    for(const term of terms){if(!term.on)continue;let prod=term.coef??1;for(const f of term.factors)prod*=evalFactor(f,tx,ty,tz);sum+=prod;}
-    return sum;
-  }
-
-  function evalPhi(tx,ty,tz){
-    return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
-  }
-
-  return p=>{
-    const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
-    const phiA=evalPhi(tx,ty,tz);
-    if(mode==='pi-tpms'){
-      const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
-      return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
-    }
-    if(mode==='solid') return (g.offset||0)-phiA;
-    return ((g.wall_thickness||.3)/2)-Math.abs(phiA-(g.offset||0));
-  };
-}
-
-function buildGrainSDF(json){
-  const f=json.field,g=json.geometry||{};
-  const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
-
-  // ── Reaction-diffusion branch ──────────────────────────────────────
-  if(f.type==='reactiondiffusion'){
-    const N=48;
-    const rdParams={rdF:f.rd_F||0.030,rdK:f.rd_k||0.057,rdDu:f.rd_Du||0.14,rdSteps:f.rd_steps||3000,rngSeed:f.rng_seed||42};
-    const tile=f.rd_tile||1;
-    const grid=buildGrayScott(rdParams,N);
-    function frac(x){return x-Math.floor(x);}
-    return p=>{
-      const u=frac((p[0]/10+0.5)*tile);
-      const v=frac((p[1]/10+0.5)*tile);
-      const w=frac((p[2]/10+0.5)*tile);
-      const raw=evalRDField(grid,N,u,v,w);
-      if(topo==='half') return g.half_invert?(center-raw):(raw-center);
-      if(topo==='solid') return center-raw;
-      return halfW-Math.abs(raw-center);
-    };
-  }
-
-  // ── Wave / kernel branch ───────────────────────────────────────────
-  let dirTheta=0,dirPhi=0;
-  if(f.dir_mode==='single'&&f.principal_direction){
-    const[mx,my,mz]=f.principal_direction;
-    dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
-    dirPhi=Math.atan2(my,mx)*180/Math.PI;
-  }
-  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
-  const isHU=f.type==='hyperuniform';
-  const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
-  const kernels=isHU?buildHUKernels(params):null;
-  const PI5=Math.PI/5;
-  return p=>{
-    let raw;
-    if(isHU){
-      raw=evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10);
-    }else{
-      raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
-    }
-    if(topo==='half') return g.half_invert?(center-raw):(raw-center);
-    return halfW-Math.abs(raw-center);
-  };
-}
-
-function buildSDF(recipe){
-  if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
-  if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
-  if(recipe.family==='grain')return buildGrainSDF(recipe.json);
-  throw new Error('No evaluator for family: '+recipe.family);
-}
-
-// ── Three.js scene ────────────────────────────────────────────────────────
-let scene,camera,renderer,controls,meshObj;let threeReady=false;
+// ── Three.js scene (lazy, export-result display only) ────────────────────────
+let scene,camera,renderer,meshObj;let threeReady=false;
 function initThreeJS(){
   const canvas=document.getElementById('threeCanvas');
   const w=canvas.clientWidth||400,h=canvas.clientHeight||300;
@@ -572,15 +338,23 @@ function initThreeJS(){
   scene.add(new THREE.AmbientLight(0x3a4060,1.2));
   const key=new THREE.DirectionalLight(0xd0d8ff,1.4);key.position.set(8,12,10);scene.add(key);
   const fill=new THREE.DirectionalLight(0x4466aa,.5);fill.position.set(-8,-4,-6);scene.add(fill);
-  controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.06;controls.minDistance=2;controls.maxDistance=50;
-  new ResizeObserver(()=>resizeRenderer()).observe(document.getElementById('previewArea'));
-  (function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);})();
+  new ResizeObserver(()=>{
+    if(!renderer)return;const area=document.getElementById('previewArea');
+    const w=area.clientWidth,h=area.clientHeight;if(!w||!h)return;
+    camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+  }).observe(document.getElementById('previewArea'));
+  (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
   threeReady=true;
 }
-function resizeRenderer(){
-  if(!renderer)return;const area=document.getElementById('previewArea');
-  const w=area.clientWidth,h=area.clientHeight;if(!w||!h)return;
-  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+// Canvas visibility helpers
+function showRaymarcherCanvas(){
+  document.getElementById('rmCanvas').style.display='block';
+  document.getElementById('threeCanvas').style.display='none';
+}
+function showExportCanvas(){
+  if(!threeReady) initThreeJS();
+  document.getElementById('threeCanvas').style.display='block';
+  document.getElementById('rmCanvas').style.display='none';
 }
 function displayMesh(mMesh, displayNorm){
   if(meshObj){scene.remove(meshObj);meshObj.geometry.dispose();meshObj.material.dispose();meshObj=null;}
@@ -629,6 +403,393 @@ function displayShapeWire(pos, idx, displayNorm) {
 function clearShapeWire(){
   if(shapeWireObj){scene.remove(shapeWireObj);shapeWireObj.geometry.dispose();shapeWireObj.material.dispose();shapeWireObj=null;}
 }
+// ── Shape SDF generation (three-mesh-bvh, CPU, N³ grid) ─────────────────────
+// Returns { data: Float32Array, N, sdfMin, sdfMax } in mm.
+// Sign: positive outside shape, negative inside (standard SDF convention).
+// Magnitude from bvh.closestPointToPoint; sign from raycast-parity (odd hit
+// count = inside). Robust for watertight meshes — avoids the face-normal
+// sign-flip that occurs when the closest point lies on a shared edge or vertex.
+// Module-level cancellation flag for the SDF bake. Set by window._cancelSdfBake
+// (wired into cancelMesh so the existing ✕ cancel button aborts main-thread bakes
+// just like it terminates worker jobs).
+let _sdfBakeAborted=false;
+async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
+  _sdfBakeAborted=false;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geo.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  geo.computeBoundsTree();
+  const bvh = geo.boundsTree;
+  const dx=bbox.mxx-bbox.mnx, dy=bbox.mxy-bbox.mny, dz=bbox.mxz-bbox.mnz;
+  const grid = new Float32Array(N*N*N);
+  let minV=Infinity, maxV=-Infinity;
+  const qp = new THREE.Vector3();
+  const closest = {point: new THREE.Vector3()};
+  // Reused ray for parity test. Irrational direction (non-axis-aligned,
+  // non-rational components) avoids grazing coplanar faces and mesh edges.
+  const ray = new THREE.Ray();
+  ray.direction.set(0.9732, 0.1894, 0.1225).normalize();
+  // Time-based yield cadence: yield to the browser every ~16ms of elapsed
+  // work so the UI (orb spinner, overlay text) animates at ~60fps during the
+  // bake. Fixed slice-count yields break down at higher N — at N=128, a single
+  // slice can take 50-80ms on typical meshes, so even "every 1 slice" would
+  // miss frames. Time-based is robust to any N and any per-voxel cost.
+  let lastYield=performance.now();
+  for(let iz=0; iz<N; iz++){
+    for(let iy=0; iy<N; iy++){
+      for(let ix=0; ix<N; ix++){
+        qp.set(
+          bbox.mnx+(ix+0.5)/N*dx,
+          bbox.mny+(iy+0.5)/N*dy,
+          bbox.mnz+(iz+0.5)/N*dz
+        );
+        // Magnitude: distance to the closest surface point.
+        bvh.closestPointToPoint(qp, closest);
+        const dist = qp.distanceTo(closest.point);
+        // Sign: raycast-parity. Count all surface crossings along the ray;
+        // odd count => query is inside the (watertight) shape.
+        ray.origin.copy(qp);
+        const hits = bvh.raycast(ray, THREE.DoubleSide);
+        const inside = (hits.length & 1) === 1;
+        const val = inside ? -dist : dist;
+        grid[ix+iy*N+iz*N*N] = val;
+        if(val<minV) minV=val;
+        if(val>maxV) maxV=val;
+      }
+    }
+    if(performance.now()-lastYield>16){
+      await new Promise(r=>setTimeout(r,0));
+      lastYield=performance.now();
+      if(_sdfBakeAborted){geo.disposeBoundsTree();geo.dispose();throw new Error('cancelled');}
+      if(onProgress) onProgress((iz+1)/N);
+    }
+  }
+  geo.disposeBoundsTree(); geo.dispose();
+  return {data:grid, N, sdfMin:minV, sdfMax:maxV};
+}
+window._cancelSdfBake=function(){_sdfBakeAborted=true;};
+// ── MeshRaymarcher — WebGL2 raymarcher for combined scaffold + shape preview ──
+// Adapted from F13LD Grain tool. Two TEXTURE_3D slots:
+//   unit 0 → scaffold SDF baked to N³ grid in world [-5,5]³
+//   unit 1 → shape SDF baked to N³ grid in mm (from three-mesh-bvh)
+function MeshRaymarcher(canvas){
+  this.canvas=canvas;
+  this.gl=canvas.getContext('webgl2');
+  if(!this.gl){console.error('[MeshRaymarcher] WebGL2 not available');return;}
+  var gl=this.gl;
+  this._khr=gl.getExtension('KHR_parallel_shader_compile')||null;
+  this._pendingProg=null; this._compiling=false;
+  this.prog=null; this.quadBuf=null;
+  this.camZoom=16; this._dirty=false;
+  this.rotMat=this._mat3Mul(this._rotAA(0,1,0,0.7),this._rotAA(1,0,0,0.5));
+  this.fieldTex=null; this.shapeTex=null;
+  this.fieldMin=0; this.fieldMax=1; this.lipschitz=1.0; this.bakeN=64;
+  this.topology=null;
+  this.hasShape=false; this.shapeData=null; this.viewH=5.0;
+  this.worldMin=[-5,-5,-5]; this.worldMax=[5,5,5]; this.isPeriodic=true;
+  this._quality='draft';
+  this.quadBuf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  this._setupInteraction();
+  this._startLoop();
+}
+MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
+  var gl=this.gl;
+  if(slot==='shape'){
+    // Shape SDF: R16F stores raw mm distances directly. LINEAR filtering of
+    // R16F is core WebGL 2.0 — no extension dependency. Precision is ~0.01mm
+    // at SDF=10mm range (vs R8's 0.09mm), which eliminates the gradient step-
+    // wise noise responsible for specular speckle on cap surfaces. R16F range
+    // (±65504) comfortably exceeds any realistic shape bbox distance.
+    if(!this.shapeTex)this.shapeTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D,this.shapeTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,data);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_3D,null);
+  }else{
+    // Scaffold raw field: R8 is fine — field varies smoothly, topology applied in shader.
+    var range=Math.max(maxV-minV,1e-6);
+    var bytes=new Uint8Array(N*N*N);
+    for(var i=0;i<data.length;i++)bytes[i]=Math.round(Math.max(0,Math.min(1,(data[i]-minV)/range))*255);
+    if(!this.fieldTex)this.fieldTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    // REPEAT so hardware LINEAR filtering interpolates continuously across
+    // period boundaries. Periodic scaffolds pass raw uvw to the sampler (no
+    // fract()); non-periodic scaffolds clamp uvw to [0,1] in the shader so
+    // REPEAT here is a no-op for them. Using CLAMP_TO_EDGE would flatten the
+    // field in the half-voxel skin along each boundary plane and create a
+    // discontinuity the ray marcher can't traverse cleanly.
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.REPEAT);
+    gl.bindTexture(gl.TEXTURE_3D,null);
+  }
+  this._dirty=true;
+};
+MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lipschitz,topology){
+  this._uploadTexture3D(data,N,fieldMin,fieldMax,'field');
+  this.fieldMin=fieldMin; this.fieldMax=fieldMax;
+  this.lipschitz=lipschitz; this.bakeN=N;
+  this.topology=topology||null;
+};
+MeshRaymarcher.prototype.setShapeSDF=function(sdfGrid,bbox,cellSizeMm){
+  var d=sdfGrid;
+  this._uploadTexture3D(d.data,d.N,d.sdfMin,d.sdfMax,'shape');
+  // viewH: shape max half-extent in world units so full shape fills view box
+  var maxDim=Math.max(bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz);
+  this.viewH=Math.ceil(maxDim/2*(10/cellSizeMm)*1.05); // 5% padding
+  this.camZoom=this.viewH*3.2;
+  this.shapeData={
+    N:d.N, sdfMin:d.sdfMin, sdfMax:d.sdfMax,
+    bboxMin:[bbox.mnx,bbox.mny,bbox.mnz],
+    bboxSize:[bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz],
+    cellSizeMm:cellSizeMm
+  };
+  this.hasShape=true;
+};
+MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
+  // Live update when the user changes the cell-size input. No SDF re-bake —
+  // the grid is in mm and doesn't depend on cell size; only the world↔mm
+  // scaling (uCellSizeMm), the ray-march volume extent (viewH), and the
+  // shape-SDF Lipschitz change. Camera zoom is scaled proportionally so the
+  // user's current framing survives the rescale.
+  if(!this.hasShape||!this.shapeData)return;
+  var sd=this.shapeData;
+  if(!(cellSizeMm>0)||cellSizeMm===sd.cellSizeMm)return;
+  sd.cellSizeMm=cellSizeMm;
+  var maxDim=Math.max(sd.bboxSize[0],sd.bboxSize[1],sd.bboxSize[2]);
+  var oldViewH=this.viewH;
+  this.viewH=Math.ceil(maxDim/2*(10/cellSizeMm)*1.05);
+  var zoomLo=this.viewH*0.3,zoomHi=Math.max(80,this.viewH*8);
+  this.camZoom=Math.min(zoomHi,Math.max(zoomLo,this.camZoom*(this.viewH/oldViewH)));
+  this._dirty=true;
+};
+MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._dirty=true;};
+MeshRaymarcher.prototype.setWorldBounds=function(wMin,wMax,isPeriodic){this.worldMin=wMin;this.worldMax=wMax;this.isPeriodic=isPeriodic!==false;this._dirty=true;};
+MeshRaymarcher.prototype.setQuality=function(q){
+  if(this._quality===q&&this.prog)return;
+  this._quality=q;
+  this._submitShader();
+};
+MeshRaymarcher.prototype._buildShader=function(){
+  var steps={draft:'128',low:'256',med:'512',high:'1024',ultra:'2048'}[this._quality]||'256';
+  return [
+    '#version 300 es',
+    'precision highp float;precision highp sampler3D;',
+    'out vec4 fragColor;',
+    'uniform vec2 res;uniform mat3 rot;uniform float zoom;',
+    'uniform highp sampler3D uField;uniform float uFieldMin;uniform float uFieldMax;uniform float uLipschitz;',
+    'uniform highp sampler3D uShapeSDF;',
+    'uniform vec3 uBboxMin;uniform vec3 uBboxSize;',
+    'uniform float uCellSizeMm;uniform float uHasShape;',
+    'uniform float uViewH;',
+    'uniform float uIsPeriodic;',
+    'uniform vec3 uWorldMin;uniform vec3 uWorldSize;',
+    'uniform float uNrmStep;',
+    'uniform float uBakeRaw;uniform float uFieldMid;uniform float uFieldHalfR;',
+    'uniform float uCenter;uniform float uHalfW;uniform float uTopoMode;uniform float uHalfInvert;',
+    'float sampleRaw(vec3 p){vec3 uvw;if(uIsPeriodic>0.5)uvw=(p-uWorldMin)/uWorldSize;else uvw=clamp((p-uWorldMin)/uWorldSize,0.0,1.0);float t=texture(uField,uvw).r;return t*(uFieldMax-uFieldMin)+uFieldMin;}',
+    'float rawToSDF(float raw){float val;if(uBakeRaw>0.5){float norm=(raw-uFieldMid)/uFieldHalfR;float adj=norm-uCenter;if(uTopoMode<0.5)val=abs(adj)-uHalfW;else if(uTopoMode<1.5)val=uHalfInvert>0.5?adj:-adj;else val=uHalfW-abs(adj);}else val=-raw;return val;}',
+    'float sampleShape(vec3 p){vec3 pm=p*(uCellSizeMm/10.0);vec3 uvw=(pm-uBboxMin)/uBboxSize;if(any(lessThan(uvw,vec3(0.0)))||any(greaterThan(uvw,vec3(1.0)))){vec3 bmax=uBboxMin+uBboxSize;vec3 q=max(uBboxMin-pm,pm-bmax);return length(max(q,vec3(0.0)))*(10.0/uCellSizeMm);}float d_mm=texture(uShapeSDF,uvw).r;return d_mm*(10.0/uCellSizeMm);}',
+    'float implicit(vec3 p){float sc=rawToSDF(sampleRaw(p));if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    'vec3 boxNormal(vec3 pos){vec3 ap=abs(pos)/uViewH;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
+    // Separated normals: scaffold gradient when scaffold surface, shape gradient when shape surface.
+    // This prevents the sphere-boundary SDF transition from corrupting scaffold normals at silhouettes.
+    'vec3 nrmScaffold(vec3 p){float e=uNrmStep;return normalize(vec3(rawToSDF(sampleRaw(p+vec3(e,0,0)))-rawToSDF(sampleRaw(p-vec3(e,0,0))),rawToSDF(sampleRaw(p+vec3(0,e,0)))-rawToSDF(sampleRaw(p-vec3(0,e,0))),rawToSDF(sampleRaw(p+vec3(0,0,e)))-rawToSDF(sampleRaw(p-vec3(0,0,e)))));}',
+    'vec3 nrmShape(vec3 p){float e=uNrmStep;return normalize(vec3(sampleShape(p+vec3(e,0,0))-sampleShape(p-vec3(e,0,0)),sampleShape(p+vec3(0,e,0))-sampleShape(p-vec3(0,e,0)),sampleShape(p+vec3(0,0,e))-sampleShape(p-vec3(0,0,e))));}',
+    'vec3 nrmField(vec3 p){if(uHasShape>0.5){float sc=rawToSDF(sampleRaw(p));float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
+    'vec3 palette(float t){vec3 a=vec3(0.55,0.57,0.42),b=vec3(0.43,0.42,0.30),c=vec3(1.0,1.0,1.0),d=vec3(0.02,0.0,0.05);return clamp(a+b*cos(6.28318*(c*t+d)),0.0,1.0);}',
+    'void main(){',
+    '  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
+    '  vec3 ro=rot*vec3(0.0,0.0,zoom);vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));',
+    '  float r=clamp(length(uv)*1.1,0.0,1.0);',
+    '  vec3 bgCol=mix(vec3(0.07,0.07,0.07),vec3(0.03,0.03,0.03),r*r);',
+    '  vec3 H3=vec3(uViewH);',
+    '  vec3 iv=vec3(1.0)/rd;vec3 tb=(-H3-ro)*iv,tt=(H3-ro)*iv;',
+    '  vec3 tmi=min(tb,tt),tma=max(tb,tt);',
+    '  float tEn=max(max(tmi.x,tmi.y),tmi.z);float tEx=min(min(tma.x,tma.y),tma.z);',
+    '  if(tEn>tEx||tEx<0.0){fragColor=vec4(bgCol,1.0);return;}',
+    '  float t=max(tEn,0.001);bool hit=false;bool nearCap=false;',
+    '  float thresh=-0.004;float maxStep=uViewH/10.0;',
+    '  if(implicit(ro+rd*t)<thresh)nearCap=true;',
+    '  if(!nearCap){for(int i=0;i<'+steps+';i++){if(t>tEx)break;vec3 p=ro+rd*t;float d=implicit(p);if(d<thresh){hit=true;break;}t+=clamp(d/uLipschitz*0.85,0.001,maxStep);}}',
+    '  vec3 pos;vec3 n;',
+    '  if(nearCap){pos=ro+rd*tEn;n=boxNormal(pos);if(dot(n,-rd)<0.0)n=-n;t=tEn;}',
+    '  else if(hit){pos=ro+rd*t;n=nrmField(pos);if(dot(n,-rd)<0.0)n=-n;}',
+    '  else{if(implicit(ro+rd*tEx)<thresh){pos=ro+rd*tEx;n=boxNormal(pos);if(dot(n,-rd)<0.0)n=-n;t=tEx;}else{fragColor=vec4(bgCol,1.0);return;}}',
+    '  float dy=dot(n,vec3(0.0,1.0,0.0)),dz=dot(n,vec3(0.0,0.0,1.0));float hue=dy*dy*0.33+dz*dz*0.67;',
+    '  vec3 iridBase=palette(hue);vec3 iridShift=palette(hue+0.5);',
+    '  vec3 l1=normalize(vec3(1.0,1.8,2.0)),l2=normalize(vec3(-0.8,-0.3,0.6));',
+    '  float l3=max(dot(n,normalize(vec3(-0.5,-1.0,-1.5))),0.0)*0.3;',
+    '  float diff=0.35+max(dot(n,l1),0.0)*0.7+max(dot(n,l2),0.0)*0.25+l3;',
+    '  float spec1=pow(max(dot(reflect(-l1,n),-rd),0.0),120.0)*0.7;',
+    '  float spec2=pow(max(dot(reflect(-l1,n),-rd),0.0),20.0)*0.2;',
+    '  float rim=pow(1.0-max(dot(n,-rd),0.0),2.5)*0.8;',
+    '  vec3 green=vec3(0.784,0.961,0.259);',
+    '  vec3 col=iridBase*diff+vec3(1.0)*spec1+green*spec2*0.6+green*rim*0.45;',
+    '  col=mix(bgCol,col,exp(-(t-tEn)*(0.075/uViewH)));',
+    '  fragColor=vec4(clamp(col,0.0,1.0),1.0);}',
+  ].join('\n');
+};
+MeshRaymarcher.prototype._mkShader=function(type,src){
+  var gl=this.gl,s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    console.error('Shader error:',gl.getShaderInfoLog(s));return null;
+  }
+  return s;
+};
+MeshRaymarcher.prototype._submitShader=function(){
+  var gl=this.gl;
+  var vs='#version 300 es\nin vec2 p;void main(){gl_Position=vec4(p,0.0,1.0);}';
+  var fs=this._buildShader();
+  var vs_=this._mkShader(gl.VERTEX_SHADER,vs);
+  var fs_=this._mkShader(gl.FRAGMENT_SHADER,fs);
+  if(!vs_||!fs_)return;
+  var prg=gl.createProgram();
+  gl.attachShader(prg,vs_);gl.attachShader(prg,fs_);gl.linkProgram(prg);
+  gl.deleteShader(vs_);gl.deleteShader(fs_);
+  if(this._pendingProg)gl.deleteProgram(this._pendingProg);
+  this._pendingProg=prg; this._compiling=true;
+};
+MeshRaymarcher.prototype._activateUniforms=function(){
+  var gl=this.gl,p=this.prog;
+  this._uRes=gl.getUniformLocation(p,'res');
+  this._uRot=gl.getUniformLocation(p,'rot');
+  this._uZoom=gl.getUniformLocation(p,'zoom');
+  this._uField=gl.getUniformLocation(p,'uField');
+  this._uFieldMin=gl.getUniformLocation(p,'uFieldMin');
+  this._uFieldMax=gl.getUniformLocation(p,'uFieldMax');
+  this._uLipschitz=gl.getUniformLocation(p,'uLipschitz');
+  this._uShapeSDF=gl.getUniformLocation(p,'uShapeSDF');
+  this._uBboxMin=gl.getUniformLocation(p,'uBboxMin');
+  this._uBboxSize=gl.getUniformLocation(p,'uBboxSize');
+
+  this._uCellSizeMm=gl.getUniformLocation(p,'uCellSizeMm');
+  this._uHasShape=gl.getUniformLocation(p,'uHasShape');
+  this._uViewH=gl.getUniformLocation(p,'uViewH');
+  this._uNrmStep=gl.getUniformLocation(p,'uNrmStep');
+  this._uIsPeriodic=gl.getUniformLocation(p,'uIsPeriodic');
+  this._uWorldMin=gl.getUniformLocation(p,'uWorldMin');
+  this._uWorldSize=gl.getUniformLocation(p,'uWorldSize');
+  this._uBakeRaw=gl.getUniformLocation(p,'uBakeRaw');
+  this._uFieldMid=gl.getUniformLocation(p,'uFieldMid');
+  this._uFieldHalfR=gl.getUniformLocation(p,'uFieldHalfR');
+  this._uCenter=gl.getUniformLocation(p,'uCenter');
+  this._uHalfW=gl.getUniformLocation(p,'uHalfW');
+  this._uTopoMode=gl.getUniformLocation(p,'uTopoMode');
+  this._uHalfInvert=gl.getUniformLocation(p,'uHalfInvert');
+  this._pLoc=gl.getAttribLocation(p,'p');
+  this._dirty=true;
+};
+MeshRaymarcher.prototype.render=function(){
+  var gl=this.gl;if(!gl)return;
+  // Async compile check
+  if(this._compiling&&this._pendingProg){
+    var ready=!this._khr||gl.getProgramParameter(this._pendingProg,this._khr.COMPLETION_STATUS_KHR);
+    if(ready){
+      if(gl.getProgramParameter(this._pendingProg,gl.LINK_STATUS)){
+        if(this.prog)gl.deleteProgram(this.prog);
+        this.prog=this._pendingProg;
+        this._activateUniforms();
+      }else{console.error('Link error:',gl.getProgramInfoLog(this._pendingProg));gl.deleteProgram(this._pendingProg);}
+      this._pendingProg=null;this._compiling=false;
+    }
+  }
+  if(!this.prog||!this.fieldTex||!this._dirty)return;
+  this._dirty=false;
+  // Resize canvas
+  var area=document.getElementById('previewArea');
+  var dpr=Math.min(window.devicePixelRatio||1,1.5);
+  var w=Math.round((area?area.clientWidth:400)*dpr);
+  var h=Math.round((area?area.clientHeight:300)*dpr);
+  if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+  gl.viewport(0,0,w,h);
+  gl.useProgram(this.prog);
+  gl.uniform2f(this._uRes,w,h);
+  gl.uniformMatrix3fv(this._uRot,false,new Float32Array(this.rotMat));
+  gl.uniform1f(this._uZoom,this.camZoom);
+  gl.uniform1f(this._uFieldMin,this.fieldMin);
+  gl.uniform1f(this._uFieldMax,this.fieldMax);
+  var wn=this.worldMin,wx=this.worldMax;
+  gl.uniform1f(this._uViewH,this.viewH);
+  // nrmStep = half voxel size in world units — matches local surface scale, not global field gradient
+  var voxelSize=(wx[0]-wn[0])/Math.max(this.bakeN,1);
+  gl.uniform1f(this._uNrmStep,Math.max(voxelSize,0.01));
+  // Shape SDF Lipschitz in world units = 10/cellSizeMm (from d_mm*(10/cellSizeMm) scaling).
+  // Using 1.0 causes 5× overshoot at 2mm cells, jumping past boundaries into phantom hits.
+  var shapeLip=(this.hasShape&&this.shapeData)?(10.0/this.shapeData.cellSizeMm):0.0;
+  gl.uniform1f(this._uLipschitz,Math.max(this.lipschitz,shapeLip));
+  gl.uniform1f(this._uIsPeriodic,this.isPeriodic?1.0:0.0);
+  gl.uniform3f(this._uWorldMin,wn[0],wn[1],wn[2]);
+  gl.uniform3f(this._uWorldSize,wx[0]-wn[0],wx[1]-wn[1],wx[2]-wn[2]);
+  var topo=this.topology||{};
+  gl.uniform1f(this._uBakeRaw,topo.bakeRaw?1.0:0.0);
+  var fmid=(this.fieldMin+this.fieldMax)*0.5;
+  var fhr=Math.max((this.fieldMax-this.fieldMin)*0.5,0.001);
+  gl.uniform1f(this._uFieldMid,fmid);gl.uniform1f(this._uFieldHalfR,fhr);
+  gl.uniform1f(this._uCenter,topo.center!=null?topo.center:0.0);
+  gl.uniform1f(this._uHalfW,topo.halfW!=null?topo.halfW:0.15);
+  var tm=topo.topoMode||'sheet';
+  gl.uniform1f(this._uTopoMode,tm==='half'?1.0:tm==='solid'?2.0:0.0);
+  gl.uniform1f(this._uHalfInvert,topo.halfInvert?1.0:0.0);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
+  gl.uniform1f(this._uHasShape,this.hasShape&&this.shapeTex?1.0:0.0);
+  if(this.hasShape&&this.shapeTex&&this.shapeData){
+    var sd=this.shapeData;
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,this.shapeTex);gl.uniform1i(this._uShapeSDF,1);
+    gl.uniform3f(this._uBboxMin,sd.bboxMin[0],sd.bboxMin[1],sd.bboxMin[2]);
+    gl.uniform3f(this._uBboxSize,sd.bboxSize[0],sd.bboxSize[1],sd.bboxSize[2]);
+    gl.uniform1f(this._uCellSizeMm,sd.cellSizeMm);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
+  gl.enableVertexAttribArray(this._pLoc);
+  gl.vertexAttribPointer(this._pLoc,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+};
+MeshRaymarcher.prototype._startLoop=function(){
+  var self=this;
+  self._loopRunning=true;
+  var lastTs=0;
+  function loop(ts){
+    var dt=Math.min((ts-lastTs)/1000,0.05);lastTs=ts;
+    if(self._dirty||self._compiling){
+      self.rotMat=self._orthonorm(self.rotMat);
+      self.render();
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  new ResizeObserver(function(){self._dirty=true;}).observe(document.getElementById('previewArea'));
+};
+MeshRaymarcher.prototype._rotAA=function(ax,ay,az,angle){var c=Math.cos(angle),s=Math.sin(angle),t2=1-c;var l=Math.sqrt(ax*ax+ay*ay+az*az)||1;ax/=l;ay/=l;az/=l;return[t2*ax*ax+c,t2*ax*ay+s*az,t2*ax*az-s*ay,t2*ax*ay-s*az,t2*ay*ay+c,t2*ay*az+s*ax,t2*ax*az+s*ay,t2*ay*az-s*ax,t2*az*az+c];};
+MeshRaymarcher.prototype._mat3Mul=function(A,B){var r=new Array(9);for(var c=0;c<3;c++)for(var row=0;row<3;row++)r[c*3+row]=A[0*3+row]*B[c*3+0]+A[1*3+row]*B[c*3+1]+A[2*3+row]*B[c*3+2];return r;};
+MeshRaymarcher.prototype._orthonorm=function(m){function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}function scl(a,s){return[a[0]*s,a[1]*s,a[2]*s];}function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}function nrm(a){var l=Math.sqrt(dot(a,a))||1;return[a[0]/l,a[1]/l,a[2]/l];}var x=[m[0],m[1],m[2]],y=[m[3],m[4],m[5]],z=[m[6],m[7],m[8]];x=nrm(x);y=nrm(sub(y,scl(x,dot(y,x))));z=nrm(sub(sub(z,scl(x,dot(z,x))),scl(y,dot(z,y))));return[x[0],x[1],x[2],y[0],y[1],y[2],z[0],z[1],z[2]];};
+MeshRaymarcher.prototype._applyDelta=function(dx,dy){if(Math.abs(dx)>0.001){var ux=this.rotMat[3],uy=this.rotMat[4],uz=this.rotMat[5];this.rotMat=this._mat3Mul(this._rotAA(ux,uy,uz,-dx*0.007),this.rotMat);this._dirty=true;}if(Math.abs(dy)>0.001){var rx=this.rotMat[0],ry=this.rotMat[1],rz=this.rotMat[2];this.rotMat=this._mat3Mul(this._rotAA(rx,ry,rz,-dy*0.007),this.rotMat);this._dirty=true;}};
+MeshRaymarcher.prototype._setupInteraction=function(){
+  var self=this,drag=false,lx=0,ly=0;
+  this.canvas.onmousedown=function(e){drag=true;lx=e.clientX;ly=e.clientY;self.autoRot=false;};
+  window.addEventListener('mouseup',function(){drag=false;});
+  window.addEventListener('mousemove',function(e){if(drag){self._applyDelta(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;}});
+  this.canvas.addEventListener('touchstart',function(e){drag=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;self.autoRot=false;e.preventDefault();},{passive:false});
+  window.addEventListener('touchend',function(){drag=false;});
+  window.addEventListener('touchmove',function(e){if(drag){self._applyDelta(e.touches[0].clientX-lx,e.touches[0].clientY-ly);lx=e.touches[0].clientX;ly=e.touches[0].clientY;e.preventDefault();}},{passive:false});
+  this.canvas.addEventListener('wheel',function(e){var maxZ=Math.max(80,self.viewH*8);self.camZoom=Math.max(self.viewH*0.3,Math.min(maxZ,self.camZoom+e.deltaY*0.04));self._dirty=true;e.preventDefault();},{passive:false});
+};
+// Instantiate global raymarcher
+const rm = new MeshRaymarcher(document.getElementById('rmCanvas'));
+
+
 
 // ── Lazy-load occt-import-js (only when STEP/IGES dropped) ───────────────
 async function getOCCT(){
@@ -733,6 +894,8 @@ async function handleShapeFile(file){
   setShapeUI('loading', name);
   clearShapeWire();
   if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  if(rm) rm.clearShape();
+  showComputing('loading shape…','parsing file');
   try{
     let pos, idx, format;
     if(ext==='stl'){
@@ -772,18 +935,47 @@ async function handleShapeFile(file){
     const posArr = new Float32Array(pos);
     const idxArr = new Uint32Array(idx);
     const tris=Math.floor(idxArr.length/3);
-    const bbox=computeShapeBbox(posArr); // shape stays in mm — no vertex transform
-    const manifold=await buildShapeManifold(posArr, idxArr);
-    // suggest cell size as ~1/5 of the longest dimension (user can override)
+    // Center the shape on world origin. STEP/IGES files preserve the CAD
+    // assembly position (could be far from origin); STL/OBJ files vary by
+    // authoring tool. The preview camera is origin-centered with a view box
+    // sized from bbox.maxDim, so any offset leaves the shape partially or
+    // fully out of view. Translate once here → Manifold, BVH, SDF bake,
+    // shader, and aperiodic world bounds all operate in one consistent
+    // coordinate system with no special-casing anywhere downstream.
+    // importCenter is restored to exported mesh vertices so the 3MF lands
+    // at the user's original CAD coordinates (lines up when reimported).
+    const preBbox = computeShapeBbox(posArr);
+    const importCenter = {x: preBbox.cx, y: preBbox.cy, z: preBbox.cz};
+    for(let i=0; i<posArr.length; i+=3){
+      posArr[i]   -= importCenter.x;
+      posArr[i+1] -= importCenter.y;
+      posArr[i+2] -= importCenter.z;
+    }
+    const bbox=computeShapeBbox(posArr); // now centered on origin
+    setShapeUI('loading', name, null, 'building shape SDF…');
+    showComputing('loading shape…','building shape SDF…');
+    const [manifold, sdfGrid] = await Promise.all([
+      buildShapeManifold(posArr, idxArr),
+      computeShapeSDF(posArr, idxArr, bbox)
+    ]);
     const suggestedCell=Math.max(0.5, parseFloat((bbox.maxDim/5).toFixed(1)));
-    importedShape={manifold, posArr, idxArr, bbox, meta:{name,format,tris,bbox:bbox.bboxStr}};
-    if(threeReady) displayShapeWire(posArr, idxArr, bbox.displayNorm);
-    setShapeUI('ok', name, {format,tris,bbox:bbox.bboxStr}, null, suggestedCell);
+    importedShape={manifold, posArr, idxArr, bbox, sdfGrid, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}};
+    const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+    if(rm){rm.setShapeSDF(sdfGrid, bbox, cellSizeMm);rm._dirty=true;}
+    // suggestedCell is computed but NOT passed to setShapeUI — user's current
+    // cell size is preserved across shape loads. Same for render quality:
+    // use rm._quality (last quality the user selected) instead of hardcoded
+    // 'draft', so a new shape re-bakes at the user's chosen quality and the
+    // quality-button UI stays in sync.
+    void suggestedCell;
+    setShapeUI('ok', name, {format,tris,bbox:bbox.bboxStr}, null);
     updateExportEstimate();
-    if(currentRecipe) triggerMesh(0.05);
+    if(currentRecipe) triggerPreview(rm&&rm._quality||'draft');
+    else hideComputing();
   } catch(e){
     importedShape=null;
     setShapeUI('err', name, null, e.message||String(e));
+    hideComputing();
     console.error(e);
   }
 }
@@ -867,43 +1059,106 @@ window.clearImportedShape=function(){
 
 // ── Mesh worker ───────────────────────────────────────────────────────────────
 const QUAL_EDGE_FRAC={draft:0.25,standard:0.15,fine:0.08};
-const EXPORT_EDGE_FRAC={draft:0.12,standard:0.06,fine:0.03};
-const EXPORT_SIMPLIFY_FRAC={draft:0.04,standard:0.02,fine:0.01};
+// Oversample factors for preview and export (voxels across thinnest wall)
+const PREVIEW_OVERSAMPLE={draft:1,low:2,med:3,high:4,ultra:6};
+const EXPORT_OVERSAMPLE={draft:3,low:4,med:6,high:8,ultra:12};
+// Shape SDF resolution for export, scaled to quality tier. Larger N gives finer
+// cap-surface precision (≈ max_bbox_axis / N) at O(N³) bake cost. Approximate
+// bake time for a typical orthopedic-scale mesh: draft ~5s, low ~10s, med ~35s,
+// high ~80s, ultra ~270s. Re-baked lazily on first export; cached; replaced if
+// a later export requests higher N. Float32 grid size: 3.5MB (96³), 8MB (128³),
+// 28MB (192³), 67MB (256³), 226MB (384³).
+const EXPORT_SHAPE_SDF_N_BY_QUAL={draft:96,low:128,med:192,high:256,ultra:384};
+// Physical printing-resolution floor for mesh edge length (mm). The analytic
+// estimator can produce edges far below any printer's resolution for large-cell
+// recipes — 0.03mm edges in a 5mm-cell gyroid, for example, encode detail no
+// printer can reproduce and balloon file sizes 10-100×. This floor is quality-
+// keyed to typical printer tolerances: draft/low = FDM-grade, med = SLA-grade,
+// high/ultra = DMLS or research-grade. The floor is applied as max(rawEdge,
+// floor) — if a recipe genuinely has sub-floor walls (e.g. wall_thickness=0.03),
+// the analytic estimator still wins and finer edges happen. We only raise
+// over-resolved edges up to physical reality.
+const PRINT_EDGE_MM_BY_QUAL={draft:0.30,low:0.20,med:0.10,high:0.05,ultra:0.03};
 // ── Resolution multiplier from recipe geometry ────────────────────────────────
 // Thinner walls and lower VF = more triangles needed per cell period.
 // Returns a multiplier > 1 that divides the base edge fraction (finer mesh).
-function extractResolutionMultiplier(recipe){
-  if(!recipe) return 1;
-  const j=recipe.json, g=j.geometry||{}, h=j.homogenization;
+// ── Analytic feature-edge estimator ──────────────────────────────────────────
+// Returns edge length in WORLD units [-5,5]^3 that will resolve the thinnest
+// physical feature at the requested oversample factor.
+// For shape mode: multiply result by cellSizeMm/10 to get mm.
+//   oversampleFactor — voxels across the thinnest wall: 2=draft, 3=std, 4=fine
+function estimateFeatureEdge(recipe, oversampleFactor){
+  if(!recipe) return 0.08;
+  const j=recipe.json, f=j.field||{}, s=j.surface||{}, g=j.geometry||{};
+  const PI5=Math.PI/5;
+  const MIN_EDGE=0.01; // hard floor in world units
 
-  // ── Wall fraction signal ──────────────────────────────────────────────────
-  // Normalise each geometry param to a [0.1, 1.0] "wall fullness" fraction.
-  // Reference "full" values chosen from typical mid-range design parameters.
-  let wallFrac=1.0;
-  if(g.wall_thickness!=null){
-    wallFrac=Math.max(0.1, Math.min(1.0, g.wall_thickness/0.30));
-  } else if(g.half_width!=null){
-    // half_width is half the wall as fraction of field range; *2 for full wall
-    wallFrac=Math.max(0.1, Math.min(1.0, (g.half_width*2)/0.30));
-  } else if(g.pipe_radius!=null){
-    wallFrac=Math.max(0.1, Math.min(1.0, g.pipe_radius/0.18));
+  if(recipe.family==='tpms'){
+    const cellScale=g.cell_scale||1;
+    const freqScale=Math.PI*cellScale/5;          // radians per world unit
+    const mode=g.mode||'shell';
+    const terms=Array.isArray(s.terms)?s.terms.filter(t=>t.on):[];
+    const nTerms=Math.max(1,terms.length);
+    let wallParam;
+    if(mode==='pi-tpms')      wallParam=g.pipe_radius||0.18;
+    else if(mode==='solid')   wallParam=1/(2*freqScale); // half-period for curvature
+    else                       wallParam=g.wall_thickness||0.3;
+    // Physical wall = phi-space wall / (freqScale * sqrt(nActiveTerms))
+    const physWall=wallParam/(freqScale*Math.sqrt(nTerms));
+    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
   }
-  const wallMult=Math.min(4, Math.max(1, 0.3/wallFrac));
 
-  // ── Volume fraction signal (bonus refinement when homogenization present) ──
-  let vfMult=1.0;
-  if(h && h.volume_fraction!=null){
-    const vf=h.volume_fraction/100; // convert % to fraction
-    if(vf>0) vfMult=Math.min(3, Math.max(1, Math.sqrt(0.15/vf)));
+  if(recipe.family==='noise'){
+    const freq=s.frequency||0.3;
+    const halfW=s.half_width||0.15;
+    const octaves=s.octaves||1, lac=s.lacunarity||2;
+    const SCALE2=5.0/Math.PI;
+    // Gradient dominated by highest-frequency octave
+    const domFreq=freq*SCALE2*Math.pow(lac, octaves-1);
+    // halfW is in normalised field space; gradient already in world units
+    const physWall=halfW/domFreq;
+    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
   }
 
-  const mult=wallMult*vfMult;
-  console.log(`[F13LD.mesh] resolutionMult: wall=${wallFrac.toFixed(2)} wallMult=${wallMult.toFixed(2)} vfMult=${vfMult.toFixed(2)} total=${mult.toFixed(2)}`);
-  return mult;
+  if(recipe.family==='grain'){
+    const halfW=g.half_width||0.15;
+
+    if(f.type==='reactiondiffusion'){
+      const Du=f.rd_Du||0.14, F=f.rd_F||0.030, k=f.rd_k||0.057;
+      // Turing instability length in grid [0,1] scaled to world (grid->world = x10)
+      const physWall=(Math.PI/2)*Math.sqrt(Du/(F+k))*10;
+      return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
+    }
+
+    if(f.type==='hyperuniform'){
+      const bw=f.hu_width||0.04;
+      // Kernel narrow-axis width in world units: bw * 0.5 of [-pi,pi] -> world = bw*5
+      const kernelWidth=bw*5;
+      // Physical wall set by whichever is thinner: halfW / gradient or kernel width
+      const physWall=Math.min(halfW*kernelWidth, kernelWidth);
+      return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
+    }
+
+    // Spinodoid / GRF — wave superposition
+    const freq=f.frequency||0.27, nWaves=f.n_waves||48;
+    // RMS gradient of (1/N)*sum cos(k_i.p+phi_i) in world units
+    // |k_i| = 2*pi*freq*PI5;  RMS |grad| = |k| * sqrt(0.5/N)
+    const kMag=2*Math.PI*freq*PI5;
+    const gradMag=kMag*Math.sqrt(0.5/nWaves);
+    const physWall=halfW/gradMag;
+    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
+  }
+
+  return MIN_EDGE;
+}
+function _safeEdge(val, MIN_EDGE){
+  // Clamp to finite positive world-unit range [MIN_EDGE, 5.0]
+  if(!isFinite(val)||val<=0) return MIN_EDGE;
+  return Math.min(5.0, Math.max(MIN_EDGE, val));
 }
 
 let meshWorker=null;
-let currentEdgeFraction=0.05;
+let currentOversample=3; // preview oversample factor (2=draft,3=std,4=fine)
 let _workerBlobUrl=null;
 function getWorkerBlobUrl(){
   if(!_workerBlobUrl){
@@ -1145,7 +1400,7 @@ function buildNoiseSDF(json){
     // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
     const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
     const norm=(raw-mid)/halfR;
-    if(mode==='half')   return (geom.half_invert?norm-center:center-norm); // flip side support
+    if(mode==='half')   return (geom.half_invert?center-norm:norm-center); // flip side support
     if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
     return halfW-Math.abs(norm-center);                  // sheet (default)
   };
@@ -1168,6 +1423,13 @@ function buildTPMSSDF(json){
   const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
   const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
   const TP=2*Math.PI;
+
+  // Gradient — matches TPMS shader: gF=mix(lo,hi,t01) where t01=(p+H)/(2H)
+  // In world [-5,5]: t01=clamp(p/10+0.5,0,1); for PI mode gradient scales phase offset.
+  const gradOn=!!(g.gradient&&g.gradient.enabled);
+  const gxLo=gradOn?(g.gradient.x?.lo??1):1,gxHi=gradOn?(g.gradient.x?.hi??1):1;
+  const gyLo=gradOn?(g.gradient.y?.lo??1):1,gyHi=gradOn?(g.gradient.y?.hi??1):1;
+  const gzLo=gradOn?(g.gradient.z?.lo??1):1,gzHi=gradOn?(g.gradient.z?.hi??1):1;
 
   // Raw preset path — use the precomputed _fn directly
   const rawFn = (s.type==='raw_preset') ? (RAW_PRESETS[s.preset]||null) : null;
@@ -1195,39 +1457,115 @@ function buildTPMSSDF(json){
 
   return p=>{
     const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
+    if(gradOn){
+      const t01x=Math.max(0,Math.min(1,p[0]/10+0.5));
+      const t01y=Math.max(0,Math.min(1,p[1]/10+0.5));
+      const t01z=Math.max(0,Math.min(1,p[2]/10+0.5));
+      const gxF=gxLo+(gxHi-gxLo)*t01x;
+      const gyF=gyLo+(gyHi-gyLo)*t01y;
+      const gzF=gzLo+(gzHi-gzLo)*t01z;
+      if(mode==='pi-tpms'){
+        const phiA=evalPhi(tx,ty,tz);
+        const phiB=evalPhi(tx+(ps.x||0)*TP*gxF,ty+(ps.y||0)*TP*gyF,tz+(ps.z||0)*TP*gzF);
+        return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
+      }
+      const phiA=evalPhi(tx*gxF,ty*gyF,tz*gzF);
+      if(mode==='solid') return (g.offset||0)-phiA;
+      return (g.wall_thickness||.3)-Math.abs(phiA-(g.offset||0));
+    }
     const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
       const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
       return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
     }
     if(mode==='solid') return (g.offset||0)-phiA;
-    return ((g.wall_thickness||.3)/2)-Math.abs(phiA-(g.offset||0));
+    return (g.wall_thickness||.3)-Math.abs(phiA-(g.offset||0));
   };
 }
+// ── HU domain-spanning helpers (shape mode) ──────────────────────────────────
+function buildHUKernelsMM(params,bbox,cellSizeMm){
+  var rng=mulberry32(params.rngSeed);
+  var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
+  var volRatio=(ddx*ddy*ddz)/Math.pow(cellSizeMm,3);
+  var N=Math.min(Math.ceil((params.huN||80)*Math.cbrt(volRatio)),300);
+  var aspect=params.huAspect||4,bw=params.huWidth||0.04;
+  var a=bw*aspect*0.5*cellSizeMm,b=bw*0.5*cellSizeMm;
+  var kappa=params.kappa||6,mode=params.dirMode||'single';
+  var tRad=(params.dirTheta||0)*Math.PI/180,pRad=(params.dirPhi||0)*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
+  function cross3(aa,bb){return[aa[1]*bb[2]-aa[2]*bb[1],aa[2]*bb[0]-aa[0]*bb[2],aa[0]*bb[1]-aa[1]*bb[0]];}
+  function norm3(v){var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1;return[v[0]/l,v[1]/l,v[2]/l];}
+  var pts=jitteredGrid3D(N,rng);
+  var kernels=[];
+  for(var i=0;i<N;i++){
+    var t2;
+    if(mode==='iso')t2=sampleVMF(rng,0);
+    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
+    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
+    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
+    kernels.push({px:bbox.mnx+pts[i][0]*ddx,py:bbox.mny+pts[i][1]*ddy,pz:bbox.mnz+pts[i][2]*ddz,
+      tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a,b:b});
+  }
+  return kernels;
+}
+function evalHUFieldMM(kernels,x,y,z){
+  var s=0;
+  for(var i=0;i<kernels.length;i++){
+    var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
+    var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
+    s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+  }
+  return s-0.3;
+}
+function bakeGridMM(evalFn,N,bbox){
+  var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
+  var grid=new Float32Array(N*N*N);
+  for(var iz=0;iz<N;iz++)for(var iy=0;iy<N;iy++)for(var ix=0;ix<N;ix++){
+    grid[ix+iy*N+iz*N*N]=evalFn(bbox.mnx+(ix+0.5)/N*ddx,bbox.mny+(iy+0.5)/N*ddy,bbox.mnz+(iz+0.5)/N*ddz);
+  }
+  return grid;
+}
 
-function buildGrainSDF(json){
+function buildGrainSDF(json,shapeCtx){
   const f=json.field,g=json.geometry||{};
   const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
 
-  // ── Reaction-diffusion branch ──────────────────────────────────────
+  // ── Reaction-diffusion ─────────────────────────────────────────────
   if(f.type==='reactiondiffusion'){
-    const N=48;
     const rdParams={rdF:f.rd_F||0.030,rdK:f.rd_k||0.057,rdDu:f.rd_Du||0.14,rdSteps:f.rd_steps||3000,rngSeed:f.rng_seed||42};
     const tile=f.rd_tile||1;
-    const grid=buildGrayScott(rdParams,N);
-    function frac(x){return x-Math.floor(x);}
+    let N_rd,getUVW;
+    if(shapeCtx){
+      // Shape mode: same 48³ simulation as cube preview.
+      // Period = cellSizeMm so every tile in the domain matches the user's designed cell.
+      // Seamless tiling is guaranteed by the periodic BCs used in buildGrayScott.
+      const {cellSizeMm,bbox}=shapeCtx;
+      N_rd=48;
+      const frac=x=>x-Math.floor(x);
+      getUVW=p=>{
+        const mmx=p[0]*cellSizeMm/10,mmy=p[1]*cellSizeMm/10,mmz=p[2]*cellSizeMm/10;
+        return[frac((mmx-bbox.mnx)/cellSizeMm*tile),frac((mmy-bbox.mny)/cellSizeMm*tile),frac((mmz-bbox.mnz)/cellSizeMm*tile)];
+      };
+    }else{
+      // Cube preview: standard 48³ grid mapped to [-5,5] world space
+      N_rd=48;
+      const frac=x=>x-Math.floor(x);
+      getUVW=p=>[frac((p[0]/10+0.5)*tile),frac((p[1]/10+0.5)*tile),frac((p[2]/10+0.5)*tile)];
+    }
+    const grid=buildGrayScott(rdParams,N_rd);
     return p=>{
-      const u=frac((p[0]/10+0.5)*tile);
-      const v=frac((p[1]/10+0.5)*tile);
-      const w=frac((p[2]/10+0.5)*tile);
-      const raw=evalRDField(grid,N,u,v,w);
+      const[u,v,w]=getUVW(p);
+      const raw=evalRDField(grid,N_rd,u,v,w);
       if(topo==='half') return g.half_invert?(center-raw):(raw-center);
-      if(topo==='solid') return center-raw;
+      if(topo==='solid') return Math.abs(raw-center)-halfW;
       return halfW-Math.abs(raw-center);
     };
   }
 
-  // ── Wave / kernel branch ───────────────────────────────────────────
+  // ── Wave / kernel branch ──────────────────────────────────────────────
   let dirTheta=0,dirPhi=0;
   if(f.dir_mode==='single'&&f.principal_direction){
     const[mx,my,mz]=f.principal_direction;
@@ -1236,6 +1574,31 @@ function buildGrainSDF(json){
   }
   const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
   const isHU=f.type==='hyperuniform';
+
+  // ── HU shape mode: full-domain kernel field baked to a grid ───────────
+  // Kernels are distributed throughout the bounding volume (not just one cell).
+  // A pre-baked grid makes levelSet evaluation O(1) per sample after setup.
+  if(isHU&&shapeCtx){
+    const {cellSizeMm,bbox}=shapeCtx;
+    const ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
+    const maxCells=Math.max(ddx,ddy,ddz)/cellSizeMm;
+    const N_hu=Math.min(Math.ceil(32*maxCells),96);
+    const mmKernels=buildHUKernelsMM(params,bbox,cellSizeMm);
+    self.postMessage({type:'progress',stage:'pre-baking HU field ('+N_hu+'\u00b3 grid, '+mmKernels.length+' kernels)...'});
+    const huGrid=bakeGridMM((x,y,z)=>evalHUFieldMM(mmKernels,x,y,z),N_hu,bbox);
+    const c01=v=>v<0?0:v>1?1:v;
+    return p=>{
+      const u=c01((p[0]*cellSizeMm/10-bbox.mnx)/ddx);
+      const v=c01((p[1]*cellSizeMm/10-bbox.mny)/ddy);
+      const w=c01((p[2]*cellSizeMm/10-bbox.mnz)/ddz);
+      const raw=evalRDField(huGrid,N_hu,u,v,w);
+      if(topo==='half')  return g.half_invert?(center-raw):(raw-center);
+      if(topo==='solid') return Math.abs(raw-center)-halfW;
+      return halfW-Math.abs(raw-center);
+    };
+  }
+
+  // ── Cube mode / wave+GRF (spinodoid/GRF extend to infinity naturally) ──
   const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
   const kernels=isHU?buildHUKernels(params):null;
   const PI5=Math.PI/5;
@@ -1246,39 +1609,170 @@ function buildGrainSDF(json){
     }else{
       raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
     }
-    if(topo==='half') return g.half_invert?(center-raw):(raw-center);
+    if(topo==='half')   return g.half_invert?(center-raw):(raw-center);
+    if(topo==='solid')  return Math.abs(raw-center)-halfW;
     return halfW-Math.abs(raw-center);
   };
 }
 
-function buildSDF(recipe){
+function buildSDF(recipe,shapeCtx){
   if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
-  if(recipe.family==='grain')return buildGrainSDF(recipe.json);
+  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx);
   throw new Error('No evaluator for family: '+recipe.family);
 }
 
 self.onmessage=async function(e){
   const d=e.data,t0=performance.now();
+  let lastStage='initializing';
   try{
+    // ── Bake mode: field → N³ SDF grid, no Manifold needed ──────────────────
+    if(d.mode==='bake'&&d.bakeRaw){
+      const N=d.N||64;
+      const wMin=d.worldMin||[-5,-5,-5],wMax=d.worldMax||[5,5,5];
+      const sx=(wMax[0]-wMin[0])/N,sy=(wMax[1]-wMin[1])/N,sz=(wMax[2]-wMin[2])/N;
+      const fam=d.recipe.family,json=d.recipe.json;
+      const PI5=Math.PI/5,SCALE2=5.0/Math.PI;
+      let evalRaw=null,topology=null;
+      if(fam==='grain'){
+        const f=json.field,g=json.geometry||{};
+        let dirTheta=0,dirPhi=0;
+        if(f.dir_mode==='single'&&f.principal_direction){
+          const[mx,my,mz]=f.principal_direction;
+          dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
+          dirPhi=Math.atan2(my,mx)*180/Math.PI;
+        }
+        const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,
+          frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',
+          dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,
+          wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,
+          huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
+        const isHU=f.type==='hyperuniform';
+        const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
+        const kernels=isHU?buildHUKernels(params):null;
+        evalRaw=p=>isHU
+          ?evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10)
+          :evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
+        topology={bakeRaw:true,halfW:g.half_width??0.15,center:g.center??0,
+          topoMode:g.topology||'sheet',halfInvert:g.half_invert||false};
+      }else if(fam==='noise'){
+        const surf=json.surface,geom=json.geometry||{};
+        const freq=surf.frequency||.3,ex=surf.scale_x??1,ey=surf.scale_y??1,ez=surf.scale_z??1;
+        evalRaw=p=>evalNoiseRaw(surf,p[0]*SCALE2*freq*ex,p[1]*SCALE2*freq*ey,p[2]*SCALE2*freq*ez);
+        topology={bakeRaw:true,halfW:surf.half_width??0.15,center:surf.center??0,
+          topoMode:geom.mode||'sheet',halfInvert:geom.half_invert||false};
+      }
+      if(evalRaw){
+        const field=new Float32Array(N*N*N);
+        let minV=Infinity,maxV=-Infinity;
+        for(let iz=0;iz<N;iz++)for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
+          const v=evalRaw([wMin[0]+sx*(ix+0.5),wMin[1]+sy*(iy+0.5),wMin[2]+sz*(iz+0.5)]);
+          field[ix+iy*N+iz*N*N]=v;if(v<minV)minV=v;if(v>maxV)maxV=v;
+        }
+        let maxG=0;
+        for(let iz=1;iz<N-1;iz++)for(let iy=1;iy<N-1;iy++)for(let ix=1;ix<N-1;ix++){
+          const i=ix+iy*N+iz*N*N;
+          const gx=(field[i+1]-field[i-1])/(2*sx);
+          const gy=(field[i+N]-field[i-N])/(2*sy);
+          const gz=(field[i+N*N]-field[i-N*N])/(2*sz);
+          const g=Math.sqrt(gx*gx+gy*gy+gz*gz);if(g>maxG)maxG=g;
+        }
+        const halfR=Math.max((maxV-minV)*0.5,0.001);
+        const lip=Math.max(maxG/halfR*1.1,0.05);
+        const buf=field.buffer;
+        self.postMessage({type:'baked',field:buf,N,fieldMin:minV,fieldMax:maxV,
+          lipschitz:lip,worldMin:wMin,worldMax:wMax,isPeriodic:false,topology},[buf]);
+        return;
+      }
+    }
+    if(d.mode==='bake'){
+      const N=d.N||64;
+      // For stochastic fields with a shape: bake over the full world bbox.
+      // For periodic fields: bake one cell in [-5,5]^3 and let shader tile.
+      const isPeriodic=d.isPeriodic||false;
+      const wMin=d.worldMin||[-5,-5,-5];
+      const wMax=d.worldMax||[5,5,5];
+      const sx=(wMax[0]-wMin[0])/N, sy=(wMax[1]-wMin[1])/N, sz=(wMax[2]-wMin[2])/N;
+      // Pass shapeCtx for HU domain-spanning kernels (stochastic with shape)
+      const shapeCtx=d.shapeCtx||null;
+      const sdfFn=buildSDF(d.recipe,shapeCtx);
+      const field=new Float32Array(N*N*N);
+      let minV=Infinity,maxV=-Infinity;
+      for(let iz=0;iz<N;iz++)for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
+        const v=sdfFn([wMin[0]+sx*(ix+0.5),wMin[1]+sy*(iy+0.5),wMin[2]+sz*(iz+0.5)]);
+        field[ix+iy*N+iz*N*N]=v;
+        if(v<minV)minV=v;if(v>maxV)maxV=v;
+      }
+      let maxG=0;
+      const step=(sx+sy+sz)/3;
+      for(let iz=1;iz<N-1;iz++)for(let iy=1;iy<N-1;iy++)for(let ix=1;ix<N-1;ix++){
+        const i=ix+iy*N+iz*N*N;
+        const gx=(field[i+1]-field[i-1])/(2*sx);
+        const gy=(field[i+N]-field[i-N])/(2*sy);
+        const gz=(field[i+N*N]-field[i-N*N])/(2*sz);
+        const g=Math.sqrt(gx*gx+gy*gy+gz*gz);if(g>maxG)maxG=g;
+      }
+      const buf=field.buffer;
+      self.postMessage({type:'baked',field:buf,N,fieldMin:minV,fieldMax:maxV,
+        lipschitz:Math.max(maxG*1.1,0.05),
+        worldMin:wMin,worldMax:wMax,isPeriodic},[ buf]);
+      return;
+    }
     await manifoldReady;
     if(!ManifoldAPI)throw new Error('Manifold not available in worker.');
     self.postMessage({type:'progress',stage:'building SDF...'});
-    const sdfFn=buildSDF(d.recipe);
+    const shapeCtx=(d.mode==='shape'||(d.mode==='export'&&d.shapePos))?{cellSizeMm:d.cellSizeMm,bbox:d.bbox}:null;
+    const sdfFn=buildSDF(d.recipe,shapeCtx);
     let mfld;
     if(d.mode==='shape'){
       const{cellSizeMm,edgeFraction,bbox,shapePos,shapeIdx}=d;
       const mmToWorld=10/cellSizeMm;
       const wrappedSDF=p=>sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
       const mmEdge=edgeFraction*cellSizeMm;
-      self.postMessage({type:'progress',stage:'level set ('+(mmEdge).toFixed(2)+'mm edge)...'});
-      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},mmEdge);
-      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — try a smaller cell size or check structure parameters.');}
-      self.postMessage({type:'progress',stage:'boolean intersection...'});
+
+      // Build shape Manifold once — reused in both passes
       const pos=new Float32Array(shapePos),idx=new Uint32Array(shapeIdx);
       const wasmMesh=new ManifoldAPI.Mesh({numProp:3,vertProperties:pos,triVerts:idx});
       wasmMesh.merge();
       const shapeMfld=new ManifoldAPI.Manifold(wasmMesh);
+
+      // ── Pass 1: coarse levelSet → cheap intersection → extract live bbox ──
+      const maxDim=Math.max(bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz);
+      const coarseEdge=Math.min(mmEdge*4, maxDim/3);
+      self.postMessage({type:'progress',stage:'coarse pass ('+coarseEdge.toFixed(1)+'mm)...'});
+      let coarseMfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},coarseEdge);
+      if(coarseMfld.isEmpty()){coarseMfld.delete();shapeMfld.delete();throw new Error('Empty mesh — check structure parameters.');}
+      let coarseIsect;
+      try{coarseIsect=ManifoldAPI.Manifold.intersection(coarseMfld,shapeMfld);}
+      catch(ce){coarseIsect=coarseMfld.intersect(shapeMfld);}
+      coarseMfld.delete();
+      if(coarseIsect.isEmpty()){coarseIsect.delete();shapeMfld.delete();throw new Error('Intersection is empty — check cell size and shape overlap.');}
+
+      // Extract tight bbox from coarse intersection result
+      const cm=coarseIsect.getMesh();
+      const vp=cm.vertProperties;
+      let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
+      for(let i=0;i<vp.length;i+=3){
+        if(vp[i  ]<mnx)mnx=vp[i  ]; if(vp[i  ]>mxx)mxx=vp[i  ];
+        if(vp[i+1]<mny)mny=vp[i+1]; if(vp[i+1]>mxy)mxy=vp[i+1];
+        if(vp[i+2]<mnz)mnz=vp[i+2]; if(vp[i+2]>mxz)mxz=vp[i+2];
+      }
+      coarseIsect.delete();
+      const pad=mmEdge*2;
+      const inner={
+        mnx:Math.max(bbox.mnx,mnx-pad), mxx:Math.min(bbox.mxx,mxx+pad),
+        mny:Math.max(bbox.mny,mny-pad), mxy:Math.min(bbox.mxy,mxy+pad),
+        mnz:Math.max(bbox.mnz,mnz-pad), mxz:Math.min(bbox.mxz,mxz+pad)
+      };
+
+      // ── Pass 2: fine levelSet over live bbox → simplify → intersect ────────
+      self.postMessage({type:'progress',stage:'level set ('+mmEdge.toFixed(2)+'mm over live bbox)...'});
+      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[inner.mnx,inner.mny,inner.mnz],max:[inner.mxx,inner.mxy,inner.mxz]},mmEdge);
+      if(mfld.isEmpty()){mfld.delete();shapeMfld.delete();throw new Error('Empty mesh in fine pass — try a smaller cell size.');}
+      self.postMessage({type:'progress',stage:'simplifying scaffold...'});
+      try{const s=typeof mfld.simplify==='function'?mfld.simplify(mmEdge*0.5):mfld.Simplify(mmEdge*0.5);mfld.delete();mfld=s;}
+      catch(se){console.warn('[worker] pre-intersection simplify skipped:',se);}
+      self.postMessage({type:'progress',stage:'boolean intersection...'});
       let intersected;
       try{intersected=ManifoldAPI.Manifold.intersection(mfld,shapeMfld);}
       catch(ie){
@@ -1289,27 +1783,113 @@ self.onmessage=async function(e){
       if(mfld.isEmpty()){mfld.delete();throw new Error('Intersection is empty — check cell size and shape overlap.');}
     } else if(d.mode==='export'){
       // ── Export mode: pre-computed edge/simplify lengths, returns scale ───────
-      if(d.shapePos){
-        const{relEdgeMm,simplifyTol,bbox,shapePos,shapeIdx}=d;
+      if(d.shapeSdfData){
+        const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
         const mmToWorld=10/d.cellSizeMm;
-        const wrappedSDF=p=>sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
-        self.postMessage({type:'progress',stage:'level set ('+relEdgeMm.toFixed(3)+'mm edge)...'});
-        mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},relEdgeMm);
-        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — try a smaller cell size.');}
-        self.postMessage({type:'progress',stage:'boolean intersection...'});
-        const pos=new Float32Array(shapePos),idx=new Uint32Array(shapeIdx);
-        const wasmMesh=new ManifoldAPI.Mesh({numProp:3,vertProperties:pos,triVerts:idx});
-        wasmMesh.merge();
-        const shapeMfld=new ManifoldAPI.Manifold(wasmMesh);
-        let intersected;
-        try{intersected=ManifoldAPI.Manifold.intersection(mfld,shapeMfld);}
-        catch(ie){intersected=mfld.intersect(shapeMfld);}
-        mfld.delete();shapeMfld.delete();mfld=intersected;
-        if(mfld.isEmpty()){mfld.delete();throw new Error('Intersection is empty.');}
-        if(simplifyTol>0){
-          self.postMessage({type:'progress',stage:'simplifying mesh...'});
-          try{const s=typeof mfld.simplify==='function'?mfld.simplify(simplifyTol):mfld.Simplify(simplifyTol);mfld.delete();mfld=s;}
-          catch(se){console.warn('[worker] export simplify skipped:',se);}
+        const worldToMm=d.cellSizeMm/10;
+        // ── Trilinear sampler over the baked shape SDF grid (in mm) ──────────
+        // Outside bbox we fall back to the analytical axis-aligned-box SDF so the
+        // field stays Lipschitz-continuous everywhere. Both are in mm, matching
+        // the units of the bbox passed to levelSet — so max(scaffold_mm, shape_mm)
+        // produces a well-conditioned SDF for marching cubes.
+        const sdfArr=new Float32Array(shapeSdfData);
+        const N=shapeN;
+        const bminX=bbox.mnx,bminY=bbox.mny,bminZ=bbox.mnz;
+        const bsizeX=bbox.mxx-bbox.mnx,bsizeY=bbox.mxy-bbox.mny,bsizeZ=bbox.mxz-bbox.mnz;
+        const bmaxX=bbox.mxx,bmaxY=bbox.mxy,bmaxZ=bbox.mxz;
+        const sampleShapeSDF=function(px,py,pz){
+          const u=(px-bminX)/bsizeX, v=(py-bminY)/bsizeY, w=(pz-bminZ)/bsizeZ;
+          if(u<0||u>1||v<0||v>1||w<0||w>1){
+            const qx=Math.max(bminX-px, px-bmaxX, 0);
+            const qy=Math.max(bminY-py, py-bmaxY, 0);
+            const qz=Math.max(bminZ-pz, pz-bmaxZ, 0);
+            return Math.sqrt(qx*qx+qy*qy+qz*qz);
+          }
+          const fu=u*(N-1), fv=v*(N-1), fw=w*(N-1);
+          const i0=Math.floor(fu)|0, j0=Math.floor(fv)|0, k0=Math.floor(fw)|0;
+          const i1=i0+1<N?i0+1:N-1, j1=j0+1<N?j0+1:N-1, k1=k0+1<N?k0+1:N-1;
+          const tu=fu-i0, tv=fv-j0, tw=fw-k0;
+          const NN=N*N;
+          const c000=sdfArr[i0+j0*N+k0*NN], c100=sdfArr[i1+j0*N+k0*NN];
+          const c010=sdfArr[i0+j1*N+k0*NN], c110=sdfArr[i1+j1*N+k0*NN];
+          const c001=sdfArr[i0+j0*N+k1*NN], c101=sdfArr[i1+j0*N+k1*NN];
+          const c011=sdfArr[i0+j1*N+k1*NN], c111=sdfArr[i1+j1*N+k1*NN];
+          const c00=c000+(c100-c000)*tu, c10=c010+(c110-c010)*tu;
+          const c01=c001+(c101-c001)*tu, c11=c011+(c111-c011)*tu;
+          const c0=c00+(c10-c00)*tv, c1=c01+(c11-c01)*tv;
+          return c0+(c1-c0)*tw;
+        };
+        // Combined SDF for Manifold.levelSet. Manifold convention: positive=inside.
+        // Scaffold SDF returns positive-inside already (wall-|phi|). Shape SDF was
+        // baked with positive-outside convention (negative inside the mesh), so we
+        // negate it here. Intersection interior = inside BOTH = both operands positive,
+        // so the combined "positive-inside" field is min(scaffold, -shape).
+        // Guard against non-finite scaffold values — some recipes can emit NaN or
+        // Infinity at edge-case points (e.g. trig cancellations, out-of-kernel-support
+        // queries in hyperuniform). Manifold's marching-cubes sign-test chokes on
+        // NaN with "table index out of bounds". Substitute a large negative (firmly
+        // outside both fields) so any affected voxel votes "outside the mesh".
+        const wrappedSDF=p=>{
+          const sc_world=sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
+          const sc_mm=sc_world*worldToMm;
+          const sh_mm=-sampleShapeSDF(p[0],p[1],p[2]);
+          if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
+          return sc_mm<sh_mm?sc_mm:sh_mm;
+        };
+      // ── Export two-pass: coarse → live bbox → fine ──────────────────────────
+      // No boolean intersect — the max()-composed SDF already emits only the
+      // scaffold-inside-shape surface. Coarse pass still worth running: tight
+      // bbox lets fine pass skip empty regions of the original bbox.
+      const eMaxDim=Math.max(bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz);
+      const eCoarseEdge=Math.min(relEdgeMm*4,eMaxDim/3);
+      // Voxel counts help diagnose OOM / timeout issues — user sees what's happening
+      const coarseVox=Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3)/1e6);
+      lastStage='coarse pass ('+eCoarseEdge.toFixed(1)+'mm, ~'+coarseVox+'M voxels)';
+      self.postMessage({type:'progress',stage:lastStage+'...'});
+      let eCoarseMfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},eCoarseEdge);
+      if(eCoarseMfld.isEmpty()){eCoarseMfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
+      lastStage='extracting coarse bbox';
+      const ecm=eCoarseMfld.getMesh(),evp=ecm.vertProperties;
+      let emnx=Infinity,emny=Infinity,emnz=Infinity,emxx=-Infinity,emxy=-Infinity,emxz=-Infinity;
+      for(let i=0;i<evp.length;i+=3){
+        if(evp[i  ]<emnx)emnx=evp[i  ]; if(evp[i  ]>emxx)emxx=evp[i  ];
+        if(evp[i+1]<emny)emny=evp[i+1]; if(evp[i+1]>emxy)emxy=evp[i+1];
+        if(evp[i+2]<emnz)emnz=evp[i+2]; if(evp[i+2]>emxz)emxz=evp[i+2];
+      }
+      eCoarseMfld.delete();
+      const ePad=relEdgeMm*2;
+      const eInner={
+        mnx:Math.max(bbox.mnx,emnx-ePad),mxx:Math.min(bbox.mxx,emxx+ePad),
+        mny:Math.max(bbox.mny,emny-ePad),mxy:Math.min(bbox.mxy,emxy+ePad),
+        mnz:Math.max(bbox.mnz,emnz-ePad),mxz:Math.min(bbox.mxz,emxz+ePad)
+      };
+      const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
+      lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
+      self.postMessage({type:'progress',stage:lastStage+'...'});
+      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm);
+      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh in fine pass.');}
+      if(simplifyTol>0){
+          // Pre-check: Manifold's simplify has known crashes on meshes past
+          // ~10-15M tris — WASM "table index out of bounds" that escapes the JS
+          // try/catch and kills the worker. Skip simplify entirely above this
+          // ceiling; the pre-simplify mesh is valid, just larger than intended.
+          const preSimplifyTris=mfld.numTri();
+          const SIMPLIFY_MAX_TRIS=8000000;
+          if(preSimplifyTris>SIMPLIFY_MAX_TRIS){
+            lastStage='skipping simplify ('+(preSimplifyTris/1e6).toFixed(1)+'M tris > '+(SIMPLIFY_MAX_TRIS/1e6)+'M safe limit)';
+            self.postMessage({type:'progress',stage:lastStage});
+          } else {
+            lastStage='simplifying mesh ('+(preSimplifyTris/1e6).toFixed(1)+'M tris, tol '+simplifyTol.toFixed(3)+'mm)';
+            self.postMessage({type:'progress',stage:lastStage+'...'});
+            try{const s=typeof mfld.simplify==='function'?mfld.simplify(simplifyTol):mfld.Simplify(simplifyTol);mfld.delete();mfld=s;}
+            catch(se){
+              // Fallback — JS-catchable simplify failure, pre-simplify mesh survives.
+              // Note: WASM hard traps (table index out of bounds, memory access out of
+              // bounds) typically bypass this catch. Pre-check above is the real defense.
+              self.postMessage({type:'progress',stage:'simplify skipped (recoverable error)'});
+              console.warn('[worker] export simplify skipped:',se);
+            }
+          }
         }
       } else {
         self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
@@ -1344,7 +1924,9 @@ self.onmessage=async function(e){
     const ms=Math.round(performance.now()-t0);
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
-    self.postMessage({type:'error',message:e.message||String(e)});
+    const base=e.message||String(e);
+    const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;
+    self.postMessage({type:'error',message:msg});
   }
 };
 `;
@@ -1355,6 +1937,7 @@ self.onmessage=async function(e){
 function showCancelBtn(show){const b=document.getElementById('cancelMeshBtn');if(b)b.style.display=show?'':'none';}
 window.cancelMesh=function(){
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  if(window._cancelSdfBake)window._cancelSdfBake();
   hideComputing();setBtns(true);showCancelBtn(false);
 };
 
@@ -1365,8 +1948,9 @@ window.cancelMesh=function(){
 function clampEdgeMm(edgeMm, bbox, maxVoxels){
   const vol=(bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz);
   const minSafeEdge=Math.pow(vol/maxVoxels, 1/3);
-  const clamped=edgeMm<minSafeEdge;
-  const safeEdge=clamped?minSafeEdge:edgeMm;
+  if(!isFinite(edgeMm)||edgeMm<=0){const estVoxels=vol/Math.pow(minSafeEdge,3);return{safeEdge:minSafeEdge,clamped:true,estVoxels:Math.round(estVoxels)};}
+  const safeEdge=Math.max(minSafeEdge, edgeMm);
+  const clamped=safeEdge!==edgeMm;
   const estVoxels=vol/Math.pow(safeEdge,3);
   return{safeEdge,clamped,estVoxels:Math.round(estVoxels)};
 }
@@ -1374,12 +1958,14 @@ function clampEdgeWorld(edgeWorld, maxVoxels){
   // cube mode: domain is 10x10x10 world units
   const vol=1000;
   const minSafeEdge=Math.pow(vol/maxVoxels,1/3);
-  const clamped=edgeWorld<minSafeEdge;
-  const safeEdge=clamped?minSafeEdge:edgeWorld;
+  const maxSafeEdge=5.0; // >5 gives <2 voxels/side — degenerate
+  if(!isFinite(edgeWorld)||edgeWorld<=0) return{safeEdge:minSafeEdge,clamped:true};
+  const safeEdge=Math.min(maxSafeEdge, Math.max(minSafeEdge, edgeWorld));
+  const clamped=safeEdge!==edgeWorld;
   return{safeEdge,clamped};
 }
-const MAX_PREVIEW_VOXELS=20e6;
-const MAX_EXPORT_VOXELS=200e6;
+const MAX_PREVIEW_VOXELS=8e6;
+const MAX_EXPORT_VOXELS=50e6;
 // ── Live export estimate display ──────────────────────────────────────────────
 function updateExportEstimate(){
   const el=document.getElementById('expEstimate');
@@ -1389,9 +1975,10 @@ function updateExportEstimate(){
     let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope
     if(importedShape){
       cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-      const resMult=extractResolutionMultiplier(currentRecipe);
-      const rawEdge=(EXPORT_EDGE_FRAC[currentExportQual]/resMult)*cellSizeMm;
-      const{safeEdge}=clampEdgeMm(rawEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
+      const rawEdge=estimateFeatureEdge(currentRecipe,EXPORT_OVERSAMPLE[currentExportQual]||6)*(cellSizeMm/10);
+      const printFloorMm=PRINT_EDGE_MM_BY_QUAL[currentExportQual]||0.10;
+      const flooredEdge=Math.max(rawEdge,printFloorMm);
+      const{safeEdge}=clampEdgeMm(flooredEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
       edgeMm=safeEdge;
       bbox=importedShape.bbox;
     } else {
@@ -1400,14 +1987,103 @@ function updateExportEstimate(){
       edgeMm=(QUAL_EDGE_MM[currentExportQual]||.10)*10/domainMm;
     }
     const{estTris,estSec}=estimateMeshStats(currentRecipe,edgeMm,bbox,cellSizeMm);
-    el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+estSec+'s';
+    // Rough bake time estimate: empirically ~4µs per voxel on typical meshes;
+    // scales with N³. Only shown when a re-bake would actually happen.
+    let bakeSec=0;
+    if(importedShape){
+      const targetN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
+      const cachedN=importedShape.sdfGrid?importedShape.sdfGrid.N:0;
+      if(cachedN<targetN){bakeSec=Math.round(targetN*targetN*targetN*4e-6);}
+    }
+    const totalSec=estSec+bakeSec;
+    const bakeTxt=bakeSec>0?' (includes ~'+bakeSec+'s SDF bake)':'';
+    el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+totalSec+'s'+bakeTxt;
   }catch(e){el.textContent='';}
 }
 
 // ── Mesh pipeline ─────────────────────────────────────────────────────────
-let currentManifold=null;
-async function triggerMesh(edgeFraction){
-  currentEdgeFraction=edgeFraction;
+
+// ── Field baking via worker ──────────────────────────────────────────────────
+
+function recipeIsPeriodic(recipe){
+  if(!recipe) return false;
+  if(recipe.family==='tpms') return true;
+  if(recipe.family==='grain'){
+    const ft=recipe.json.field&&recipe.json.field.type;
+    return ft==='reactiondiffusion';
+  }
+  return false; // noise, spinodoid, GRF, HU all stochastic
+}
+function bakeField(recipe, N, opts){
+  return new Promise((resolve,reject)=>{
+    const worker=new Worker(getWorkerBlobUrl());
+    const t0=performance.now();
+    worker.onmessage=e=>{
+      const d=e.data;
+      if(d.type==='baked'){
+        worker.terminate();
+        resolve({data:new Float32Array(d.field),N:d.N,
+          fieldMin:d.fieldMin,fieldMax:d.fieldMax,
+          lipschitz:d.lipschitz,ms:Math.round(performance.now()-t0),
+          worldMin:d.worldMin,worldMax:d.worldMax,isPeriodic:d.isPeriodic,topology:d.topology});
+      }else if(d.type==='error'){worker.terminate();reject(new Error(d.message));}
+    };
+    worker.onerror=e=>{worker.terminate();reject(new Error(e.message||'Bake error'));};
+    worker.postMessage({mode:'bake',recipe,N,...(opts||{})});
+  });
+}
+// ── Preview via Raymarcher (no Manifold, instant) ────────────────────────────
+const PREVIEW_BAKE_N={draft:48,low:64,med:96,high:128,ultra:192};
+async function triggerPreview(quality){
+  if(!currentRecipe||!rm)return;
+  currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
+  setBtns(false);showCancelBtn(false);
+  showComputing('building preview…','baking field…');
+  rm.setQuality(quality);
+  const periodic=recipeIsPeriodic(currentRecipe);
+  const N=PREVIEW_BAKE_N[quality]||64;
+  const needsRawBake=!periodic;
+  let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
+  if(!periodic&&importedShape){
+    // Stochastic field + shape: bake over full world extent — no tiling for aperiodic structures
+    const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+    const s=10/cellSizeMm;
+    const b=importedShape.bbox;
+    const wMin=[b.mnx*s,b.mny*s,b.mnz*s];
+    const wMax=[b.mxx*s,b.mxy*s,b.mxz*s];
+    // Fixed N per quality tier — consistent, predictable resolution
+    const nScaled=N;
+    bakeOpts={isPeriodic:false,bakeRaw:true,worldMin:wMin,worldMax:wMax,
+      shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
+    rm.setWorldBounds(wMin,wMax,false);
+    await new Promise(r=>setTimeout(r,0));
+    const result=await bakeField(currentRecipe, nScaled, bakeOpts);
+    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    showRaymarcherCanvas();clearStale();
+    triPill.style.display='block';
+    triPill.textContent='preview · '+result.ms+'ms';
+    hideComputing();setBtns(true);
+    return;
+  }
+  // Periodic or no shape: bake one cell with tiling
+  rm.setWorldBounds([-5,-5,-5],[5,5,5],periodic);
+  try{
+    const result=await bakeField(currentRecipe, N, bakeOpts);
+    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    showRaymarcherCanvas();clearStale();
+    triPill.style.display='block';
+    triPill.textContent='preview · '+result.ms+'ms';
+    hideComputing();
+  }catch(e){
+    hideComputing();
+    if(e.message!=='cancelled')showError('Preview: '+(e.message||e));
+  }finally{
+    setBtns(true);
+  }
+}
+window.triggerPreview=triggerPreview;
+async function triggerMesh(oversampleFactor){
+  currentOversample=oversampleFactor;
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
   clearStale();
   showComputing('computing mesh...','starting...');
@@ -1416,6 +2092,7 @@ async function triggerMesh(edgeFraction){
   try{
     const worker=new Worker(getWorkerBlobUrl());
     meshWorker=worker;
+    const edgeWorld=estimateFeatureEdge(currentRecipe,oversampleFactor);
     const result=await new Promise((resolve,reject)=>{
       worker.onmessage=e=>{
         const d=e.data;
@@ -1429,10 +2106,10 @@ async function triggerMesh(edgeFraction){
         const posBuffer=importedShape.posArr.buffer.slice(0);
         const idxBuffer=importedShape.idxArr.buffer.slice(0);
         const{mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
-        const resMult=extractResolutionMultiplier(currentRecipe);
-        const rawEdgeMm=(edgeFraction/resMult)*cellSizeMm;
+        // Convert analytic world-space edge to physical mm for shape mode
+        const rawEdgeMm=edgeWorld*(cellSizeMm/10);
         const{safeEdge:mmEdge,clamped}=clampEdgeMm(rawEdgeMm,importedShape.bbox,MAX_PREVIEW_VOXELS);
-        if(clamped) coSub.textContent='grid clamped — cell size too small for this domain (using '+mmEdge.toFixed(2)+'mm edge)';
+        if(clamped) coSub.textContent='grid clamped (using '+mmEdge.toFixed(2)+'mm edge)';
         const adjEdgeFraction=mmEdge/cellSizeMm;
         const simplifyTol=mmEdge*0.15;
         worker.postMessage({
@@ -1442,12 +2119,12 @@ async function triggerMesh(edgeFraction){
           cellSizeMm,edgeFraction:adjEdgeFraction,simplifyTol
         },[posBuffer,idxBuffer]);
       } else {
-        const{safeEdge:edgeWorld,clamped:cubeClamped}=clampEdgeWorld(edgeFraction,MAX_PREVIEW_VOXELS);
-        if(cubeClamped) coSub.textContent='grid clamped — edge floor '+edgeWorld.toFixed(3);
+        const{safeEdge:safeEdgeWorld,clamped:cubeClamped}=clampEdgeWorld(edgeWorld,MAX_PREVIEW_VOXELS);
+        if(cubeClamped) coSub.textContent='grid clamped (edge floor '+safeEdgeWorld.toFixed(3)+')';
         worker.postMessage({
           mode:'cube',recipe:currentRecipe,
-          edgeWorld,
-          simplifyTol:edgeWorld*0.15
+          edgeWorld:safeEdgeWorld,
+          simplifyTol:safeEdgeWorld*0.15
         });
       }
     });
@@ -1455,7 +2132,7 @@ async function triggerMesh(edgeFraction){
     worker.terminate();
     const vertProperties=new Float32Array(result.vertProperties);
     const triVerts=new Uint32Array(result.triVerts);
-    if(currentManifold){try{currentManifold.delete();}catch(_){} currentManifold=null;}
+    showExportCanvas();
     displayMesh({vertProperties,triVerts},displayNorm);
     showTriCount(result.triCount,result.ms);
     hideComputing();
@@ -1469,8 +2146,17 @@ async function triggerMesh(edgeFraction){
   }
 }
 window.triggerMesh=triggerMesh;
-window.onCellSizeInput=function(){if(importedShape){setStale();updateExportEstimate();}};
-Object.defineProperty(window,'currentEdgeFraction',{get:()=>currentEdgeFraction});
+window.onCellSizeInput=function(){
+  if(!importedShape)return;
+  var cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+  if(rm)rm.setCellSize(cellSizeMm);
+  // Only mark stale for aperiodic recipes — those genuinely need a field re-bake
+  // over the cell-size-dependent world extent. Periodic scaffolds update live
+  // via setCellSize (hardware REPEAT wrap handles the retiling).
+  if(!recipeIsPeriodic(currentRecipe))setStale();
+  updateExportEstimate();
+};
+Object.defineProperty(window,'currentOversample',{get:()=>currentOversample});
 
 // ── Recipe router ─────────────────────────────────────────────────────────
 function routeRecipe(json){
@@ -1484,7 +2170,7 @@ function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-l
 function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${l} <b>${v}</b>${u?`<small> ${u}</small>`:''}</div>`;}
 function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${h.method||'MIL-HS'}&middot;${h.grid||'?'}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
 function exportPanel(){
-  const q=currentExportQual||'standard';
+  const q=currentExportQual||'low';
   return`<hr class="div">
 <div class="sec-lbl">export 3mf</div>
 <div class="exp-row">
@@ -1494,8 +2180,10 @@ function exportPanel(){
 </div>
 <div class="qual-strip" style="margin-bottom:8px">
     <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')">Draft</button>
-    <button class="qual-btn${q==='standard'?' active':''}" id="qStd" onclick="setQual('standard')">Standard</button>
-    <button class="qual-btn${q==='fine'?' active':''}" id="qFine" onclick="setQual('fine')">Fine</button>
+    <button class="qual-btn${q==='low'?' active':''}" id="qLow" onclick="setQual('low')">Low</button>
+    <button class="qual-btn${q==='med'?' active':''}" id="qMed" onclick="setQual('med')">Med</button>
+    <button class="qual-btn${q==='high'?' active':''}" id="qHigh" onclick="setQual('high')">High</button>
+    <button class="qual-btn${q==='ultra'?' active':''}" id="qUltra" onclick="setQual('ultra')">Ultra</button>
   </div>
 <button id="expBtn" onclick="triggerExport()">Export 3MF</button>
 <div id="expEstimate"></div>
@@ -1532,12 +2220,12 @@ const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN'};
 let currentRecipe=null;
 
 // ── Export state & functions ───────────────────────────────────────────────
-const QUAL_EDGE_MM={draft:.20,standard:.10,fine:.05};
-let currentExportQual='standard';
+const QUAL_EDGE_MM={draft:.30,low:.20,med:.10,high:.05,ultra:.03};
+let currentExportQual='low';
 
 window.setQual=function(q){
   currentExportQual=q;
-  const ids={draft:'qDraft',standard:'qStd',fine:'qFine'};
+  const ids={draft:'qDraft',low:'qLow',med:'qMed',high:'qHigh',ultra:'qUltra'};
   Object.keys(ids).forEach(k=>{const el=document.getElementById(ids[k]);if(el)el.classList.toggle('active',k===q);});
   updateExportEstimate();
 };
@@ -1585,13 +2273,51 @@ window.triggerExport=async function(){
   let workerMsg, scale, domainLabel, edgeLabel;
   if(importedShape){
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-    const resMult=extractResolutionMultiplier(currentRecipe);
-    const rawRelEdgeMm=(EXPORT_EDGE_FRAC[currentExportQual]/resMult)*cellSizeMm;
+    const expOversample=EXPORT_OVERSAMPLE[currentExportQual]||6;
+    const expEdgeWorld=estimateFeatureEdge(currentRecipe,expOversample);
+    const rawRelEdgeMm=expEdgeWorld*(cellSizeMm/10);
+    // Apply printing-resolution floor: edges finer than a printer can resolve
+    // just inflate triangle counts without improving physical output.
+    const printFloorMm=PRINT_EDGE_MM_BY_QUAL[currentExportQual]||0.10;
+    const flooredEdgeMm=Math.max(rawRelEdgeMm,printFloorMm);
     const {mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
-    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(rawRelEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
-    const simplifyTol=(EXPORT_SIMPLIFY_FRAC[currentExportQual]/resMult)*cellSizeMm;
-    const posBuffer=importedShape.posArr.buffer.slice(0);
-    const idxBuffer=importedShape.idxArr.buffer.slice(0);
+    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(flooredEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
+    const simplifyTol=relEdgeMm*0.15;
+    // Re-bake shape SDF at export resolution if the cached grid is coarser than
+    // our target. Target N is quality-scaled — draft is ~5s, ultra ~270s. If a
+    // later export requests higher N than cached, we re-bake; if lower (or equal),
+    // we reuse the cached higher-resolution grid.
+    const targetShapeN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
+    if(!importedShape.sdfGrid||importedShape.sdfGrid.N<targetShapeN){
+      coMain.textContent='preparing export...';
+      coSub.textContent='refining shape SDF ('+targetShapeN+'³)...';
+      overlay.classList.remove('hidden');
+      showCancelBtn(true);
+      if(window._orbStart)_orbStart();
+      const bakeStart=performance.now();
+      try{
+        importedShape.sdfGrid=await computeShapeSDF(
+          importedShape.posArr,importedShape.idxArr,importedShape.bbox,
+          targetShapeN,
+          pct=>{
+            const elapsed=Math.round((performance.now()-bakeStart)/1000);
+            const remaining=Math.max(0,Math.round(elapsed/Math.max(pct,0.01)-elapsed));
+            coSub.textContent='refining shape SDF ('+targetShapeN+'³) · '+Math.round(pct*100)+'% · ~'+remaining+'s left';
+          }
+        );
+      }catch(e){
+        if(e.message==='cancelled'){
+          // User cancelled — undo elapsed timer, reset export button, bail cleanly.
+          if(elapsedTimer)clearInterval(elapsedTimer);
+          if(elapsedEl)elapsedEl.style.display='none';
+          hideComputing();showCancelBtn(false);
+          btn.disabled=false;btn.classList.remove('sweeping');btn.textContent='Export 3MF';
+          return;
+        }
+        throw e;
+      }
+      showCancelBtn(false);
+    }
     const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
     if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
     coMain.textContent='exporting...';
@@ -1600,9 +2326,12 @@ window.triggerExport=async function(){
     scale=1.0;
     domainLabel=importedShape.meta.bbox;
     edgeLabel=relEdgeMm.toFixed(2)+'mm';
+    // Transfer a COPY of the SDF buffer so the cache survives in main thread.
+    const shapeSdfBuffer=importedShape.sdfGrid.data.buffer.slice(0);
     workerMsg={
       mode:'export',recipe:currentRecipe,
-      shapePos:posBuffer,shapeIdx:idxBuffer,
+      shapeSdfData:shapeSdfBuffer,
+      shapeN:importedShape.sdfGrid.N,
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
       cellSizeMm,relEdgeMm,simplifyTol,scale
     };
@@ -1632,8 +2361,8 @@ window.triggerExport=async function(){
         else if(d.type==='error') reject(new Error(d.message));
       };
       worker.onerror=e=>reject(new Error(e.message||'Worker error'));
-      if(workerMsg.shapePos){
-        worker.postMessage(workerMsg,[workerMsg.shapePos,workerMsg.shapeIdx]);
+      if(workerMsg.shapeSdfData){
+        worker.postMessage(workerMsg,[workerMsg.shapeSdfData]);
       } else {
         worker.postMessage(workerMsg);
       }
@@ -1645,6 +2374,18 @@ window.triggerExport=async function(){
     btn.textContent='building 3MF...';
     const vertProps=new Float32Array(result.vertProperties);
     const triVerts=new Uint32Array(result.triVerts);
+    // Restore original CAD coordinates: mesh was translated to origin at
+    // import so the preview pipeline could operate in a single consistent
+    // coord system. Shift vertices back by +importCenter so the exported
+    // 3MF lines up with the user's CAD assembly on reimport.
+    if(importedShape&&importedShape.importCenter){
+      const c=importedShape.importCenter;
+      for(let i=0;i<vertProps.length;i+=3){
+        vertProps[i]  +=c.x;
+        vertProps[i+1]+=c.y;
+        vertProps[i+2]+=c.z;
+      }
+    }
     const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??scale);
     const j=currentRecipe.json;
     const preset=j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype;
@@ -1691,8 +2432,8 @@ async function buildMinimal3MF(vertProps,triVerts,scale){
 
 function showError(m){errorBox.style.display='block';errorBox.textContent='⚠ '+m;}
 function clearError(){errorBox.style.display='none';}
-function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';}
-function hideComputing(){overlay.classList.add('hidden');}
+function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';if(window._orbStart)_orbStart();}
+function hideComputing(){overlay.classList.add('hidden');if(window._orbStop)_orbStop();}
 
 function setStale(){
   const banner=document.getElementById('staleBanner');
@@ -1711,8 +2452,8 @@ function clearStale(){
   if(area){area.classList.remove('preview-stale');}
 }
 function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';}
-function setBtns(on){['btnDraft','btnStandard','btnFine'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
-function setActivBtn(id){['btnDraft','btnStandard','btnFine'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
+function setBtns(on){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
+function setActivBtn(id){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 
 async function showRecipe(recipe){
   clearError();currentRecipe=recipe;
@@ -1720,8 +2461,7 @@ async function showRecipe(recipe){
   document.getElementById('shapeStrip').style.display='block';
   typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
   summaryEl.innerHTML=renderSummary(recipe);
-  if(!threeReady){await new Promise(r=>setTimeout(r,60));initThreeJS();}
-  resizeRenderer();setActivBtn('btnDraft');triggerMesh(0.08);
+  setActivBtn('btnDraft');triggerPreview('draft');
   setTimeout(updateExportEstimate,0); // panel renders async
 }
 function resetToDropzone(){
@@ -1734,9 +2474,13 @@ function resetToDropzone(){
   clearShapeWire();setShapeUI('idle');
 }
 document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
-document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnDraft');triggerMesh(0.08);});
-document.getElementById('btnStandard').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnStandard');triggerMesh(0.05);});
-document.getElementById('btnFine').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnFine');triggerMesh(0.03);});
+document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnDraft');triggerPreview('draft');});
+document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnLow');triggerPreview('low');});
+document.getElementById('btnMed').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnMed');triggerPreview('med');});
+document.getElementById('btnHigh').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnHigh');triggerPreview('high');});
+document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnUltra');triggerPreview('ultra');});
+
+
 
 
 // ── URL ingestion — auto-load recipe from ?r= parameter ──────────────────
@@ -1776,7 +2520,7 @@ shapeDZ.addEventListener('dragleave',e=>{shapeDZ.classList.remove('dragover');})
 shapeDZ.addEventListener('drop',e=>{e.stopPropagation();e.preventDefault();shapeDZ.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f&&isShapeFile(f))handleShapeFile(f);});
 
 // ── Cell size stale detection (event delegation — input is dynamically rendered) ──
-document.addEventListener('input',e=>{if(e.target&&e.target.id==='shapeCellSizeMm'&&importedShape){setStale();}});
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='shapeCellSizeMm'&&importedShape&&!recipeIsPeriodic(currentRecipe)){setStale();}});
 </script>
 </body>
 </html>

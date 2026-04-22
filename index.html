@@ -50,7 +50,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 #fileInput{display:none}
 #recipeView{display:none;flex-direction:row;flex:1;margin:0 16px 16px;min-height:0;gap:12px;align-items:stretch}
 #previewArea{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden;background:var(--panel);border:.5px solid var(--border);border-radius:12px}
-#threeCanvas{position:absolute;inset:0;display:block;width:100%;height:100%}
 #computeOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;background:rgba(6,8,15,.82);z-index:4}
 #computeOverlay.hidden{display:none}
 .co-main{font-size:15px;color:var(--amber);font-weight:500;letter-spacing:.04em}
@@ -84,7 +83,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .exp-unit{font-size:11px;color:var(--muted)}
 .qual-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%}
 .qual-btn{font-size:11px;padding:0;min-height:36px;border:.5px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;font-family:inherit;width:100%;text-align:center;transition:color .1s,border-color .1s,background .1s;line-height:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
-.qual-btn .ql{display:none}
+.qual-btn .ql{display:block;font-size:9px;color:var(--dim);font-variant-numeric:tabular-nums;letter-spacing:.04em;font-weight:400}
 .qual-btn.active{color:var(--purple);border-color:var(--purple);background:rgba(124,111,247,.1)}
 .qual-btn.active .ql{color:var(--purple)}
 #expBtn{width:100%;padding:7px 14px;border:.5px solid var(--cyan);border-radius:20px;background:rgba(34,211,238,.08);color:var(--cyan);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;transition:background .15s;position:relative;overflow:hidden}
@@ -136,8 +135,6 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #staleRefreshBtn:hover{background:rgba(245,158,11,.3)}
 @keyframes stalePulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}60%{box-shadow:0 0 0 5px rgba(245,158,11,0)}}
 #staleRefreshBtn.pulsing{animation:stalePulse 1.4s ease-out infinite}
-.preview-stale #threeCanvas{opacity:.35;transition:opacity .25s}
-#threeCanvas{transition:opacity .25s}
 
 #cellOverlay{position:absolute;bottom:44px;left:10px;z-index:6;display:none;align-items:center;gap:8px;background:rgba(6,8,15,.88);border:.5px solid var(--amber);border-radius:6px;padding:6px 12px}
 #cellOverlay label{font-size:12px;font-weight:500;color:var(--amber);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
@@ -148,6 +145,48 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 
 #expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
 #expElapsed{display:none;font-size:10px;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums}
+
+/* ── Timings pill (v0.4.0; restacked v0.5.0-rc8) — shows after export ──
+   Sits between cellOverlay (44px) and structXformOverlay (136px).
+   Previously at 36px where it was hidden behind the cell-size input. */
+#timingsPill{display:none;position:absolute;bottom:84px;left:10px;z-index:5;
+  background:rgba(6,8,15,.88);border:.5px solid var(--border);border-radius:5px;
+  padding:4px 9px;font-size:10px;color:var(--dim);
+  font-variant-numeric:tabular-nums;letter-spacing:.04em;
+  align-items:center;gap:8px}
+#timingsPill.show{display:flex}
+
+/* ── XYZ orientation gimbal (v0.5.0) ──────────────────────────────────── */
+#orientGimbal{position:absolute;top:10px;right:10px;z-index:4;
+  pointer-events:none;opacity:0.85}
+#orientGimbal text{user-select:none;dominant-baseline:middle}
+
+/* ── Structure SDF transform overlay (v0.5.0 Phase B; restacked rc8) ────
+   Sits above timings pill (84px + ~22px tall + 8px gap ≈ 114px; rounded 136). */
+#structXformOverlay{position:absolute;bottom:136px;left:10px;z-index:6;
+  display:none;flex-direction:column;gap:4px;
+  background:rgba(6,8,15,.88);border:.5px solid var(--purple);border-radius:6px;
+  padding:6px 12px;min-width:280px}
+.sxr{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--purple);
+  letter-spacing:.05em;font-variant-numeric:tabular-nums}
+.sxr-label{font-size:10px;font-weight:500;color:var(--purple);
+  letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;min-width:56px}
+.sxr-axis{font-weight:600;color:var(--dim);margin-left:4px}
+.sxr-unit{font-size:9px;color:var(--dim);opacity:.85}
+.sxr input[type=number]{width:48px;font-size:12px;font-weight:600;background:transparent;
+  border:none;border-bottom:.5px solid var(--cyan);color:var(--cyan);
+  font-family:inherit;font-variant-numeric:tabular-nums;text-align:right;
+  outline:none;padding:0 2px;appearance:none;-moz-appearance:textfield}
+.sxr input[type=number]::-webkit-inner-spin-button,
+.sxr input[type=number]::-webkit-outer-spin-button{
+  -webkit-appearance:none;appearance:none;margin:0;display:none}
+.sxr-reset{font-size:9px;font-family:inherit;padding:2px 8px;border:.5px solid var(--dim);
+  border-radius:3px;background:transparent;color:var(--dim);cursor:pointer;
+  margin-left:auto;letter-spacing:.08em;text-transform:uppercase;transition:color .1s,border-color .1s}
+.sxr-reset:hover{color:var(--purple);border-color:var(--purple)}
+.tp-label{color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.1em}
+.tp-val{color:var(--text);font-weight:500}
+.tp-sep{color:var(--border)}
 </style>
 </head>
 <body>
@@ -175,8 +214,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
       <div class="fh-tool-name" style="color:#6B0A4C">MESH</div>
     </div>
     <div class="fh-right">
-      <div class="mpill"><div class="mdot loading" id="mdot"></div><span id="mLabel">manifold loading</span></div>
-      <span class="fh-version">v0.3.0</span>
+      <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
+      <span class="fh-version">v0.5.0-rc10</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -220,7 +259,6 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     <div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;gap:0">
     <div id="previewArea" style="flex:1;min-height:0">
       <canvas id="rmCanvas"></canvas>
-      <canvas id="threeCanvas" style="display:none"></canvas>
       <div id="computeOverlay">
   <canvas id="orbSpinner" width="64" height="64"></canvas>
       <div class="co-main" id="coMain">awaiting recipe…</div>
@@ -237,7 +275,52 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
         <button class="res-btn"       id="btnUltra">Ultra</button>
       </div>
       <div id="triPill"></div>
+      <!-- ── XYZ orientation gimbal (v0.5.0) ─────────────────────────────── -->
+      <svg id="orientGimbal" width="84" height="84" viewBox="-42 -42 84 84">
+        <!-- Lines drawn from origin out to axis tips; updated by _updateGimbal() -->
+        <line id="gimX" x1="0" y1="0" x2="32" y2="0"  stroke="#ff5252" stroke-width="1.4" stroke-linecap="round"/>
+        <line id="gimY" x1="0" y1="0" x2="0"  y2="-32" stroke="#4caf50" stroke-width="1.4" stroke-linecap="round"/>
+        <line id="gimZ" x1="0" y1="0" x2="0"  y2="0"  stroke="#42a5f5" stroke-width="1.4" stroke-linecap="round"/>
+        <!-- Axis tip markers — filled when front-facing, hollow when back -->
+        <circle id="gimXT" cx="32" cy="0"   r="4.5" fill="#ff5252" stroke="#ff5252" stroke-width="1.2"/>
+        <circle id="gimYT" cx="0"  cy="-32" r="4.5" fill="#4caf50" stroke="#4caf50" stroke-width="1.2"/>
+        <circle id="gimZT" cx="0"  cy="0"   r="4.5" fill="#42a5f5" stroke="#42a5f5" stroke-width="1.2"/>
+        <!-- Axis tip labels — sit inside the tip circles -->
+        <text id="gimXL" x="32" y="0"   font-size="7" fill="#06080f" font-family="Exo 2, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">X</text>
+        <text id="gimYL" x="0"  y="-32" font-size="7" fill="#06080f" font-family="Exo 2, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">Y</text>
+        <text id="gimZL" x="0"  y="0"   font-size="7" fill="#06080f" font-family="Exo 2, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">Z</text>
+        <!-- Centre dot -->
+        <circle cx="0" cy="0" r="1.4" fill="#888"/>
+      </svg>
+      <div id="timingsPill">
+        <span class="tp-label">sdf</span><span class="tp-val" id="tpSdf">—</span>
+        <span class="tp-sep">·</span>
+        <span class="tp-label">simplify</span><span class="tp-val" id="tpSimplify">—</span>
+        <span class="tp-sep">·</span>
+        <span class="tp-label">total</span><span class="tp-val" id="tpTotal">—</span>
+      </div>
       <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span></div>
+      <!-- ── Structure SDF transform (v0.5.0 Phase B) ───────────────────────
+           Sits above cell overlay, same chip aesthetic, shown only with shape -->
+      <div id="structXformOverlay">
+        <div class="sxr">
+          <span class="sxr-label">rotation</span>
+          <span class="sxr-axis">X</span><input type="number" id="sxRotX" step="5" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">°</span>
+          <span class="sxr-axis">Y</span><input type="number" id="sxRotY" step="5" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">°</span>
+          <span class="sxr-axis">Z</span><input type="number" id="sxRotZ" step="5" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">°</span>
+        </div>
+        <div class="sxr">
+          <span class="sxr-label">offset</span>
+          <span class="sxr-axis">X</span><input type="number" id="sxOffX" step="0.1" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">mm</span>
+          <span class="sxr-axis">Y</span><input type="number" id="sxOffY" step="0.1" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">mm</span>
+          <span class="sxr-axis">Z</span><input type="number" id="sxOffZ" step="0.1" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()"><span class="sxr-unit">mm</span>
+        </div>
+        <div class="sxr">
+          <span class="sxr-label">iso offset</span>
+          <input type="number" id="sxIso" step="0.01" value="0" oninput="window.onStructXformInput&&window.onStructXformInput()" style="width:80px"><span class="sxr-unit">mm (+ thicker walls)</span>
+          <button class="sxr-reset" onclick="window.onStructXformReset&&window.onStructXformReset()">reset</button>
+        </div>
+      </div>
       <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview('med')">↻ Update Preview</button></div>
     </div>
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
@@ -312,97 +395,111 @@ import { MeshBVH, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
-// ── Manifold ──────────────────────────────────────────────────────────────
-let ManifoldAPI = null;
+// ── Status indicator (kept; reused by other init paths if needed) ────────
 const mdot = document.getElementById('mdot'), mLabel = document.getElementById('mLabel');
-function setMS(s,t){mdot.className='mdot '+s;mLabel.textContent=t;}
-
-const manifoldReady = (async()=>{
-  try{
-    const mod=await import('https://cdn.jsdelivr.net/npm/manifold-3d@3.4.1/+esm');
-    const wasm=await mod.default();wasm.setup();ManifoldAPI=wasm;
-    setMS('ready','manifold ready');return wasm;
-  }catch(e){setMS('error','manifold failed');console.error(e);return null;}
-})();
+function setMS(s,t){if(mdot)mdot.className='mdot '+s;if(mLabel)mLabel.textContent=t;}
+// Manifold no longer loaded on main thread (v0.5.0-rc7) — used only inside
+// the mesh worker for marching cubes (Manifold.levelSet). All shape/mesh
+// downstream operations go through Float32Array buffers and SDF grids.
+setMS('ready','ready');
 
 
-// ── Three.js scene (lazy, export-result display only) ────────────────────────
-let scene,camera,renderer,meshObj;let threeReady=false;
-function initThreeJS(){
-  const canvas=document.getElementById('threeCanvas');
-  const w=canvas.clientWidth||400,h=canvas.clientHeight||300;
-  scene=new THREE.Scene();scene.background=new THREE.Color(0x06080f);
-  camera=new THREE.PerspectiveCamera(42,w/h,.1,500);camera.position.set(9,7,13);camera.lookAt(0,0,0);
-  renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(w,h);
-  scene.add(new THREE.AmbientLight(0x3a4060,1.2));
-  const key=new THREE.DirectionalLight(0xd0d8ff,1.4);key.position.set(8,12,10);scene.add(key);
-  const fill=new THREE.DirectionalLight(0x4466aa,.5);fill.position.set(-8,-4,-6);scene.add(fill);
-  new ResizeObserver(()=>{
-    if(!renderer)return;const area=document.getElementById('previewArea');
-    const w=area.clientWidth,h=area.clientHeight;if(!w||!h)return;
-    camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
-  }).observe(document.getElementById('previewArea'));
-  (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
-  threeReady=true;
-}
-// Canvas visibility helpers
-function showRaymarcherCanvas(){
-  document.getElementById('rmCanvas').style.display='block';
-  document.getElementById('threeCanvas').style.display='none';
-}
-function showExportCanvas(){
-  if(!threeReady) initThreeJS();
-  document.getElementById('threeCanvas').style.display='block';
-  document.getElementById('rmCanvas').style.display='none';
-}
-function displayMesh(mMesh, displayNorm){
-  if(meshObj){scene.remove(meshObj);meshObj.geometry.dispose();meshObj.material.dispose();meshObj=null;}
-  const positions=new Float32Array(mMesh.vertProperties);
-  // when shape is loaded, levelSet output is in mm — normalise to [-5,5] for display only
-  if(displayNorm){
-    for(let i=0;i<positions.length;i+=3){
-      positions[i]   =(positions[i]   -displayNorm.cx)*displayNorm.scale;
-      positions[i+1] =(positions[i+1] -displayNorm.cy)*displayNorm.scale;
-      positions[i+2] =(positions[i+2] -displayNorm.cz)*displayNorm.scale;
-    }
-  }
-  const indices=new Uint32Array(mMesh.triVerts);
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
-  geo.setIndex(new THREE.BufferAttribute(indices,1));
-  geo.computeVertexNormals();
-  const mat=new THREE.MeshStandardMaterial({color:0x7a99cc,metalness:.15,roughness:.65,side:THREE.DoubleSide});
-  meshObj=new THREE.Mesh(geo,mat);scene.add(meshObj);
-}
+// (v0.5.0-rc7) Three.js scene + displayMesh removed — was used for the
+// post-clear "extracted Three.js mesh" view triggered by triggerMesh().
+// Both that flow and the underlying triggerMesh() are gone now; the
+// raymarcher's cube preview is the sole post-clear display.
 
 // ── Imported shape state ──────────────────────────────────────────────────
 let importedShape = null;
-// importedShape = { manifold, posArr, idxArr, bbox, displayNorm, meta }
-let shapeWireObj = null;
+// importedShape = { posArr, idxArr, bbox, sdfGrid, importCenter, meta }
 let occtModule = null;
 
-// Takes mm positions, normalises to [-5,5] for Three.js display only — shape itself stays in mm
-function displayShapeWire(pos, idx, displayNorm) {
-  if(shapeWireObj){scene.remove(shapeWireObj);shapeWireObj.geometry.dispose();shapeWireObj.material.dispose();shapeWireObj=null;}
-  const dispPos = new Float32Array(pos.length);
-  for(let i=0;i<pos.length;i+=3){
-    dispPos[i]   = (pos[i]   - displayNorm.cx) * displayNorm.scale;
-    dispPos[i+1] = (pos[i+1] - displayNorm.cy) * displayNorm.scale;
-    dispPos[i+2] = (pos[i+2] - displayNorm.cz) * displayNorm.scale;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(dispPos, 3));
-  if(idx) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
-  const wire = new THREE.WireframeGeometry(geo);
-  const mat = new THREE.LineBasicMaterial({color:0x18f370, opacity:0.22, transparent:true});
-  shapeWireObj = new THREE.LineSegments(wire, mat);
-  scene.add(shapeWireObj);
+// ── Structure SDF transform (v0.5.0 Phase B) ─────────────────────────────
+// User-applied modifier on the periodic structure SDF, evaluated in shape
+// coordinates. Lives in UI only — never persisted to the recipe JSON.
+// Reset to identity on every new shape import (per user spec).
+//
+// Transform formula in shape-mm space:
+//   localP = R^T × ((p - shapeCenterMm) - spatialOffsetMm)   (R^T = inverse rotation)
+//   sc     = sdfFn(localP) - isoOffsetMm                      (negative because +iso → thicker walls)
+//
+// rotMat is column-major 3x3 (same convention as the camera rotMat).
+// spatialOffsetMm and isoOffsetMm are in mm.
+let structureTransform = {
+  rotXDeg: 0, rotYDeg: 0, rotZDeg: 0,
+  spatialOffsetMmX: 0, spatialOffsetMmY: 0, spatialOffsetMmZ: 0,
+  isoOffsetMm: 0,
+  rotMat: [1,0,0, 0,1,0, 0,0,1] // identity by default
+};
+
+// Builds an inverse-rotation (R^T) column-major 3x3 from Euler angles in
+// degrees. Order: extrinsic XYZ — apply X, then Y, then Z about world axes.
+// Returns the transpose of the composed rotation, so the matrix can be used
+// directly as `M × q` in code (rather than needing per-call transpose).
+function eulerXYZToInvMat3(rxDeg, ryDeg, rzDeg){
+  const rx=rxDeg*Math.PI/180, ry=ryDeg*Math.PI/180, rz=rzDeg*Math.PI/180;
+  const cx=Math.cos(rx), sx=Math.sin(rx);
+  const cy=Math.cos(ry), sy=Math.sin(ry);
+  const cz=Math.cos(rz), sz=Math.sin(rz);
+  // Forward (extrinsic XYZ): R = Rz * Ry * Rx
+  // Compose R, then return its transpose.
+  // Rx:
+  // | 1  0   0  |
+  // | 0  cx -sx |
+  // | 0  sx  cx |
+  // Ry:
+  // | cy  0  sy |
+  // | 0   1  0  |
+  // |-sy  0  cy |
+  // Rz:
+  // | cz -sz 0 |
+  // | sz  cz 0 |
+  // | 0   0  1 |
+  // R = Rz * Ry * Rx (composed):
+  const r00 = cz*cy;
+  const r01 = cz*sy*sx - sz*cx;
+  const r02 = cz*sy*cx + sz*sx;
+  const r10 = sz*cy;
+  const r11 = sz*sy*sx + cz*cx;
+  const r12 = sz*sy*cx - cz*sx;
+  const r20 = -sy;
+  const r21 = cy*sx;
+  const r22 = cy*cx;
+  // Return R^T in column-major order (col*3+row).
+  // R^T means swap rows and cols, so col c, row r of R^T = col r, row c of R.
+  return [
+    r00, r01, r02,   // col 0 of R^T = row 0 of R
+    r10, r11, r12,   // col 1 of R^T = row 1 of R
+    r20, r21, r22    // col 2 of R^T = row 2 of R
+  ];
 }
 
-function clearShapeWire(){
-  if(shapeWireObj){scene.remove(shapeWireObj);shapeWireObj.geometry.dispose();shapeWireObj.material.dispose();shapeWireObj=null;}
+function recomputeStructureRotMat(){
+  structureTransform.rotMat = eulerXYZToInvMat3(
+    structureTransform.rotXDeg,
+    structureTransform.rotYDeg,
+    structureTransform.rotZDeg
+  );
 }
+
+function resetStructureTransform(){
+  structureTransform.rotXDeg = 0;
+  structureTransform.rotYDeg = 0;
+  structureTransform.rotZDeg = 0;
+  structureTransform.spatialOffsetMmX = 0;
+  structureTransform.spatialOffsetMmY = 0;
+  structureTransform.spatialOffsetMmZ = 0;
+  structureTransform.isoOffsetMm = 0;
+  structureTransform.rotMat = [1,0,0, 0,1,0, 0,0,1];
+}
+// Expose so raymarcher can re-read on cell-size changes (mm→world rescale).
+if(typeof window!=='undefined') window.structureTransform = structureTransform;
+
+// (v0.5.0-rc7) Wire-frame overlay of imported shape removed — was rendered
+// via the Three.js scene that's now gone. The raymarcher's shape SDF preview
+// already shows the bounding shape implicitly (where structure is clipped to).
+// clearShapeWire kept as a no-op so callers don't need to be updated.
+function clearShapeWire(){ /* no-op */ }
 // ── Shape SDF generation (three-mesh-bvh, CPU, N³ grid) ─────────────────────
 // Returns { data: Float32Array, N, sdfMin, sdfMax } in mm.
 // Sign: positive outside shape, negative inside (standard SDF convention).
@@ -413,8 +510,83 @@ function clearShapeWire(){
 // (wired into cancelMesh so the existing ✕ cancel button aborts main-thread bakes
 // just like it terminates worker jobs).
 let _sdfBakeAborted=false;
-async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
-  _sdfBakeAborted=false;
+let _activeSdfWorkers=[];
+
+// ── SDF bake worker source ───────────────────────────────────────────────
+// Each worker builds its own BVH from transferred pos/idx and bakes a Z-slab.
+// Workers report progress within their slab and post the finished Float32
+// slab back to the main thread for stitching into the final grid.
+// Lives as a Blob URL so no separate file needed; imports three + three-mesh-bvh
+// dynamically (browser caches across workers after first load).
+let _sdfWorkerBlobUrl=null;
+function getSdfWorkerBlobUrl(){
+  if(!_sdfWorkerBlobUrl){
+    const src=`
+let THREE=null, MeshBVH=null;
+const ready=(async()=>{
+  const [threeMod, bvhMod] = await Promise.all([
+    import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js'),
+    import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js')
+  ]);
+  THREE=threeMod; MeshBVH=bvhMod.MeshBVH;
+})();
+
+self.onmessage=async function(e){
+  try{
+    await ready;
+    const {posArr,idxArr,bbox,N,zStart,zEnd,workerId}=e.data;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+    geo.setIndex(new THREE.BufferAttribute(idxArr,1));
+    const bvh=new MeshBVH(geo);
+    const dx=bbox.mxx-bbox.mnx,dy=bbox.mxy-bbox.mny,dz=bbox.mxz-bbox.mnz;
+    const nSlices=zEnd-zStart;
+    const slab=new Float32Array(N*N*nSlices);
+    let minV=Infinity,maxV=-Infinity;
+    const qp=new THREE.Vector3();
+    const closest={point:new THREE.Vector3()};
+    const ray=new THREE.Ray();
+    ray.direction.set(0.9732,0.1894,0.1225).normalize();
+    let lastReport=performance.now();
+    for(let iz=zStart;iz<zEnd;iz++){
+      const localZ=iz-zStart;
+      for(let iy=0;iy<N;iy++){
+        for(let ix=0;ix<N;ix++){
+          qp.set(
+            bbox.mnx+(ix+0.5)/N*dx,
+            bbox.mny+(iy+0.5)/N*dy,
+            bbox.mnz+(iz+0.5)/N*dz
+          );
+          bvh.closestPointToPoint(qp,closest);
+          const dist=qp.distanceTo(closest.point);
+          ray.origin.copy(qp);
+          const hits=bvh.raycast(ray,THREE.DoubleSide);
+          const inside=(hits.length&1)===1;
+          const val=inside?-dist:dist;
+          slab[ix+iy*N+localZ*N*N]=val;
+          if(val<minV)minV=val;
+          if(val>maxV)maxV=val;
+        }
+      }
+      if(performance.now()-lastReport>80){
+        self.postMessage({type:'progress',workerId,pct:(iz-zStart+1)/nSlices});
+        lastReport=performance.now();
+      }
+    }
+    self.postMessage({type:'done',workerId,slab:slab.buffer,zStart,zEnd,sdfMin:minV,sdfMax:maxV},[slab.buffer]);
+  }catch(err){
+    self.postMessage({type:'error',message:err.message||String(err)});
+  }
+};
+`;
+    _sdfWorkerBlobUrl=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+  }
+  return _sdfWorkerBlobUrl;
+}
+
+// ── Main-thread fallback: original serial implementation ──────────────────
+// Used when workers are unavailable (very rare) or hardwareConcurrency=1.
+async function _computeShapeSDF_serial(posArr, idxArr, bbox, N, onProgress){
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
   geo.setIndex(new THREE.BufferAttribute(idxArr, 1));
@@ -425,29 +597,15 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
   let minV=Infinity, maxV=-Infinity;
   const qp = new THREE.Vector3();
   const closest = {point: new THREE.Vector3()};
-  // Reused ray for parity test. Irrational direction (non-axis-aligned,
-  // non-rational components) avoids grazing coplanar faces and mesh edges.
   const ray = new THREE.Ray();
   ray.direction.set(0.9732, 0.1894, 0.1225).normalize();
-  // Time-based yield cadence: yield to the browser every ~16ms of elapsed
-  // work so the UI (orb spinner, overlay text) animates at ~60fps during the
-  // bake. Fixed slice-count yields break down at higher N — at N=128, a single
-  // slice can take 50-80ms on typical meshes, so even "every 1 slice" would
-  // miss frames. Time-based is robust to any N and any per-voxel cost.
   let lastYield=performance.now();
   for(let iz=0; iz<N; iz++){
     for(let iy=0; iy<N; iy++){
       for(let ix=0; ix<N; ix++){
-        qp.set(
-          bbox.mnx+(ix+0.5)/N*dx,
-          bbox.mny+(iy+0.5)/N*dy,
-          bbox.mnz+(iz+0.5)/N*dz
-        );
-        // Magnitude: distance to the closest surface point.
+        qp.set(bbox.mnx+(ix+0.5)/N*dx, bbox.mny+(iy+0.5)/N*dy, bbox.mnz+(iz+0.5)/N*dz);
         bvh.closestPointToPoint(qp, closest);
         const dist = qp.distanceTo(closest.point);
-        // Sign: raycast-parity. Count all surface crossings along the ray;
-        // odd count => query is inside the (watertight) shape.
         ray.origin.copy(qp);
         const hits = bvh.raycast(ray, THREE.DoubleSide);
         const inside = (hits.length & 1) === 1;
@@ -467,7 +625,106 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
   geo.disposeBoundsTree(); geo.dispose();
   return {data:grid, N, sdfMin:minV, sdfMax:maxV};
 }
-window._cancelSdfBake=function(){_sdfBakeAborted=true;};
+
+// ── Parallel SDF bake orchestrator ────────────────────────────────────────
+// Spawns min(hardwareConcurrency-1, 12) workers, each baking a contiguous
+// Z-slab. Progress is aggregated as a weighted average across workers.
+// Fallback to serial main-thread implementation if workers fail to spawn.
+async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
+  _sdfBakeAborted=false;
+  _activeSdfWorkers=[];
+  const hc=navigator.hardwareConcurrency||2;
+  // Matt's choice: cap at 12 so high-core Ryzens/Threadrippers use more cores.
+  // Leave 1 core for the UI; don't spawn more workers than slices can feed.
+  const nWorkers=Math.max(1, Math.min(12, hc-1, N));
+  // Serial fallback — on very-low-core machines or if worker spawn fails later.
+  if(nWorkers<=1){
+    return _computeShapeSDF_serial(posArr, idxArr, bbox, N, onProgress);
+  }
+  // Partition Z-slices into contiguous slabs (equal-size, last takes remainder).
+  const perWorker=Math.floor(N/nWorkers);
+  const extra=N-perWorker*nWorkers;
+  const slabs=[];
+  let z=0;
+  for(let w=0;w<nWorkers;w++){
+    const len=perWorker+(w<extra?1:0);
+    slabs.push({workerId:w, zStart:z, zEnd:z+len});
+    z+=len;
+  }
+  // Per-worker progress (0..1) — aggregated by weighted avg for the overlay.
+  const progressByWorker=new Array(nWorkers).fill(0);
+  const sliceWeights=slabs.map(s=>(s.zEnd-s.zStart)/N);
+  const reportProgress=()=>{
+    if(!onProgress)return;
+    let pct=0;
+    for(let i=0;i<nWorkers;i++)pct+=progressByWorker[i]*sliceWeights[i];
+    onProgress(pct);
+  };
+  // Spawn workers and collect their slabs. Each gets a COPY of pos/idx via
+  // structured clone (no transfer) so all workers share the mesh buffers.
+  const results=new Array(nWorkers);
+  let minV=Infinity, maxV=-Infinity;
+  let completed=0;
+  try{
+    await Promise.all(slabs.map(slab=>new Promise((resolve,reject)=>{
+      let worker;
+      try{worker=new Worker(getSdfWorkerBlobUrl());}
+      catch(we){reject(we);return;}
+      _activeSdfWorkers.push(worker);
+      worker.onmessage=e=>{
+        const d=e.data;
+        if(d.type==='progress'){
+          progressByWorker[d.workerId]=d.pct;
+          reportProgress();
+        } else if(d.type==='done'){
+          results[d.workerId]={slab:new Float32Array(d.slab), zStart:d.zStart, zEnd:d.zEnd};
+          if(d.sdfMin<minV)minV=d.sdfMin;
+          if(d.sdfMax>maxV)maxV=d.sdfMax;
+          progressByWorker[d.workerId]=1;
+          reportProgress();
+          completed++;
+          worker.terminate();
+          resolve();
+        } else if(d.type==='error'){
+          worker.terminate();
+          reject(new Error('worker '+slab.workerId+': '+d.message));
+        }
+      };
+      worker.onerror=e=>{worker.terminate();reject(new Error(e.message||'worker error'));};
+      // Structured-clone copies the buffers — each worker gets its own copy.
+      // For a typical 50k-tri orthopedic shape, ~1.2 MB per copy × 12 workers =
+      // ~14 MB extra RAM during bake. Acceptable; avoids transfer-ownership mess.
+      worker.postMessage({
+        posArr,idxArr,
+        bbox,N,
+        zStart:slab.zStart, zEnd:slab.zEnd,
+        workerId:slab.workerId
+      });
+    })));
+  }catch(e){
+    // Terminate any still-running workers then propagate.
+    _activeSdfWorkers.forEach(w=>{try{w.terminate();}catch(_){}});
+    _activeSdfWorkers=[];
+    if(_sdfBakeAborted||e.message==='cancelled')throw new Error('cancelled');
+    // Fallback to serial if worker-based failed (spawn error, etc).
+    console.warn('[SDF bake] parallel workers failed, falling back to serial:',e);
+    return _computeShapeSDF_serial(posArr, idxArr, bbox, N, onProgress);
+  }
+  _activeSdfWorkers=[];
+  // Stitch slabs into the final grid.
+  const grid=new Float32Array(N*N*N);
+  for(const r of results){
+    grid.set(r.slab, r.zStart*N*N);
+  }
+  return {data:grid, N, sdfMin:minV, sdfMax:maxV};
+}
+window._cancelSdfBake=function(){
+  _sdfBakeAborted=true;
+  // Terminate all active SDF workers so the cancel takes effect immediately
+  // rather than waiting for the next yield-cadence check.
+  _activeSdfWorkers.forEach(w=>{try{w.terminate();}catch(_){}});
+  _activeSdfWorkers=[];
+};
 // ── MeshRaymarcher — WebGL2 raymarcher for combined scaffold + shape preview ──
 // Adapted from F13LD Grain tool. Two TEXTURE_3D slots:
 //   unit 0 → scaffold SDF baked to N³ grid in world [-5,5]³
@@ -572,10 +829,48 @@ MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
   this.viewH=Math.ceil(maxDim/2*(10/cellSizeMm)*1.05);
   var zoomLo=this.viewH*0.3,zoomHi=Math.max(80,this.viewH*8);
   this.camZoom=Math.min(zoomHi,Math.max(zoomLo,this.camZoom*(this.viewH/oldViewH)));
+  // If a structure transform is active, recompute world-unit values since
+  // mmToWorld depends on cellSizeMm.
+  if(this._structXform && typeof window!=='undefined' && window.structureTransform){
+    this.setStructureTransform(window.structureTransform);
+  }
   this._dirty=true;
 };
-MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._dirty=true;};
+MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._dirty=true;};
 MeshRaymarcher.prototype.setWorldBounds=function(wMin,wMax,isPeriodic){this.worldMin=wMin;this.worldMax=wMax;this.isPeriodic=isPeriodic!==false;this._dirty=true;};
+// ── Structure SDF transform setter (v0.5.0 Phase B) ──────────────────────
+// Accepts the main-thread structureTransform object (mm units, raw user iso
+// sign) and converts to world units / SDF-correct iso sign for shader use.
+// rotMat is passed through verbatim (no unit conversion needed for rotation).
+// Pivot is the shape center in world units.
+MeshRaymarcher.prototype.setStructureTransform=function(st){
+  if(!this.hasShape || !this.shapeData){
+    this._structXform = null;
+    return;
+  }
+  var sd=this.shapeData;
+  var mmToWorld = 10.0 / sd.cellSizeMm;
+  // Pivot: shape center in mm → world units.
+  var cx_mm = sd.bboxMin[0] + sd.bboxSize[0]*0.5;
+  var cy_mm = sd.bboxMin[1] + sd.bboxSize[1]*0.5;
+  var cz_mm = sd.bboxMin[2] + sd.bboxSize[2]*0.5;
+  // Iso sign: shader does (sc + uStructIsoWorld). rawToSDF now returns
+  // canonical NEGATIVE-INSIDE in both branches (v0.5.0-rc9 audit). UI says
+  // +iso = thicker walls, which in canonical convention means pushing zero-
+  // crossing outward, i.e. SUBTRACT iso from a negative-inside SDF. So the
+  // shader uniform is -iso_mm × mmToWorld. No functional change from rc8
+  // since rc8's -raw already produced negative-inside downstream of the
+  // shader math; this comment block just documents the now-canonical path.
+  this._structXform = {
+    rotMat: st.rotMat.slice(),  // copy 9-element array
+    pivot:  [cx_mm * mmToWorld, cy_mm * mmToWorld, cz_mm * mmToWorld],
+    offset: [st.spatialOffsetMmX * mmToWorld,
+             st.spatialOffsetMmY * mmToWorld,
+             st.spatialOffsetMmZ * mmToWorld],
+    iso: -st.isoOffsetMm * mmToWorld
+  };
+  this._dirty=true;
+};
 MeshRaymarcher.prototype.setQuality=function(q){
   if(this._quality===q&&this.prog)return;
   this._quality=q;
@@ -598,16 +893,38 @@ MeshRaymarcher.prototype._buildShader=function(){
     'uniform float uNrmStep;',
     'uniform float uBakeRaw;uniform float uFieldMid;uniform float uFieldHalfR;',
     'uniform float uCenter;uniform float uHalfW;uniform float uTopoMode;uniform float uHalfInvert;',
+    // ── Structure SDF transform uniforms (v0.5.0 Phase B) ─────────────────
+    // uStructRotInv: inverse-rotation matrix (R^T) applied to the query
+    //   point in shape-mm space, then converted back to world.
+    // uStructPivotWorld: shape center in world coords. Rotation/spatial
+    //   offset are anchored at this point so the lattice stays "centered"
+    //   visually as the user rotates.
+    // uStructOffsetWorld: spatial offset already converted from mm to world.
+    // uStructIsoWorld: iso offset in world units (sign already negated so
+    //   positive UI value → thicker walls).
+    'uniform mat3 uStructRotInv;',
+    'uniform vec3 uStructPivotWorld;',
+    'uniform vec3 uStructOffsetWorld;',
+    'uniform float uStructIsoWorld;',
+    // Apply structure transform to a query point (world coords). Pivot is
+    // the shape center; spatial offset shifts the lattice in shape space;
+    // rotation rotates the lattice around the pivot. Defaults to identity
+    // (rot = I, offset = 0, pivot = 0) in cube mode for back-compat.
+    'vec3 xformStructure(vec3 p){vec3 q=p-uStructPivotWorld-uStructOffsetWorld;return uStructRotInv*q+uStructPivotWorld;}',
     'float sampleRaw(vec3 p){vec3 uvw;if(uIsPeriodic>0.5)uvw=(p-uWorldMin)/uWorldSize;else uvw=clamp((p-uWorldMin)/uWorldSize,0.0,1.0);float t=texture(uField,uvw).r;return t*(uFieldMax-uFieldMin)+uFieldMin;}',
-    'float rawToSDF(float raw){float val;if(uBakeRaw>0.5){float norm=(raw-uFieldMid)/uFieldHalfR;float adj=norm-uCenter;if(uTopoMode<0.5)val=abs(adj)-uHalfW;else if(uTopoMode<1.5)val=uHalfInvert>0.5?adj:-adj;else val=uHalfW-abs(adj);}else val=-raw;return val;}',
+    'float rawToSDF(float raw){float val;if(uBakeRaw>0.5){float norm=(raw-uFieldMid)/uFieldHalfR;float adj=norm-uCenter;if(uTopoMode<0.5)val=abs(adj)-uHalfW;else if(uTopoMode<1.5)val=uHalfInvert>0.5?adj:-adj;else val=uHalfW-abs(adj);}else val=raw;return val;}',
+    // Convenience: transformed scaffold SDF — apply xformStructure to query
+    // coord, sample, convert raw→SDF, apply iso offset. Use this everywhere
+    // the unmodified scaffold SDF was previously used.
+    'float sampleScaffoldSDF(vec3 p){return rawToSDF(sampleRaw(xformStructure(p)))+uStructIsoWorld;}',
     'float sampleShape(vec3 p){vec3 pm=p*(uCellSizeMm/10.0);vec3 uvw=(pm-uBboxMin)/uBboxSize;if(any(lessThan(uvw,vec3(0.0)))||any(greaterThan(uvw,vec3(1.0)))){vec3 bmax=uBboxMin+uBboxSize;vec3 q=max(uBboxMin-pm,pm-bmax);return length(max(q,vec3(0.0)))*(10.0/uCellSizeMm);}float d_mm=texture(uShapeSDF,uvw).r;return d_mm*(10.0/uCellSizeMm);}',
-    'float implicit(vec3 p){float sc=rawToSDF(sampleRaw(p));if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    'float implicit(vec3 p){float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
     'vec3 boxNormal(vec3 pos){vec3 ap=abs(pos)/uViewH;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
     // Separated normals: scaffold gradient when scaffold surface, shape gradient when shape surface.
     // This prevents the sphere-boundary SDF transition from corrupting scaffold normals at silhouettes.
-    'vec3 nrmScaffold(vec3 p){float e=uNrmStep;return normalize(vec3(rawToSDF(sampleRaw(p+vec3(e,0,0)))-rawToSDF(sampleRaw(p-vec3(e,0,0))),rawToSDF(sampleRaw(p+vec3(0,e,0)))-rawToSDF(sampleRaw(p-vec3(0,e,0))),rawToSDF(sampleRaw(p+vec3(0,0,e)))-rawToSDF(sampleRaw(p-vec3(0,0,e)))));}',
+    'vec3 nrmScaffold(vec3 p){float e=uNrmStep;return normalize(vec3(sampleScaffoldSDF(p+vec3(e,0,0))-sampleScaffoldSDF(p-vec3(e,0,0)),sampleScaffoldSDF(p+vec3(0,e,0))-sampleScaffoldSDF(p-vec3(0,e,0)),sampleScaffoldSDF(p+vec3(0,0,e))-sampleScaffoldSDF(p-vec3(0,0,e))));}',
     'vec3 nrmShape(vec3 p){float e=uNrmStep;return normalize(vec3(sampleShape(p+vec3(e,0,0))-sampleShape(p-vec3(e,0,0)),sampleShape(p+vec3(0,e,0))-sampleShape(p-vec3(0,e,0)),sampleShape(p+vec3(0,0,e))-sampleShape(p-vec3(0,0,e))));}',
-    'vec3 nrmField(vec3 p){if(uHasShape>0.5){float sc=rawToSDF(sampleRaw(p));float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
+    'vec3 nrmField(vec3 p){if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
     'vec3 palette(float t){vec3 a=vec3(0.55,0.57,0.42),b=vec3(0.43,0.42,0.30),c=vec3(1.0,1.0,1.0),d=vec3(0.02,0.0,0.05);return clamp(a+b*cos(6.28318*(c*t+d)),0.0,1.0);}',
     'void main(){',
     '  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
@@ -689,6 +1006,11 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uHalfW=gl.getUniformLocation(p,'uHalfW');
   this._uTopoMode=gl.getUniformLocation(p,'uTopoMode');
   this._uHalfInvert=gl.getUniformLocation(p,'uHalfInvert');
+  // Structure SDF transform uniforms (v0.5.0 Phase B)
+  this._uStructRotInv=gl.getUniformLocation(p,'uStructRotInv');
+  this._uStructPivotWorld=gl.getUniformLocation(p,'uStructPivotWorld');
+  this._uStructOffsetWorld=gl.getUniformLocation(p,'uStructOffsetWorld');
+  this._uStructIsoWorld=gl.getUniformLocation(p,'uStructIsoWorld');
   this._pLoc=gl.getAttribLocation(p,'p');
   this._dirty=true;
 };
@@ -718,6 +1040,7 @@ MeshRaymarcher.prototype.render=function(){
   gl.useProgram(this.prog);
   gl.uniform2f(this._uRes,w,h);
   gl.uniformMatrix3fv(this._uRot,false,new Float32Array(this.rotMat));
+  if(this._updateGimbal) this._updateGimbal();
   gl.uniform1f(this._uZoom,this.camZoom);
   gl.uniform1f(this._uFieldMin,this.fieldMin);
   gl.uniform1f(this._uFieldMax,this.fieldMax);
@@ -743,6 +1066,21 @@ MeshRaymarcher.prototype.render=function(){
   var tm=topo.topoMode||'sheet';
   gl.uniform1f(this._uTopoMode,tm==='half'?1.0:tm==='solid'?2.0:0.0);
   gl.uniform1f(this._uHalfInvert,topo.halfInvert?1.0:0.0);
+  // ── Structure SDF transform uniforms (v0.5.0 Phase B) ───────────────────
+  // Default to identity (R=I, offset=0, pivot=0, iso=0) when no transform
+  // has been set — cube mode and untransformed shape mode unchanged.
+  var st=this._structXform || null;
+  if(st){
+    gl.uniformMatrix3fv(this._uStructRotInv,false,new Float32Array(st.rotMat));
+    gl.uniform3f(this._uStructPivotWorld,st.pivot[0],st.pivot[1],st.pivot[2]);
+    gl.uniform3f(this._uStructOffsetWorld,st.offset[0],st.offset[1],st.offset[2]);
+    gl.uniform1f(this._uStructIsoWorld,st.iso);
+  } else {
+    gl.uniformMatrix3fv(this._uStructRotInv,false,new Float32Array([1,0,0,0,1,0,0,0,1]));
+    gl.uniform3f(this._uStructPivotWorld,0.0,0.0,0.0);
+    gl.uniform3f(this._uStructOffsetWorld,0.0,0.0,0.0);
+    gl.uniform1f(this._uStructIsoWorld,0.0);
+  }
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
   gl.uniform1f(this._uHasShape,this.hasShape&&this.shapeTex?1.0:0.0);
   if(this.hasShape&&this.shapeTex&&this.shapeData){
@@ -776,6 +1114,73 @@ MeshRaymarcher.prototype._rotAA=function(ax,ay,az,angle){var c=Math.cos(angle),s
 MeshRaymarcher.prototype._mat3Mul=function(A,B){var r=new Array(9);for(var c=0;c<3;c++)for(var row=0;row<3;row++)r[c*3+row]=A[0*3+row]*B[c*3+0]+A[1*3+row]*B[c*3+1]+A[2*3+row]*B[c*3+2];return r;};
 MeshRaymarcher.prototype._orthonorm=function(m){function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}function scl(a,s){return[a[0]*s,a[1]*s,a[2]*s];}function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}function nrm(a){var l=Math.sqrt(dot(a,a))||1;return[a[0]/l,a[1]/l,a[2]/l];}var x=[m[0],m[1],m[2]],y=[m[3],m[4],m[5]],z=[m[6],m[7],m[8]];x=nrm(x);y=nrm(sub(y,scl(x,dot(y,x))));z=nrm(sub(sub(z,scl(x,dot(z,x))),scl(y,dot(z,y))));return[x[0],x[1],x[2],y[0],y[1],y[2],z[0],z[1],z[2]];};
 MeshRaymarcher.prototype._applyDelta=function(dx,dy){if(Math.abs(dx)>0.001){var ux=this.rotMat[3],uy=this.rotMat[4],uz=this.rotMat[5];this.rotMat=this._mat3Mul(this._rotAA(ux,uy,uz,-dx*0.007),this.rotMat);this._dirty=true;}if(Math.abs(dy)>0.001){var rx=this.rotMat[0],ry=this.rotMat[1],rz=this.rotMat[2];this.rotMat=this._mat3Mul(this._rotAA(rx,ry,rz,-dy*0.007),this.rotMat);this._dirty=true;}};
+
+// ── XYZ orientation gimbal (v0.5.0) ──────────────────────────────────────
+// Projects the three world-basis vectors (X=red, Y=green, Z=blue) through
+// the camera rotation into screen coords for the SVG gimbal display.
+//
+// Convention check: rotMat is column-major with rotMat[c*3+r] giving column
+// c, row r. The shader uses rotMat to map camera→world coords:
+//   ro = rotMat * (0,0,zoom)     (camera origin in world)
+//   rd = rotMat * (uv.x,uv.y,-1.6)  (ray dir; camera looks down -Z)
+//
+// To project a world-axis vector wA into camera space we need rotMat^T * wA,
+// i.e. we read the ROWS of rotMat. For world-X axis [1,0,0], camera-space
+// coords are (rotMat[0,0], rotMat[0,1], rotMat[0,2]) = (rotMat[0], rotMat[3], rotMat[6]).
+// Likewise world-Y → (rotMat[1], rotMat[4], rotMat[7]),
+//          world-Z → (rotMat[2], rotMat[5], rotMat[8]).
+//
+// Screen mapping: screen_x = camera_x, screen_y = -camera_y (SVG y points down).
+// Depth: empirically determined from this shader's coord frame —
+//   cz > 0 → axis tip is in front (toward viewer) → filled tip
+//   cz < 0 → axis tip is behind (away from viewer) → hollow tip
+//
+// Front/back distinction is done with binary fill (filled tip = front,
+// hollow tip = back) rather than continuous opacity fade — opacity fading
+// caused visible "pulsing" as axes cross perpendicular to view (cz≈0).
+MeshRaymarcher.prototype._updateGimbal=function(){
+  var R=this.rotMat;if(!R) return;
+  var L=28; // line length in SVG units
+  var axes=[
+    {id:'X', cx:R[0], cy:R[3], cz:R[6], color:'#ff5252', lineId:'gimX', tipId:'gimXT', labelId:'gimXL'},
+    {id:'Y', cx:R[1], cy:R[4], cz:R[7], color:'#4caf50', lineId:'gimY', tipId:'gimYT', labelId:'gimYL'},
+    {id:'Z', cx:R[2], cy:R[5], cz:R[8], color:'#42a5f5', lineId:'gimZ', tipId:'gimZT', labelId:'gimZL'},
+  ];
+  // Sort back-to-front: smaller cz = behind (drawn first); larger cz = in
+  // front (drawn last, on top). Sort ascending by cz.
+  axes.sort(function(a,b){return a.cz-b.cz;});
+  var svg=document.getElementById('orientGimbal');
+  if(!svg) return;
+  for(var i=0;i<axes.length;i++){
+    var a=axes[i];
+    var line=document.getElementById(a.lineId);
+    var tip=document.getElementById(a.tipId);
+    var label=document.getElementById(a.labelId);
+    if(!line||!tip||!label) continue;
+    var sx=a.cx*L, sy=-a.cy*L; // SVG y-down → flip
+    line.setAttribute('x2',sx.toFixed(2));
+    line.setAttribute('y2',sy.toFixed(2));
+    tip.setAttribute('cx',sx.toFixed(2));
+    tip.setAttribute('cy',sy.toFixed(2));
+    label.setAttribute('x',sx.toFixed(2));
+    label.setAttribute('y',sy.toFixed(2));
+    // Front (cz>0): filled tip with dark label inside.
+    // Back  (cz<0): hollow tip (transparent fill, colored stroke), colored label.
+    // Sign convention determined empirically — the WebGL "looks down -Z"
+    // assumption I started with was inverted for this shader's frame.
+    if(a.cz>0){
+      tip.setAttribute('fill',a.color);
+      label.setAttribute('fill','#06080f');
+    } else {
+      tip.setAttribute('fill','rgba(6,8,15,0.9)');
+      label.setAttribute('fill',a.color);
+    }
+    // Re-append in sorted order; last-appended renders on top in SVG.
+    svg.appendChild(line);
+    svg.appendChild(tip);
+    svg.appendChild(label);
+  }
+};
 MeshRaymarcher.prototype._setupInteraction=function(){
   var self=this,drag=false,lx=0,ly=0;
   this.canvas.onmousedown=function(e){drag=true;lx=e.clientX;ly=e.clientY;self.autoRot=false;};
@@ -854,46 +1259,20 @@ function computeShapeBbox(pos){
   const cx=(mnx+mxx)/2, cy=(mny+mxy)/2, cz=(mnz+mxz)/2;
   const dx=mxx-mnx, dy=mxy-mny, dz=mxz-mnz;
   const maxDim=Math.max(dx,dy,dz,0.001);
-  // displayNorm is used ONLY to fit the shape into Three.js [-5,5] view — never for Manifold
-  const displayNorm={cx,cy,cz,scale:10/maxDim};
   const bboxStr=`${dx.toFixed(1)}×${dy.toFixed(1)}×${dz.toFixed(1)} mm`;
-  return {mnx,mny,mnz,mxx,mxy,mxz,cx,cy,cz,dx,dy,dz,maxDim,bboxStr,displayNorm};
+  return {mnx,mny,mnz,mxx,mxy,mxz,cx,cy,cz,dx,dy,dz,maxDim,bboxStr};
 }
 
-// ── Build Manifold from raw mm positions ─────────────────────────────────
-async function buildShapeManifold(pos, idx){
-  await manifoldReady;
-  if(!ManifoldAPI) throw new Error('Manifold not ready');
-  const vertProperties = pos instanceof Float32Array ? pos : new Float32Array(pos);
-  const triVerts = new Uint32Array(idx);
-  console.log('[F13LD.mesh] buildShapeManifold:', vertProperties.length/3, 'verts,', triVerts.length/3, 'tris');
-  console.log('[F13LD.mesh] ManifoldAPI.Mesh available:', typeof ManifoldAPI.Mesh);
+// (v0.5.0-rc7) buildShapeManifold removed — main-thread Manifold object had
+// no downstream consumers. Shape data flows through posArr/idxArr/sdfGrid
+// only; marching cubes lives in the worker via Manifold.levelSet.
 
-  // Manifold requires mergeFromVert/mergeToVert to understand mesh topology when
-  // vertices are duplicated (as in STL/graphics-library meshes). The correct pattern
-  // per Manifold docs: construct a WASM Mesh object, call .merge() to auto-fill
-  // the merge vectors from geometry, then pass to the Manifold constructor.
-  let mfld;
-  try{
-    const wasmMesh = new ManifoldAPI.Mesh({ numProp: 3, vertProperties, triVerts });
-    console.log('[F13LD.mesh] ManifoldAPI.Mesh constructed OK, calling .merge()...');
-    wasmMesh.merge();
-    console.log('[F13LD.mesh] .merge() complete, constructing Manifold...');
-    mfld = new ManifoldAPI.Manifold(wasmMesh);
-    console.log('[F13LD.mesh] Manifold constructed OK, isEmpty:', mfld.isEmpty());
-  }catch(e){
-    console.error('[F13LD.mesh] Mesh/merge/Manifold construction failed:', e);
-    throw new Error('Manifold construction failed -- see console for details.');
-  }
-  if(mfld.isEmpty()) throw new Error('Manifold reports empty -- mesh may have unresolvable topology errors.');
-  return mfld;
-}
 // ── Main shape file dispatcher ────────────────────────────────────────────
 async function handleShapeFile(file){
   const name=file.name, ext=name.split('.').pop().toLowerCase();
   setShapeUI('loading', name);
   clearShapeWire();
-  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  if(importedShape) importedShape=null;
   if(rm) rm.clearShape();
   showComputing('loading shape…','parsing file');
   try{
@@ -954,14 +1333,19 @@ async function handleShapeFile(file){
     const bbox=computeShapeBbox(posArr); // now centered on origin
     setShapeUI('loading', name, null, 'building shape SDF…');
     showComputing('loading shape…','building shape SDF…');
-    const [manifold, sdfGrid] = await Promise.all([
-      buildShapeManifold(posArr, idxArr),
-      computeShapeSDF(posArr, idxArr, bbox)
-    ]);
+    const sdfGrid = await computeShapeSDF(posArr, idxArr, bbox);
     const suggestedCell=Math.max(0.5, parseFloat((bbox.maxDim/5).toFixed(1)));
-    importedShape={manifold, posArr, idxArr, bbox, sdfGrid, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}};
+    importedShape={posArr, idxArr, bbox, sdfGrid, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}};
+    // Reset structure transform on every new shape (user spec: don't persist).
+    resetStructureTransform();
+    refreshStructureTransformUI();
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-    if(rm){rm.setShapeSDF(sdfGrid, bbox, cellSizeMm);rm._dirty=true;}
+    if(rm){
+      rm.setShapeSDF(sdfGrid, bbox, cellSizeMm);
+      // Push (identity) transform so uniforms are initialized correctly.
+      if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
+      rm._dirty=true;
+    }
     // suggestedCell is computed but NOT passed to setShapeUI — user's current
     // cell size is preserved across shape loads. Same for render quality:
     // use rm._quality (last quality the user selected) instead of hardcoded
@@ -1020,12 +1404,15 @@ function setShapeUI(state, name, meta, errMsg, suggestedCell){
   dz.querySelector('.sdz-sub').textContent='drop a shape · or click to browse';
   // show/hide cell size overlay
   const cellOv=document.getElementById('cellOverlay');
+  const xfOv=document.getElementById('structXformOverlay');
   if(state==='ok'&&cellOv){
     cellOv.style.display='flex';
+    if(xfOv) xfOv.style.display='flex';
     const inp=document.getElementById('shapeCellSizeMm');
     if(inp&&suggestedCell) inp.value=suggestedCell;
   } else if(cellOv && (state==='err'||state==='idle')){
     cellOv.style.display='none';
+    if(xfOv) xfOv.style.display='none';
   }
   const dotCls = state==='ok' ? 'ok' : 'err';
   const statusText = state==='ok'
@@ -1048,12 +1435,18 @@ function setShapeUI(state, name, meta, errMsg, suggestedCell){
 }
 
 window.clearImportedShape=function(){
-  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  if(importedShape) importedShape=null;
   clearShapeWire();
   const cellOv=document.getElementById('cellOverlay');if(cellOv)cellOv.style.display='none';
+  // Hide structure-transform panel and reset state
+  const xfOv=document.getElementById('structXformOverlay');if(xfOv)xfOv.style.display='none';
+  resetStructureTransform();
   setShapeUI('idle');
   updateExportEstimate();
-  if(currentRecipe) triggerMesh(0.05);
+  // Reset raymarcher to cube mode and re-bake the periodic field so the user
+  // immediately sees a clean cube preview instead of stale shape-clipped one.
+  if(rm) rm.clearShape();
+  if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
 };
 
 
@@ -1170,6 +1563,76 @@ const manifoldReady=(async()=>{
     const wasm=await mod.default();wasm.setup();ManifoldAPI=wasm;
   }catch(e){console.error('[worker] Manifold load failed:',e);}
 })();
+
+// ── meshoptimizer — replaces Manifold.simplify for decimation ────────────
+// Handles 100M+ triangle meshes without the WASM "table index out of bounds"
+// crash that plagued Manifold.simplify above ~10M tris. Edge-collapse based
+// quadric error simplifier. Signature:
+//   simplify(indices, positions, stride=3, targetIdxCount, targetError, flags)
+//     → [Uint32Array, achievedError]
+// 'ErrorAbsolute' flag makes targetError an absolute distance (mm), matching
+// our existing simplifyTol semantics. targetIdxCount=6 (minimum) lets the
+// error budget drive the stopping condition, mirroring Manifold.simplify(tol).
+let MeshoptSimplifier=null;
+const meshoptReady=(async()=>{
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/meshoptimizer@1.1.1/+esm');
+    MeshoptSimplifier=mod.MeshoptSimplifier;
+    await MeshoptSimplifier.ready;
+  }catch(e){console.error('[worker] meshoptimizer load failed:',e);}
+})();
+
+// ── Helper: run meshopt simplify + compact on a raw indexed mesh ─────────
+// Input:  positions Float32Array (xyz×3 stride), indices Uint32Array, tolMm
+// Output: {positions, indices, preTris, postTris, error} or null on failure
+//
+// CRITICAL: MeshoptSimplifier.compactMesh(indices) MUTATES 'indices' in-place
+// to hold the new compacted index values (applies remap internally). The
+// returned remap table is ONLY for remapping the vertex array — it must NOT
+// be applied to the indices again, or every vertex reference gets double-
+// looked-up through an unrelated mapping. This was the v0.4.0 bug that
+// produced 0xFFFFFFFF (= 4294967295) indices in exported 3MF files and
+// triggered Lib3MF Error 5 ("Cannot convert to UTF16") in nTopology.
+function meshoptSimplify(positions,indices,tolMm){
+  if(!MeshoptSimplifier) return null;
+  const preTris=indices.length/3;
+  try{
+    const [newIdx,achievedError]=MeshoptSimplifier.simplify(
+      indices,positions,3, /*targetIdxCount*/ 6, /*targetError*/ tolMm,
+      ['ErrorAbsolute']
+    );
+    // compactMesh mutates newIdx in-place → new compacted index values.
+    // Returned remap maps OLD vertex index → NEW vertex index (or 0xFFFFFFFF
+    // for unused old vertices). Use it ONLY to build the compacted vertex
+    // array, NEVER to re-remap newIdx (which is already compacted).
+    const [remap,newVertCount]=MeshoptSimplifier.compactMesh(newIdx);
+    // remap.length can be smaller than positions.length/3 if the highest-
+    // indexed original vertices got simplified out. Iterate remap.length
+    // only — out-of-bounds reads on a TypedArray return undefined, which
+    // compares unequal to 0xFFFFFFFF and silently writes to outPos[NaN*3].
+    const outPos=new Float32Array(newVertCount*3);
+    for(let i=0;i<remap.length;i++){
+      const r=remap[i];
+      if(r!==0xFFFFFFFF){
+        outPos[r*3  ]=positions[i*3  ];
+        outPos[r*3+1]=positions[i*3+1];
+        outPos[r*3+2]=positions[i*3+2];
+      }
+    }
+    // Validate output: no index can point past the compacted vertex array.
+    // Catches any residual contract violation instead of silently writing a
+    // corrupt 3MF that fails downstream in slicers/nTop.
+    for(let i=0;i<newIdx.length;i++){
+      if(newIdx[i]>=newVertCount){
+        throw new Error('meshopt output has invalid index '+newIdx[i]+' (vertCount='+newVertCount+')');
+      }
+    }
+    return {positions:outPos,indices:newIdx,preTris,postTris:newIdx.length/3,error:achievedError};
+  }catch(e){
+    console.warn('[worker] meshopt simplify failed:',e);
+    return null;
+  }
+}
 
 const Noise=(()=>{
   function mod289(x){return x-Math.floor(x/289)*289;}
@@ -1400,9 +1863,12 @@ function buildNoiseSDF(json){
     // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
     const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
     const norm=(raw-mid)/halfR;
-    if(mode==='half')   return (geom.half_invert?center-norm:norm-center); // flip side support
-    if(mode==='solid')  return Math.abs(norm-center)-halfW; // inverted slab
-    return halfW-Math.abs(norm-center);                  // sheet (default)
+    // Canonical SDF: negative-inside, matches design-tool shader at index_-_Noise.html:1053.
+    // half_invert=false → inside where norm > center (SDF = center-norm).
+    // half_invert=true  → inside where norm < center (SDF = norm-center).
+    if(mode==='half')   return (geom.half_invert?(norm-center):(center-norm));
+    if(mode==='solid')  return halfW-Math.abs(norm-center);  // bulk (complement of sheet band)
+    return Math.abs(norm-center)-halfW;                      // sheet (thin wall band, default)
   };
 }
 
@@ -1467,19 +1933,19 @@ function buildTPMSSDF(json){
       if(mode==='pi-tpms'){
         const phiA=evalPhi(tx,ty,tz);
         const phiB=evalPhi(tx+(ps.x||0)*TP*gxF,ty+(ps.y||0)*TP*gyF,tz+(ps.z||0)*TP*gzF);
-        return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
+        return Math.max(Math.abs(phiA),Math.abs(phiB))-(g.pipe_radius||.18);
       }
       const phiA=evalPhi(tx*gxF,ty*gyF,tz*gzF);
-      if(mode==='solid') return (g.offset||0)-phiA;
-      return (g.wall_thickness||.3)-Math.abs(phiA-(g.offset||0));
+      if(mode==='solid') return phiA-(g.offset||0);
+      return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
     }
     const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
       const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
-      return (g.pipe_radius||.18)-Math.max(Math.abs(phiA),Math.abs(phiB));
+      return Math.max(Math.abs(phiA),Math.abs(phiB))-(g.pipe_radius||.18);
     }
-    if(mode==='solid') return (g.offset||0)-phiA;
-    return (g.wall_thickness||.3)-Math.abs(phiA-(g.offset||0));
+    if(mode==='solid') return phiA-(g.offset||0);
+    return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
   };
 }
 // ── HU domain-spanning helpers (shape mode) ──────────────────────────────────
@@ -1487,7 +1953,11 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   var rng=mulberry32(params.rngSeed);
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
   var volRatio=(ddx*ddy*ddz)/Math.pow(cellSizeMm,3);
-  var N=Math.min(Math.ceil((params.huN||80)*Math.cbrt(volRatio)),300);
+  // Density: huN per design cell × volRatio = huN per cell in the full bbox.
+  // ×2 multiplier (v0.5.0-rc9 audit) densifies shape-mode to keep visible
+  // periodicity consistent with cube-mode render. No kernel-count cap —
+  // spatial hash below makes per-voxel query cost O(1) in kernel count.
+  var N=Math.max(1,Math.ceil((params.huN||80)*volRatio*2));
   var aspect=params.huAspect||4,bw=params.huWidth||0.04;
   var a=bw*aspect*0.5*cellSizeMm,b=bw*0.5*cellSizeMm;
   var kappa=params.kappa||6,mode=params.dirMode||'single';
@@ -1509,16 +1979,60 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
     kernels.push({px:bbox.mnx+pts[i][0]*ddx,py:bbox.mny+pts[i][1]*ddy,pz:bbox.mnz+pts[i][2]*ddz,
       tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a,b:b});
   }
+  // ── Spatial hash for O(1) kernel queries ────────────────────────────────
+  // Kernel Gaussian support falls below ~1e-5 at 3.5σ, negligible beyond.
+  // cs = 3.5·max(a,b) ensures any kernel reachable from a query point lives
+  // within a 3×3×3 neighborhood of the query's hash cell. Cell list stored
+  // inline on the kernels array so the eval path doesn't need a new arg.
+  var cutoff=3.5*Math.max(a,b);
+  var cs=Math.max(cutoff,1e-6);
+  var nx=Math.max(1,Math.ceil(ddx/cs)),ny=Math.max(1,Math.ceil(ddy/cs)),nz=Math.max(1,Math.ceil(ddz/cs));
+  var buckets=new Array(nx*ny*nz);
+  for(var bi=0;bi<buckets.length;bi++)buckets[bi]=null;
+  for(var ki=0;ki<kernels.length;ki++){
+    var kk=kernels[ki];
+    var hx=Math.max(0,Math.min(nx-1,Math.floor((kk.px-bbox.mnx)/cs)));
+    var hy=Math.max(0,Math.min(ny-1,Math.floor((kk.py-bbox.mny)/cs)));
+    var hz=Math.max(0,Math.min(nz-1,Math.floor((kk.pz-bbox.mnz)/cs)));
+    var bIdx=hx+hy*nx+hz*nx*ny;
+    if(buckets[bIdx]===null)buckets[bIdx]=[];
+    buckets[bIdx].push(ki);
+  }
+  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:bbox.mnx,mny:bbox.mny,mnz:bbox.mnz,cs:cs};
   return kernels;
 }
 function evalHUFieldMM(kernels,x,y,z){
-  var s=0;
-  for(var i=0;i<kernels.length;i++){
-    var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
-    var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
-    s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+  var h=kernels.hash;
+  // Fallback to linear scan if hash missing (defensive; buildHUKernelsMM always attaches).
+  if(!h){
+    var s=0;
+    for(var i=0;i<kernels.length;i++){
+      var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
+      var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
+      s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+    }
+    return s-0.3;
   }
-  return s-0.3;
+  // Hashed path: 3×3×3 neighborhood of the query's hash cell covers all
+  // kernels within cutoff distance (since cs = cutoff).
+  var cs=h.cs,nx=h.nx,ny=h.ny,nz=h.nz,nxny=nx*ny;
+  var ix=Math.floor((x-h.mnx)/cs),iy=Math.floor((y-h.mny)/cs),iz=Math.floor((z-h.mnz)/cs);
+  var ix0=ix-1<0?0:ix-1,ix1=ix+1>=nx?nx-1:ix+1;
+  var iy0=iy-1<0?0:iy-1,iy1=iy+1>=ny?ny-1:iy+1;
+  var iz0=iz-1<0?0:iz-1,iz1=iz+1>=nz?nz-1:iz+1;
+  if(ix1<ix0||iy1<iy0||iz1<iz0)return -0.3;  // query well outside bbox
+  var sum=0;
+  for(var jz=iz0;jz<=iz1;jz++)for(var jy=iy0;jy<=iy1;jy++)for(var jx=ix0;jx<=ix1;jx++){
+    var bucket=h.buckets[jx+jy*nx+jz*nxny];
+    if(bucket===null)continue;
+    for(var bi=0;bi<bucket.length;bi++){
+      var k=kernels[bucket[bi]];
+      var dx=x-k.px,dy=y-k.py,dz=z-k.pz;
+      var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
+      sum+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+    }
+  }
+  return sum-0.3;
 }
 function bakeGridMM(evalFn,N,bbox){
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
@@ -1532,6 +2046,19 @@ function bakeGridMM(evalFn,N,bbox){
 function buildGrainSDF(json,shapeCtx){
   const f=json.field,g=json.geometry||{};
   const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
+  // Canonical SDF topology application — shared by all four sub-paths (RD, HU-shape,
+  // HU-cube, wave/GRF). Returns negative-inside matching design-tool shader at
+  // index_-_Grain.html:706 and index_-_Noise.html:1053.
+  //   sheet: negative where |raw-center| < halfW (thin wall band)
+  //   half:  halfInvert=false → negative where raw > center
+  //          halfInvert=true  → negative where raw < center
+  //   solid: negative where |raw-center| > halfW (bulk, complement of sheet)
+  const hi=!!g.half_invert;
+  const applyTopology = (raw) => {
+    if(topo==='half')  return hi?(raw-center):(center-raw);
+    if(topo==='solid') return halfW-Math.abs(raw-center);
+    return Math.abs(raw-center)-halfW;
+  };
 
   // ── Reaction-diffusion ─────────────────────────────────────────────
   if(f.type==='reactiondiffusion'){
@@ -1559,9 +2086,7 @@ function buildGrainSDF(json,shapeCtx){
     return p=>{
       const[u,v,w]=getUVW(p);
       const raw=evalRDField(grid,N_rd,u,v,w);
-      if(topo==='half') return g.half_invert?(center-raw):(raw-center);
-      if(topo==='solid') return Math.abs(raw-center)-halfW;
-      return halfW-Math.abs(raw-center);
+      return applyTopology(raw);
     };
   }
 
@@ -1582,19 +2107,32 @@ function buildGrainSDF(json,shapeCtx){
     const {cellSizeMm,bbox}=shapeCtx;
     const ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
     const maxCells=Math.max(ddx,ddy,ddz)/cellSizeMm;
-    const N_hu=Math.min(Math.ceil(32*maxCells),96);
+    // Grid resolution: 32 voxels per design cell. Cap removed in v0.5.0-rc9
+    // — spatial hash in evalHUFieldMM makes per-voxel cost O(1) in kernel
+    // count, so total bake cost scales with voxel count × constant. Practical
+    // upper end: 10-cell-wide bbox → 320³ voxels → ~30-60 sec first-pass bake.
+    const N_hu=Math.max(32,Math.ceil(32*maxCells));
     const mmKernels=buildHUKernelsMM(params,bbox,cellSizeMm);
     self.postMessage({type:'progress',stage:'pre-baking HU field ('+N_hu+'\u00b3 grid, '+mmKernels.length+' kernels)...'});
     const huGrid=bakeGridMM((x,y,z)=>evalHUFieldMM(mmKernels,x,y,z),N_hu,bbox);
+    // ── Field normalization (v0.5.0-rc10 fix) ──────────────────────────────
+    // Preview's bakeRaw=true path normalizes raw field to ~[-1,1] using min/max
+    // from the baked grid, then applies halfW/center. Export must do the same
+    // or halfW is applied to un-normalized magnitudes → wrong wall thickness.
+    // For HU-shape the bake already happened, so scanning the Float32Array is
+    // essentially free. 5% padding mirrors buildNoiseSDF.
+    let hmn=Infinity,hmx=-Infinity;
+    for(let i=0;i<huGrid.length;i++){const v=huGrid[i];if(v<hmn)hmn=v;if(v>hmx)hmx=v;}
+    const hfMid=(hmn+hmx)*0.5;
+    const hfHalfR=Math.max((hmx-hmn)*0.55,1e-6);
     const c01=v=>v<0?0:v>1?1:v;
     return p=>{
       const u=c01((p[0]*cellSizeMm/10-bbox.mnx)/ddx);
       const v=c01((p[1]*cellSizeMm/10-bbox.mny)/ddy);
       const w=c01((p[2]*cellSizeMm/10-bbox.mnz)/ddz);
       const raw=evalRDField(huGrid,N_hu,u,v,w);
-      if(topo==='half')  return g.half_invert?(center-raw):(raw-center);
-      if(topo==='solid') return Math.abs(raw-center)-halfW;
-      return halfW-Math.abs(raw-center);
+      const norm=(raw-hfMid)/hfHalfR;
+      return applyTopology(norm);
     };
   }
 
@@ -1602,19 +2140,68 @@ function buildGrainSDF(json,shapeCtx){
   const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
   const kernels=isHU?buildHUKernels(params):null;
   const PI5=Math.PI/5;
+  // ── Field normalization (v0.5.0-rc10 fix) ──────────────────────────────
+  // Preview's bakeRaw=true path computes fieldMin/fieldMax from the baked raw
+  // field, passes them to the shader as uFieldMid/uFieldHalfR, and normalizes
+  // to ~[-1,1] before applying halfW/center. Without this pre-scan here, the
+  // export's halfW=0.15 was being applied to un-normalized spinodoid values
+  // (range ~±5) yielding walls ~4-5× thinner than preview. Pattern matches
+  // buildNoiseSDF: 16³ pre-scan over [-5,5] world, 5% padding.
+  const evalRaw = isHU
+    ? (px,py,pz)=>evalHUField(kernels,0.5+px/10,0.5+py/10,0.5+pz/10)
+    : (px,py,pz)=>evalField(waves,px*PI5,py*PI5,pz*PI5,null);
+  const PP=16;let mnF=Infinity,mxF=-Infinity;
+  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
+    const px=(xi/(PP-1))*10-5, py=(yi/(PP-1))*10-5, pz=(zi/(PP-1))*10-5;
+    const v=evalRaw(px,py,pz);
+    if(v<mnF)mnF=v;if(v>mxF)mxF=v;
+  }
+  const fieldMid=(mnF+mxF)*0.5;
+  const fieldHalfR=Math.max((mxF-mnF)*0.55,1e-6);
   return p=>{
-    let raw;
-    if(isHU){
-      raw=evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10);
-    }else{
-      raw=evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
-    }
-    if(topo==='half')   return g.half_invert?(center-raw):(raw-center);
-    if(topo==='solid')  return Math.abs(raw-center)-halfW;
-    return halfW-Math.abs(raw-center);
+    const raw=evalRaw(p[0],p[1],p[2]);
+    const norm=(raw-fieldMid)/fieldHalfR;
+    return applyTopology(norm);
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CANONICAL SDF CONVENTION (v0.5.0-rc9 sign audit, rc10 normalization fix)
+// ═══════════════════════════════════════════════════════════════════════════
+// All SDF builders below (buildTPMSSDF, buildNoiseSDF, buildGrainSDF) return
+// a STANDARD NEGATIVE-INSIDE signed distance field:
+//
+//   SDF(p) < 0  ⇔  p is INSIDE the scaffold (solid material)
+//   SDF(p) = 0  ⇔  p is on the surface
+//   SDF(p) > 0  ⇔  p is OUTSIDE the scaffold (void)
+//
+// This matches:
+//   • Industry standard (meshopt, Three.js, every GPU raymarcher)
+//   • The three design tools' raymarcher hit tests (d < thresh, thresh ≈ 0)
+//   • F13LD.mesh preview shader's rawToSDF in both branches
+//
+// Manifold.levelSet internally treats POSITIVE values as "inside" for its
+// marching-cubes extraction. The flip from our canonical negative-inside to
+// Manifold's positive-inside happens EXACTLY ONCE — in the wrappedSDF closure
+// inside the 'export' worker path (search for "Canonical→Manifold flip").
+//
+// FIELD NORMALIZATION (rc10): non-periodic stochastic fields (noise, spinodoid,
+// GRF, hyperuniform) must be normalized to ~[-1,1] range BEFORE halfW/center
+// are applied, otherwise walls come out at the wrong thickness. The preview
+// shader does this via uFieldMid/uFieldHalfR uniforms computed from a baked
+// raw-field scan; the worker builders do it via an internal pre-scan (noise
+// and grain cube/wave branches) or by scanning the already-baked shape grid
+// (grain HU-shape). RD is naturally bounded in [0,1] so normalization is a
+// no-op for that path. TPMS has no normalization concept — phi field is
+// already in a well-defined implicit-function unit system.
+//
+// Iso offset semantics: +isoOffsetMm = THICKER WALLS. In canonical SDF terms,
+// thicker walls means the zero-crossing pushes outward (more of space becomes
+// "inside"), so +iso SUBTRACTS from the negative-inside SDF.
+//
+// If you add a new SDF builder or topology mode: return negative-inside from
+// a normalized field, and the one flip at wrappedSDF handles Manifold handoff.
+// ═══════════════════════════════════════════════════════════════════════════
 function buildSDF(recipe,shapeCtx){
   if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
@@ -1720,68 +2307,16 @@ self.onmessage=async function(e){
     }
     await manifoldReady;
     if(!ManifoldAPI)throw new Error('Manifold not available in worker.');
+    await meshoptReady;
     self.postMessage({type:'progress',stage:'building SDF...'});
-    const shapeCtx=(d.mode==='shape'||(d.mode==='export'&&d.shapePos))?{cellSizeMm:d.cellSizeMm,bbox:d.bbox}:null;
+    const shapeCtx=(d.mode==='export'&&d.shapePos)?{cellSizeMm:d.cellSizeMm,bbox:d.bbox}:null;
     const sdfFn=buildSDF(d.recipe,shapeCtx);
     let mfld;
-    if(d.mode==='shape'){
-      const{cellSizeMm,edgeFraction,bbox,shapePos,shapeIdx}=d;
-      const mmToWorld=10/cellSizeMm;
-      const wrappedSDF=p=>sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
-      const mmEdge=edgeFraction*cellSizeMm;
-
-      // Build shape Manifold once — reused in both passes
-      const pos=new Float32Array(shapePos),idx=new Uint32Array(shapeIdx);
-      const wasmMesh=new ManifoldAPI.Mesh({numProp:3,vertProperties:pos,triVerts:idx});
-      wasmMesh.merge();
-      const shapeMfld=new ManifoldAPI.Manifold(wasmMesh);
-
-      // ── Pass 1: coarse levelSet → cheap intersection → extract live bbox ──
-      const maxDim=Math.max(bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz);
-      const coarseEdge=Math.min(mmEdge*4, maxDim/3);
-      self.postMessage({type:'progress',stage:'coarse pass ('+coarseEdge.toFixed(1)+'mm)...'});
-      let coarseMfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},coarseEdge);
-      if(coarseMfld.isEmpty()){coarseMfld.delete();shapeMfld.delete();throw new Error('Empty mesh — check structure parameters.');}
-      let coarseIsect;
-      try{coarseIsect=ManifoldAPI.Manifold.intersection(coarseMfld,shapeMfld);}
-      catch(ce){coarseIsect=coarseMfld.intersect(shapeMfld);}
-      coarseMfld.delete();
-      if(coarseIsect.isEmpty()){coarseIsect.delete();shapeMfld.delete();throw new Error('Intersection is empty — check cell size and shape overlap.');}
-
-      // Extract tight bbox from coarse intersection result
-      const cm=coarseIsect.getMesh();
-      const vp=cm.vertProperties;
-      let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
-      for(let i=0;i<vp.length;i+=3){
-        if(vp[i  ]<mnx)mnx=vp[i  ]; if(vp[i  ]>mxx)mxx=vp[i  ];
-        if(vp[i+1]<mny)mny=vp[i+1]; if(vp[i+1]>mxy)mxy=vp[i+1];
-        if(vp[i+2]<mnz)mnz=vp[i+2]; if(vp[i+2]>mxz)mxz=vp[i+2];
-      }
-      coarseIsect.delete();
-      const pad=mmEdge*2;
-      const inner={
-        mnx:Math.max(bbox.mnx,mnx-pad), mxx:Math.min(bbox.mxx,mxx+pad),
-        mny:Math.max(bbox.mny,mny-pad), mxy:Math.min(bbox.mxy,mxy+pad),
-        mnz:Math.max(bbox.mnz,mnz-pad), mxz:Math.min(bbox.mxz,mxz+pad)
-      };
-
-      // ── Pass 2: fine levelSet over live bbox → simplify → intersect ────────
-      self.postMessage({type:'progress',stage:'level set ('+mmEdge.toFixed(2)+'mm over live bbox)...'});
-      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[inner.mnx,inner.mny,inner.mnz],max:[inner.mxx,inner.mxy,inner.mxz]},mmEdge);
-      if(mfld.isEmpty()){mfld.delete();shapeMfld.delete();throw new Error('Empty mesh in fine pass — try a smaller cell size.');}
-      self.postMessage({type:'progress',stage:'simplifying scaffold...'});
-      try{const s=typeof mfld.simplify==='function'?mfld.simplify(mmEdge*0.5):mfld.Simplify(mmEdge*0.5);mfld.delete();mfld=s;}
-      catch(se){console.warn('[worker] pre-intersection simplify skipped:',se);}
-      self.postMessage({type:'progress',stage:'boolean intersection...'});
-      let intersected;
-      try{intersected=ManifoldAPI.Manifold.intersection(mfld,shapeMfld);}
-      catch(ie){
-        console.warn('[worker] Manifold.intersection failed, trying instance method:',ie);
-        intersected=mfld.intersect(shapeMfld);
-      }
-      mfld.delete();shapeMfld.delete();mfld=intersected;
-      if(mfld.isEmpty()){mfld.delete();throw new Error('Intersection is empty — check cell size and shape overlap.');}
-    } else if(d.mode==='export'){
+    let msLevelSet=0; // shared across branches for the timings pill
+    // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
+    // main thread. Boolean CSG via Manifold.intersection no longer needed; the
+    // implicit max(scaffold,-shape) composition in mode:'export' replaced it.
+    if(d.mode==='export'){
       // ── Export mode: pre-computed edge/simplify lengths, returns scale ───────
       if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
@@ -1797,6 +2332,34 @@ self.onmessage=async function(e){
         const bminX=bbox.mnx,bminY=bbox.mny,bminZ=bbox.mnz;
         const bsizeX=bbox.mxx-bbox.mnx,bsizeY=bbox.mxy-bbox.mny,bsizeZ=bbox.mxz-bbox.mnz;
         const bmaxX=bbox.mxx,bmaxY=bbox.mxy,bmaxZ=bbox.mxz;
+        // ── Structure SDF transform setup (v0.5.0 Phase B) ───────────────
+        // Defaults to identity (no transform) when d.structXform absent or
+        // all-zero, preserving v0.4.x behavior.
+        const xf = d.structXform || {rotMat:[1,0,0,0,1,0,0,0,1],spatialOffsetMm:[0,0,0],isoOffsetMm:0};
+        const xfRot = xf.rotMat;
+        const xfOffMmX = xf.spatialOffsetMm[0], xfOffMmY = xf.spatialOffsetMm[1], xfOffMmZ = xf.spatialOffsetMm[2];
+        // ── Iso offset sign convention (canonical, v0.5.0-rc9) ───────────────
+        // Worker SDF builders now return canonical NEGATIVE-INSIDE (see the
+        // "CANONICAL SDF CONVENTION" block above buildSDF). In that convention,
+        // +isoOffsetMm = thicker walls means SUBTRACT iso from the SDF (pushes
+        // zero-crossing outward so more of space is inside). The negation to
+        // Manifold's positive-inside happens below in wrappedSDF composition,
+        // so after the flip the iso term appears as "+ xfIsoMm". Matches the
+        // shader: rawToSDF returns negative-inside; setStructureTransform
+        // passes -isoOffsetMm to uStructIsoWorld so shader does (sc - iso_w).
+        const xfIsoMm = xf.isoOffsetMm;
+        // Pivot is shape center in mm.
+        const xfPivotMmX = bminX + bsizeX*0.5;
+        const xfPivotMmY = bminY + bsizeY*0.5;
+        const xfPivotMmZ = bminZ + bsizeZ*0.5;
+        // Detect identity to skip transform math in the hot loop (every voxel).
+        // Iso offset must also be zero — otherwise the identity-fast-path
+        // would silently drop it (the fast-path branch doesn't apply iso).
+        const xfIsIdentity = (xfRot[0]===1 && xfRot[4]===1 && xfRot[8]===1 &&
+                              xfRot[1]===0 && xfRot[2]===0 && xfRot[3]===0 &&
+                              xfRot[5]===0 && xfRot[6]===0 && xfRot[7]===0 &&
+                              xfOffMmX===0 && xfOffMmY===0 && xfOffMmZ===0 &&
+                              xfIsoMm===0);
         const sampleShapeSDF=function(px,py,pz){
           const u=(px-bminX)/bsizeX, v=(py-bminY)/bsizeY, w=(pz-bminZ)/bsizeZ;
           if(u<0||u>1||v<0||v>1||w<0||w>1){
@@ -1819,23 +2382,59 @@ self.onmessage=async function(e){
           const c0=c00+(c10-c00)*tv, c1=c01+(c11-c01)*tv;
           return c0+(c1-c0)*tw;
         };
-        // Combined SDF for Manifold.levelSet. Manifold convention: positive=inside.
-        // Scaffold SDF returns positive-inside already (wall-|phi|). Shape SDF was
-        // baked with positive-outside convention (negative inside the mesh), so we
-        // negate it here. Intersection interior = inside BOTH = both operands positive,
-        // so the combined "positive-inside" field is min(scaffold, -shape).
-        // Guard against non-finite scaffold values — some recipes can emit NaN or
-        // Infinity at edge-case points (e.g. trig cancellations, out-of-kernel-support
-        // queries in hyperuniform). Manifold's marching-cubes sign-test chokes on
-        // NaN with "table index out of bounds". Substitute a large negative (firmly
-        // outside both fields) so any affected voxel votes "outside the mesh".
-        const wrappedSDF=p=>{
-          const sc_world=sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
-          const sc_mm=sc_world*worldToMm;
-          const sh_mm=-sampleShapeSDF(p[0],p[1],p[2]);
-          if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
-          return sc_mm<sh_mm?sc_mm:sh_mm;
-        };
+        // ── Canonical→Manifold flip + intersection composition ──────────────
+        // Builder returns canonical NEGATIVE-INSIDE. Manifold.levelSet wants
+        // POSITIVE-INSIDE (positive = "solid" for its marching-cubes extraction).
+        // Shape SDF was baked positive-outside (standard SDF), so also negated.
+        // Intersection interior = inside BOTH = both operands positive after
+        // flip, so combined positive-inside field = min(scaffold, -shape).
+        //
+        // Iso in canonical: sc_neg_with_iso = sc_neg - xfIsoMm
+        // After Manifold flip: sc_pos = -(sc_neg - xfIsoMm) = -sc_neg + xfIsoMm
+        // So both flips collapse into: sc_mm = -sc_world*worldToMm + xfIsoMm.
+        //
+        // Guard against non-finite scaffold values — some recipes can emit NaN
+        // or Infinity at edge-case points (trig cancellations, out-of-kernel-
+        // support queries in HU). Manifold's marching-cubes sign-test chokes
+        // on NaN with "table index out of bounds". Substitute a large negative
+        // (firmly outside both fields) so any affected voxel votes "outside".
+        // ── Structure transform applied per voxel (v0.5.0 Phase B) ────────
+        // Identity case skips transform math for speed. Transform formula:
+        //   q_mm = (p_mm - pivot_mm) - offset_mm
+        //   local_mm = R^T × q_mm
+        //   sc_local_mm = -lattice_eval(local_mm + pivot_mm) + xfIsoMm
+        // R^T (xfRot) is column-major; xfRot[c*3+r] reads col c, row r.
+        const wrappedSDF = xfIsIdentity
+          ? p=>{
+              const sc_world=sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
+              const sc_mm=-sc_world*worldToMm;  // canonical neg-inside → Manifold pos-inside
+              const sh_mm=-sampleShapeSDF(p[0],p[1],p[2]);
+              if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
+              return sc_mm<sh_mm?sc_mm:sh_mm;
+            }
+          : p=>{
+              // Translate to pivot, subtract spatial offset.
+              const qx = p[0] - xfPivotMmX - xfOffMmX;
+              const qy = p[1] - xfPivotMmY - xfOffMmY;
+              const qz = p[2] - xfPivotMmZ - xfOffMmZ;
+              // Apply inverse rotation (R^T): col-major, so col c row r = xfRot[c*3+r].
+              // R^T × q = sum_c (xfRot col c) * q[c] — i.e. dot of q with each row of R.
+              // Actually: (M × v)[i] = sum_j M[i,j] × v[j], where M[i,j] = M_colmajor[j*3+i].
+              // So (xfRot × q)[i] = sum_j xfRot[j*3+i] * q[j].
+              const lx = xfRot[0]*qx + xfRot[3]*qy + xfRot[6]*qz;
+              const ly = xfRot[1]*qx + xfRot[4]*qy + xfRot[7]*qz;
+              const lz = xfRot[2]*qx + xfRot[5]*qy + xfRot[8]*qz;
+              // Translate back to world origin so the periodic lattice tiles
+              // around the shape center.
+              const wx_mm = lx + xfPivotMmX;
+              const wy_mm = ly + xfPivotMmY;
+              const wz_mm = lz + xfPivotMmZ;
+              const sc_world = sdfFn([wx_mm*mmToWorld, wy_mm*mmToWorld, wz_mm*mmToWorld]);
+              const sc_mm = -sc_world*worldToMm + xfIsoMm;  // canonical neg-inside → Manifold pos-inside, + iso
+              const sh_mm = -sampleShapeSDF(p[0],p[1],p[2]);
+              if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
+              return sc_mm<sh_mm?sc_mm:sh_mm;
+            };
       // ── Export two-pass: coarse → live bbox → fine ──────────────────────────
       // No boolean intersect — the max()-composed SDF already emits only the
       // scaffold-inside-shape surface. Coarse pass still worth running: tight
@@ -1866,63 +2465,61 @@ self.onmessage=async function(e){
       const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
       self.postMessage({type:'progress',stage:lastStage+'...'});
+      const tLevelSet=performance.now();
       mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm);
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh in fine pass.');}
-      if(simplifyTol>0){
-          // Pre-check: Manifold's simplify has known crashes on meshes past
-          // ~10-15M tris — WASM "table index out of bounds" that escapes the JS
-          // try/catch and kills the worker. Skip simplify entirely above this
-          // ceiling; the pre-simplify mesh is valid, just larger than intended.
-          const preSimplifyTris=mfld.numTri();
-          const SIMPLIFY_MAX_TRIS=8000000;
-          if(preSimplifyTris>SIMPLIFY_MAX_TRIS){
-            lastStage='skipping simplify ('+(preSimplifyTris/1e6).toFixed(1)+'M tris > '+(SIMPLIFY_MAX_TRIS/1e6)+'M safe limit)';
-            self.postMessage({type:'progress',stage:lastStage});
-          } else {
-            lastStage='simplifying mesh ('+(preSimplifyTris/1e6).toFixed(1)+'M tris, tol '+simplifyTol.toFixed(3)+'mm)';
-            self.postMessage({type:'progress',stage:lastStage+'...'});
-            try{const s=typeof mfld.simplify==='function'?mfld.simplify(simplifyTol):mfld.Simplify(simplifyTol);mfld.delete();mfld=s;}
-            catch(se){
-              // Fallback — JS-catchable simplify failure, pre-simplify mesh survives.
-              // Note: WASM hard traps (table index out of bounds, memory access out of
-              // bounds) typically bypass this catch. Pre-check above is the real defense.
-              self.postMessage({type:'progress',stage:'simplify skipped (recoverable error)'});
-              console.warn('[worker] export simplify skipped:',se);
-            }
-          }
-        }
+      msLevelSet=Math.round(performance.now()-tLevelSet);
+      // Shape-sdf export mode falls through to the unified extract+simplify+done
+      // block below. msLevelSet captured here so timings-pill stays accurate.
       } else {
         self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
+        const tLevelSet=performance.now();
         mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
+        msLevelSet=Math.round(performance.now()-tLevelSet);
       }
-      self.postMessage({type:'progress',stage:'extracting mesh...'});
-      const mesh=mfld.getMesh(),triCount=mfld.numTri();
-      const vertProperties=new Float32Array(mesh.vertProperties);
-      const triVerts=new Uint32Array(mesh.triVerts);
-      mfld.delete();
-      const ms=Math.round(performance.now()-t0);
-      self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale},[vertProperties.buffer,triVerts.buffer]);
-      return;
     } else {
+      // Cube preview mode (d.mode is not 'shape' or 'export')
       self.postMessage({type:'progress',stage:'level set...'});
+      const tLevelSet=performance.now();
       mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check SDF parameters.');}
+      msLevelSet=Math.round(performance.now()-tLevelSet);
     }
-    if(d.simplifyTol>0){
-      self.postMessage({type:'progress',stage:'simplifying mesh...'});
-      try{
-        const s=typeof mfld.simplify==='function'?mfld.simplify(d.simplifyTol):mfld.Simplify(d.simplifyTol);
-        mfld.delete();mfld=s;
-      }catch(se){console.warn('[worker] simplify skipped:',se);}
-    }
+    // ── Unified extract + meshopt simplify + done ─────────────────────────────
+    // All paths (shape CSG, cube-export, cube-preview) funnel here with mfld set.
+    // Shape-sdf export path returned early above with its own done message.
+    lastStage='extracting mesh';
     self.postMessage({type:'progress',stage:'extracting mesh...'});
-    const mesh=mfld.getMesh(),triCount=mfld.numTri();
-    const vertProperties=new Float32Array(mesh.vertProperties);
-    const triVerts=new Uint32Array(mesh.triVerts);
-    mfld.delete();
+    const extractedMesh=mfld.getMesh();
+    let vertProperties=new Float32Array(extractedMesh.vertProperties);
+    let triVerts=new Uint32Array(extractedMesh.triVerts);
+    mfld.delete();mfld=null;
+    const preTris=triVerts.length/3;
+    const simplifyTol=d.simplifyTol||0;
+    let msSimplify=0;
+    if(simplifyTol>0){
+      // Tolerance display in microns when below 0.01mm — easier to read than 0.003
+      const tolStr = simplifyTol < 0.01 ? (simplifyTol*1000).toFixed(1)+'µm' : simplifyTol.toFixed(3)+'mm';
+      const capStr = d.simplifyCappedByFeature
+        ? ' (capped by feature size, '+(d.featMm*1000).toFixed(0)+'µm half-thickness)'
+        : '';
+      lastStage='meshopt simplify ('+(preTris/1e6).toFixed(2)+'M tris, tol '+tolStr+capStr+')';
+      self.postMessage({type:'progress',stage:lastStage+'...'});
+      const tSimp=performance.now();
+      const r=meshoptSimplify(vertProperties,triVerts,simplifyTol);
+      msSimplify=Math.round(performance.now()-tSimp);
+      if(r){
+        vertProperties=r.positions;
+        triVerts=r.indices;
+        self.postMessage({type:'progress',stage:'simplified '+(r.preTris/1e6).toFixed(2)+'M → '+(r.postTris/1e6).toFixed(2)+'M tris ('+msSimplify+'ms)'});
+      }else{
+        self.postMessage({type:'progress',stage:'simplify skipped — meshopt unavailable, keeping '+(preTris/1e6).toFixed(2)+'M tris'});
+      }
+    }
+    const triCount=triVerts.length/3;
     const ms=Math.round(performance.now()-t0);
-    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms},[vertProperties.buffer,triVerts.buffer]);
+    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,msBreakdown:{levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;
@@ -1970,6 +2567,11 @@ const MAX_EXPORT_VOXELS=50e6;
 function updateExportEstimate(){
   const el=document.getElementById('expEstimate');
   if(!el) return;
+  // Refresh quality-button voxel labels alongside the estimate (v0.5.0).
+  // Only meaningful when a shape is loaded — without one, voxel size is
+  // determined by domain-size only and isn't meaningfully different across
+  // qualities for the user's mental model.
+  updateQualButtonVoxelSizes();
   if(!currentRecipe){el.textContent='';return;}
   try{
     let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope
@@ -1999,6 +2601,47 @@ function updateExportEstimate(){
     const bakeTxt=bakeSec>0?' (includes ~'+bakeSec+'s SDF bake)':'';
     el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+totalSec+'s'+bakeTxt;
   }catch(e){el.textContent='';}
+}
+
+// ── Voxel-size labels on quality buttons (v0.5.0) ─────────────────────────
+// Updates the secondary text (e.g., "0.20mm") under each quality label so
+// the user can see the actual physical resolution each quality will produce
+// for their loaded shape + cell-size combination. Only populated when a
+// shape is loaded; without one, labels are blanked.
+function updateQualButtonVoxelSizes(){
+  const ids={draft:'qlDraft',low:'qlLow',med:'qlMed',high:'qlHigh',ultra:'qlUltra'};
+  const allEls=Object.entries(ids).map(([q,id])=>[q,document.getElementById(id)]).filter(([,el])=>el);
+  if(allEls.length===0) return;
+  if(!importedShape || !currentRecipe){
+    allEls.forEach(([,el])=>{el.textContent='—';});
+    return;
+  }
+  const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+  // Compute each quality's voxel size; collapse duplicates (small shapes
+  // hit the bbox/voxel-budget clamp at fine qualities, producing the same
+  // voxel size as a coarser tier).
+  const sizes={};
+  for(const [q,] of allEls){
+    sizes[q]=voxelSizeForQuality(q,currentRecipe,cellSizeMm,importedShape.bbox);
+  }
+  // Format: show in mm with trailing-zero trim. Annotate "(=Med)" etc when
+  // a quality clamps to the same size as a coarser tier.
+  const order=['draft','low','med','high','ultra'];
+  const labels={draft:'Draft',low:'Low',med:'Med',high:'High',ultra:'Ultra'};
+  const fmt=mm=>mm<0.1?(mm*1000).toFixed(0)+'µm':mm.toFixed(2)+'mm';
+  for(const [q,el] of allEls){
+    if(sizes[q]==null){el.textContent='—';continue;}
+    // Find the nearest coarser tier with the same size (within 0.5%)
+    const idx=order.indexOf(q);
+    let coarserSame=null;
+    for(let i=idx-1;i>=0;i--){
+      const co=order[i];
+      if(sizes[co]!=null && Math.abs(sizes[co]-sizes[q])/sizes[q]<0.005){
+        coarserSame=labels[co]; break;
+      }
+    }
+    el.textContent=fmt(sizes[q])+(coarserSame?' (=' + coarserSame + ')':'');
+  }
 }
 
 // ── Mesh pipeline ─────────────────────────────────────────────────────────
@@ -2059,7 +2702,7 @@ async function triggerPreview(quality){
     await new Promise(r=>setTimeout(r,0));
     const result=await bakeField(currentRecipe, nScaled, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
-    showRaymarcherCanvas();clearStale();
+    clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
     hideComputing();setBtns(true);
@@ -2070,7 +2713,7 @@ async function triggerPreview(quality){
   try{
     const result=await bakeField(currentRecipe, N, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
-    showRaymarcherCanvas();clearStale();
+    clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
     hideComputing();
@@ -2082,70 +2725,9 @@ async function triggerPreview(quality){
   }
 }
 window.triggerPreview=triggerPreview;
-async function triggerMesh(oversampleFactor){
-  currentOversample=oversampleFactor;
-  if(meshWorker){meshWorker.terminate();meshWorker=null;}
-  clearStale();
-  showComputing('computing mesh...','starting...');
-  setBtns(false);showCancelBtn(true);
-  const displayNorm=importedShape?importedShape.bbox.displayNorm:null;
-  try{
-    const worker=new Worker(getWorkerBlobUrl());
-    meshWorker=worker;
-    const edgeWorld=estimateFeatureEdge(currentRecipe,oversampleFactor);
-    const result=await new Promise((resolve,reject)=>{
-      worker.onmessage=e=>{
-        const d=e.data;
-        if(d.type==='progress') coSub.textContent=d.stage;
-        else if(d.type==='done') resolve(d);
-        else if(d.type==='error') reject(new Error(d.message));
-      };
-      worker.onerror=e=>reject(new Error(e.message||'Worker error'));
-      if(importedShape){
-        const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-        const posBuffer=importedShape.posArr.buffer.slice(0);
-        const idxBuffer=importedShape.idxArr.buffer.slice(0);
-        const{mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
-        // Convert analytic world-space edge to physical mm for shape mode
-        const rawEdgeMm=edgeWorld*(cellSizeMm/10);
-        const{safeEdge:mmEdge,clamped}=clampEdgeMm(rawEdgeMm,importedShape.bbox,MAX_PREVIEW_VOXELS);
-        if(clamped) coSub.textContent='grid clamped (using '+mmEdge.toFixed(2)+'mm edge)';
-        const adjEdgeFraction=mmEdge/cellSizeMm;
-        const simplifyTol=mmEdge*0.15;
-        worker.postMessage({
-          mode:'shape',recipe:currentRecipe,
-          shapePos:posBuffer,shapeIdx:idxBuffer,
-          bbox:{mnx,mny,mnz,mxx,mxy,mxz},
-          cellSizeMm,edgeFraction:adjEdgeFraction,simplifyTol
-        },[posBuffer,idxBuffer]);
-      } else {
-        const{safeEdge:safeEdgeWorld,clamped:cubeClamped}=clampEdgeWorld(edgeWorld,MAX_PREVIEW_VOXELS);
-        if(cubeClamped) coSub.textContent='grid clamped (edge floor '+safeEdgeWorld.toFixed(3)+')';
-        worker.postMessage({
-          mode:'cube',recipe:currentRecipe,
-          edgeWorld:safeEdgeWorld,
-          simplifyTol:safeEdgeWorld*0.15
-        });
-      }
-    });
-    if(meshWorker===worker){meshWorker=null;}
-    worker.terminate();
-    const vertProperties=new Float32Array(result.vertProperties);
-    const triVerts=new Uint32Array(result.triVerts);
-    showExportCanvas();
-    displayMesh({vertProperties,triVerts},displayNorm);
-    showTriCount(result.triCount,result.ms);
-    hideComputing();
-  }catch(e){
-    if(meshWorker){meshWorker.terminate();meshWorker=null;}
-    hideComputing();
-    if(e.message!=='cancelled') showError('Mesh error: '+(e.message||e));
-    console.error(e);
-  }finally{
-    setBtns(true);showCancelBtn(false);
-  }
-}
-window.triggerMesh=triggerMesh;
+// (v0.5.0-rc7) triggerMesh removed — was only invoked by clearImportedShape
+// to redraw the cube via Manifold.levelSet + Three.js. The raymarcher
+// preview, which is already running, handles the post-clear cube view.
 window.onCellSizeInput=function(){
   if(!importedShape)return;
   var cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
@@ -2156,6 +2738,58 @@ window.onCellSizeInput=function(){
   if(!recipeIsPeriodic(currentRecipe))setStale();
   updateExportEstimate();
 };
+
+// ── Structure transform handlers (v0.5.0 Phase B) ─────────────────────────
+// Input handler: read all 7 numeric inputs into structureTransform state,
+// recompute the inverse-rotation matrix, push as uniforms to the raymarcher,
+// and mark dirty for re-render. No re-bake required — uniforms only.
+function readStructureTransformFromUI(){
+  const v=id=>{const el=document.getElementById(id);return el?(parseFloat(el.value)||0):0;};
+  structureTransform.rotXDeg=v('sxRotX');
+  structureTransform.rotYDeg=v('sxRotY');
+  structureTransform.rotZDeg=v('sxRotZ');
+  structureTransform.spatialOffsetMmX=v('sxOffX');
+  structureTransform.spatialOffsetMmY=v('sxOffY');
+  structureTransform.spatialOffsetMmZ=v('sxOffZ');
+  structureTransform.isoOffsetMm=v('sxIso');
+  recomputeStructureRotMat();
+}
+
+window.onStructXformInput=function(){
+  if(!importedShape) return;
+  readStructureTransformFromUI();
+  // Push transform uniforms to raymarcher and trigger redraw.
+  if(rm && rm.setStructureTransform){
+    rm.setStructureTransform(structureTransform);
+    rm._dirty=true;
+  }
+  // Re-estimate triangle count (iso offset can change geometry density).
+  updateExportEstimate();
+};
+
+window.onStructXformReset=function(){
+  if(!importedShape) return;
+  resetStructureTransform();
+  refreshStructureTransformUI();
+  if(rm && rm.setStructureTransform){
+    rm.setStructureTransform(structureTransform);
+    rm._dirty=true;
+  }
+  updateExportEstimate();
+};
+
+// Pushes current structureTransform values into the UI inputs. Called on
+// shape import (after resetStructureTransform) and on user reset.
+function refreshStructureTransformUI(){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  set('sxRotX',structureTransform.rotXDeg);
+  set('sxRotY',structureTransform.rotYDeg);
+  set('sxRotZ',structureTransform.rotZDeg);
+  set('sxOffX',structureTransform.spatialOffsetMmX);
+  set('sxOffY',structureTransform.spatialOffsetMmY);
+  set('sxOffZ',structureTransform.spatialOffsetMmZ);
+  set('sxIso', structureTransform.isoOffsetMm);
+}
 Object.defineProperty(window,'currentOversample',{get:()=>currentOversample});
 
 // ── Recipe router ─────────────────────────────────────────────────────────
@@ -2179,11 +2813,11 @@ function exportPanel(){
   <span class="exp-unit">mm</span>
 </div>
 <div class="qual-strip" style="margin-bottom:8px">
-    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')">Draft</button>
-    <button class="qual-btn${q==='low'?' active':''}" id="qLow" onclick="setQual('low')">Low</button>
-    <button class="qual-btn${q==='med'?' active':''}" id="qMed" onclick="setQual('med')">Med</button>
-    <button class="qual-btn${q==='high'?' active':''}" id="qHigh" onclick="setQual('high')">High</button>
-    <button class="qual-btn${q==='ultra'?' active':''}" id="qUltra" onclick="setQual('ultra')">Ultra</button>
+    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')"><span class="qlbl">Draft</span><span class="ql" id="qlDraft">—</span></button>
+    <button class="qual-btn${q==='low'?' active':''}" id="qLow" onclick="setQual('low')"><span class="qlbl">Low</span><span class="ql" id="qlLow">—</span></button>
+    <button class="qual-btn${q==='med'?' active':''}" id="qMed" onclick="setQual('med')"><span class="qlbl">Med</span><span class="ql" id="qlMed">—</span></button>
+    <button class="qual-btn${q==='high'?' active':''}" id="qHigh" onclick="setQual('high')"><span class="qlbl">High</span><span class="ql" id="qlHigh">—</span></button>
+    <button class="qual-btn${q==='ultra'?' active':''}" id="qUltra" onclick="setQual('ultra')"><span class="qlbl">Ultra</span><span class="ql" id="qlUltra">—</span></button>
   </div>
 <button id="expBtn" onclick="triggerExport()">Export 3MF</button>
 <div id="expEstimate"></div>
@@ -2222,9 +2856,14 @@ let currentRecipe=null;
 // ── Export state & functions ───────────────────────────────────────────────
 const QUAL_EDGE_MM={draft:.30,low:.20,med:.10,high:.05,ultra:.03};
 let currentExportQual='low';
+// Tracks whether the user has explicitly chosen a quality this session.
+// If false on recipe import, we default to 'low' (per Matt's UX preference);
+// if true, we respect their existing choice.
+let _qualUserSet=false;
 
 window.setQual=function(q){
   currentExportQual=q;
+  _qualUserSet=true;
   const ids={draft:'qDraft',low:'qLow',med:'qMed',high:'qHigh',ultra:'qUltra'};
   Object.keys(ids).forEach(k=>{const el=document.getElementById(ids[k]);if(el)el.classList.toggle('active',k===q);});
   updateExportEstimate();
@@ -2235,6 +2874,47 @@ window.setQual=function(q){
 // Surface-area based estimate — far more accurate than voxel counting.
 // Empirical formula derived from real exports: vol * K / (cellSizeMm * edgeMm²)
 // where K ≈ 1.5 gives ~13% error for typical TPMS/spinodoid at Fine quality.
+
+// ── Thin-feature size detector (v0.4.2) ──────────────────────────────────
+// Returns physical half-thickness in mm of the thinnest explicit feature in
+// the recipe, or null if none is found (raw presets fall through). Used to
+// cap the meshopt simplify tolerance so thin beams aren't eroded — see the
+// 5%-of-feature cap rule at the shape-export call site.
+//
+// Features are stored in world units [-5,5]; world→mm scaling factor for the
+// scaffold field is cellSizeMm/10 (one cell occupies 2π in SDF space, mapped
+// from a 2-world-unit slice of [-5,5]).
+function getThinnestFeatureMm(recipe, cellSizeMm){
+  if(!recipe) return null;
+  const g = recipe.json?.geometry || {};
+  const s = recipe.json?.surface  || {};
+  const w2mm = cellSizeMm / 10;
+  // TPMS shell (wall_thickness is half-thickness: SDF = wall_thickness - |φ|)
+  if(g.wall_thickness != null && g.wall_thickness > 0) return g.wall_thickness * w2mm;
+  // PI-TPMS pipe filaments (pipe_radius is the filament half-thickness)
+  if(g.pipe_radius   != null && g.pipe_radius   > 0) return g.pipe_radius   * w2mm;
+  // Grain / Noise sheet topology (half_width is the shell half-thickness)
+  if(g.half_width    != null && g.half_width    > 0) return g.half_width    * w2mm;
+  if(s.half_width    != null && s.half_width    > 0) return s.half_width    * w2mm;
+  return null;
+}
+
+// ── Voxel size estimator for the export quality dropdown (v0.5.0) ─────────
+// Returns the actual voxel size in mm a given quality would produce for the
+// current recipe + shape combination. Mirrors the calc inside triggerExport
+// (rawEdge → print floor → bbox/voxel-budget clamp). Used to label the
+// quality buttons with their actual physical resolution so the user can
+// pick informed by their geometry.
+function voxelSizeForQuality(qual, recipe, cellSizeMm, bbox){
+  if(!recipe || !bbox) return null;
+  const oversample = EXPORT_OVERSAMPLE[qual] || 6;
+  const rawEdgeMm  = estimateFeatureEdge(recipe, oversample) * (cellSizeMm/10);
+  const printFloor = PRINT_EDGE_MM_BY_QUAL[qual] || 0.10;
+  const flooredMm  = Math.max(rawEdgeMm, printFloor);
+  const {safeEdge} = clampEdgeMm(flooredMm, bbox, MAX_EXPORT_VOXELS);
+  return safeEdge;
+}
+
 function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   const g=recipe?.json?.geometry||{};
   const wallFrac=g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
@@ -2260,6 +2940,8 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
 window.triggerExport=async function(){
   if(!currentRecipe)return;
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  // Hide stale timings pill from a previous export
+  const _tp=document.getElementById('timingsPill');if(_tp)_tp.classList.remove('show');
   const btn=document.getElementById('expBtn');
   const report=document.getElementById('expReport');
   btn.disabled=true;btn.classList.add('sweeping');btn.textContent='computing...';report.innerHTML='';
@@ -2282,7 +2964,32 @@ window.triggerExport=async function(){
     const flooredEdgeMm=Math.max(rawRelEdgeMm,printFloorMm);
     const {mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
     const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(flooredEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
-    const simplifyTol=relEdgeMm*0.15;
+    // ── Feature-aware simplify tolerance (v0.4.2; iso-aware in v0.5.0) ──────
+    // Edge-based rule (15% of voxel edge) is the default. For recipes with
+    // explicit thin features (wall_thickness, pipe_radius, half_width), cap
+    // tolerance at 5% of the physical half-thickness to keep meshopt's edge-
+    // collapse from eroding beams symmetrically inward.
+    //
+    // v0.5.0: iso offset modifies the actual wall thickness. Positive iso
+    // (UI: thicker) increases effective featMm; negative iso decreases it.
+    // The cap must use the SMALLER of (recipe-declared featMm, effective
+    // post-iso featMm) so we stay safe when iso shrinks walls. When iso
+    // makes walls vanish (effective ≤ 0), the cap is meaningless — skip.
+    const edgeTol=relEdgeMm*0.15;
+    const featMm=getThinnestFeatureMm(currentRecipe,cellSizeMm);
+    let effectiveFeatMm = featMm;
+    if(featMm != null){
+      const isoMm = structureTransform.isoOffsetMm || 0;
+      effectiveFeatMm = featMm + isoMm;
+      // Use the more conservative of original or post-iso half-thickness.
+      // (When iso shrinks walls, effective < featMm; when iso grows them,
+      // effective > featMm but we don't relax the cap — safer.)
+      effectiveFeatMm = Math.min(featMm, effectiveFeatMm);
+    }
+    const cappedTol = (effectiveFeatMm != null && effectiveFeatMm > 0)
+                      ? effectiveFeatMm * 0.05 : Infinity;
+    const simplifyTol=Math.min(edgeTol,cappedTol);
+    const simplifyCappedByFeature=effectiveFeatMm != null && effectiveFeatMm > 0 && cappedTol < edgeTol;
     // Re-bake shape SDF at export resolution if the cached grid is coarser than
     // our target. Target N is quality-scaled — draft is ~5s, ultra ~270s. If a
     // later export requests higher N than cached, we re-bake; if lower (or equal),
@@ -2305,6 +3012,9 @@ window.triggerExport=async function(){
             coSub.textContent='refining shape SDF ('+targetShapeN+'³) · '+Math.round(pct*100)+'% · ~'+remaining+'s left';
           }
         );
+        // Timings pill: remember how long the SDF bake took so the pill can
+        // display it alongside the levelSet/simplify times from the mesh worker.
+        window._lastSdfBakeMs=Math.round(performance.now()-bakeStart);
       }catch(e){
         if(e.message==='cancelled'){
           // User cancelled — undo elapsed timer, reset export button, bail cleanly.
@@ -2333,7 +3043,22 @@ window.triggerExport=async function(){
       shapeSdfData:shapeSdfBuffer,
       shapeN:importedShape.sdfGrid.N,
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
-      cellSizeMm,relEdgeMm,simplifyTol,scale
+      cellSizeMm,relEdgeMm,simplifyTol,scale,
+      simplifyCappedByFeature,featMm:effectiveFeatMm,
+      // ── Structure SDF transform (v0.5.0 Phase B) ────────────────────────
+      // Mm-unit values; worker does its own world conversion using cellSizeMm
+      // and shape bbox (matches main-thread MeshRaymarcher.setStructureTransform).
+      // Iso sign here is raw user-input: positive = thicker walls. Worker
+      // negates before adding to SDF (same convention as shader uniform).
+      structXform:{
+        rotMat: structureTransform.rotMat.slice(),
+        spatialOffsetMm:[
+          structureTransform.spatialOffsetMmX,
+          structureTransform.spatialOffsetMmY,
+          structureTransform.spatialOffsetMmZ
+        ],
+        isoOffsetMm: structureTransform.isoOffsetMm
+      }
     };
   } else {
     const domainEl=document.getElementById('expDomainMm');
@@ -2390,8 +3115,24 @@ window.triggerExport=async function(){
     const j=currentRecipe.json;
     const preset=j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype;
     const shapeSuffix=importedShape?('_'+importedShape.meta.name.replace(/\.[^.]+$/,'')):'';
+    // Filename decorators (v0.5.0-rc8): embed cell size and iso offset so
+    // downstream files are self-describing. Filesystem-safe formatting:
+    //   - dots → 'p' (5.0mm → "5p0mm")
+    //   - negatives → 'n' prefix ("-0.05mm" → "n0p05mm")
+    //   - iso=0 → "iso0" to make the exported geometry unambiguous
+    const fmtMm = v => {
+      const abs = Math.abs(v).toFixed(2).replace(/\.?0+$/,'');
+      const body = abs.replace('.','p') || '0';
+      return (v<0?'n':'') + body + 'mm';
+    };
+    let paramSuffix = '';
+    if(importedShape){
+      const cellSizeMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+      const isoMm = structureTransform.isoOffsetMm || 0;
+      paramSuffix = '_cell'+fmtMm(cellSizeMm)+'_iso'+(isoMm===0?'0':fmtMm(isoMm));
+    }
     const ts=new Date().toISOString().slice(0,10);
-    const filename=currentRecipe.family+'_'+preset+shapeSuffix+'_'+ts+'.3mf';
+    const filename=currentRecipe.family+'_'+preset+shapeSuffix+paramSuffix+'_'+ts+'.3mf';
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=filename;a.click();
     URL.revokeObjectURL(url);
@@ -2402,6 +3143,24 @@ window.triggerExport=async function(){
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';
+    // ── Timings pill: SDF bake + levelSet + simplify ──────────────────────
+    // SDF bake is tracked on main thread (window._lastSdfBakeMs), levelSet
+    // and simplify come from worker's msBreakdown. Total is wall-clock
+    // from first-bake-start through worker-done.
+    const pill=document.getElementById('timingsPill');
+    if(pill){
+      const fmt=ms=>ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms';
+      const sdfMs=window._lastSdfBakeMs||0;
+      const bd=result.msBreakdown||{};
+      const simpMs=bd.simplify||0;
+      const totalMs=sdfMs+(bd.total||result.ms||0);
+      document.getElementById('tpSdf').textContent=sdfMs>0?fmt(sdfMs):'cached';
+      document.getElementById('tpSimplify').textContent=simpMs>0?fmt(simpMs):'—';
+      document.getElementById('tpTotal').textContent=fmt(totalMs);
+      pill.classList.add('show');
+    }
+    // Clear for next export so cached SDF shows correctly
+    window._lastSdfBakeMs=0;
     if(elapsedEl)elapsedEl.style.display='none';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
   }catch(e){
@@ -2419,6 +3178,26 @@ function expChip(l,v){return`<div class="exp-chip">${l} <b>${v}</b></div>`;}
 
 async function buildMinimal3MF(vertProps,triVerts,scale){
   const nV=vertProps.length/3,nT=triVerts.length/3;
+  // ── Pre-flight validation ──────────────────────────────────────────────
+  // A single NaN or Infinity in positions becomes x="NaN" in the XML, which
+  // triggers Lib3MF Error 5 ("Cannot convert to UTF16") in nTopology and any
+  // other lib3mf-based importer. Out-of-range indices (past vertex count)
+  // cause equally catastrophic downstream failures. Scan the whole mesh once
+  // up front; fail loudly with a diagnostic rather than writing a corrupt
+  // 3MF that only reveals the problem on re-import.
+  let badPos=0,badIdx=0;
+  for(let i=0;i<vertProps.length;i++){
+    if(!Number.isFinite(vertProps[i])){badPos++;}
+  }
+  for(let i=0;i<triVerts.length;i++){
+    if(triVerts[i]>=nV||triVerts[i]<0){badIdx++;}
+  }
+  if(badPos>0){
+    throw new Error('Export aborted: '+badPos+' non-finite position value(s) detected (NaN or Infinity). Mesh is invalid.');
+  }
+  if(badIdx>0){
+    throw new Error('Export aborted: '+badIdx+' out-of-range triangle index value(s) detected (vertex count = '+nV+'). Mesh is invalid.');
+  }
   let vx='',tx='';
   for(let i=0;i<nV;i++)vx+=`<vertex x="${(vertProps[i*3]*scale).toFixed(6)}" y="${(vertProps[i*3+1]*scale).toFixed(6)}" z="${(vertProps[i*3+2]*scale).toFixed(6)}"/>`;
   for(let i=0;i<nT;i++)tx+=`<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
@@ -2455,13 +3234,26 @@ function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.
 function setBtns(on){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
 function setActivBtn(id){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 
+// Parallel to _qualUserSet (export), this tracks whether the user has
+// explicitly clicked a preview-quality button this session. If false on
+// recipe import, default to 'low' (per Matt's UX preference); if true,
+// respect the user's existing choice.
+let _previewQualUserSet=false;
+const PREVIEW_BTN_ID={draft:'btnDraft',low:'btnLow',med:'btnMed',high:'btnHigh',ultra:'btnUltra'};
+
 async function showRecipe(recipe){
   clearError();currentRecipe=recipe;
+  // Default to Low quality on first recipe of the session, but respect any
+  // user-selected quality from a previous recipe (v0.5.0).
+  if(!_qualUserSet) currentExportQual='low';
+  // Same pattern for preview render quality.
+  const initialPreviewQ=_previewQualUserSet ? (rm&&rm._quality||'low') : 'low';
   dropzone.style.display='none';recipeView.style.display='flex';
   document.getElementById('shapeStrip').style.display='block';
   typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
   summaryEl.innerHTML=renderSummary(recipe);
-  setActivBtn('btnDraft');triggerPreview('draft');
+  setActivBtn(PREVIEW_BTN_ID[initialPreviewQ]||'btnLow');
+  triggerPreview(initialPreviewQ);
   setTimeout(updateExportEstimate,0); // panel renders async
 }
 function resetToDropzone(){
@@ -2470,15 +3262,15 @@ function resetToDropzone(){
   clearError();triPill.style.display='none';
   overlay.classList.remove('hidden');coMain.textContent='awaiting recipe…';coSub.textContent='';
   // clear any loaded shape on recipe reset
-  if(importedShape){try{importedShape.manifold.delete();}catch(_){} importedShape=null;}
+  if(importedShape) importedShape=null;
   clearShapeWire();setShapeUI('idle');
 }
 document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
-document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnDraft');triggerPreview('draft');});
-document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnLow');triggerPreview('low');});
-document.getElementById('btnMed').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnMed');triggerPreview('med');});
-document.getElementById('btnHigh').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnHigh');triggerPreview('high');});
-document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRecipe)return;setActivBtn('btnUltra');triggerPreview('ultra');});
+document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnDraft');triggerPreview('draft');});
+document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnLow');triggerPreview('low');});
+document.getElementById('btnMed').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnMed');triggerPreview('med');});
+document.getElementById('btnHigh').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnHigh');triggerPreview('high');});
+document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnUltra');triggerPreview('ultra');});
 
 
 

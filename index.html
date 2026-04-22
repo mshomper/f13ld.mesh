@@ -144,6 +144,9 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #cellOverlay input[type=number]::-webkit-inner-spin-button,#cellOverlay input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0;display:none}
 
 #expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
+#expWarn{font-size:11px;color:var(--amber);margin-top:4px;line-height:1.4;letter-spacing:.01em}
+#expWarn:empty{display:none}
+#expWarn.crit{color:var(--fail)}
 #expElapsed{display:none;font-size:10px;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums}
 
 /* ── Timings pill (v0.4.0; restacked v0.5.0-rc8) — shows after export ──
@@ -215,7 +218,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc10</span>
+      <span class="fh-version">v0.5.0-rc13</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -1451,104 +1454,24 @@ window.clearImportedShape=function(){
 
 
 // ── Mesh worker ───────────────────────────────────────────────────────────────
-const QUAL_EDGE_FRAC={draft:0.25,standard:0.15,fine:0.08};
-// Oversample factors for preview and export (voxels across thinnest wall)
+// Preview oversample (voxels across feature) — still adaptive for the 3D texture bake.
 const PREVIEW_OVERSAMPLE={draft:1,low:2,med:3,high:4,ultra:6};
-const EXPORT_OVERSAMPLE={draft:3,low:4,med:6,high:8,ultra:12};
 // Shape SDF resolution for export, scaled to quality tier. Larger N gives finer
 // cap-surface precision (≈ max_bbox_axis / N) at O(N³) bake cost. Approximate
-// bake time for a typical orthopedic-scale mesh: draft ~5s, low ~10s, med ~35s,
-// high ~80s, ultra ~270s. Re-baked lazily on first export; cached; replaced if
-// a later export requests higher N. Float32 grid size: 3.5MB (96³), 8MB (128³),
-// 28MB (192³), 67MB (256³), 226MB (384³).
-const EXPORT_SHAPE_SDF_N_BY_QUAL={draft:96,low:128,med:192,high:256,ultra:384};
-// Physical printing-resolution floor for mesh edge length (mm). The analytic
-// estimator can produce edges far below any printer's resolution for large-cell
-// recipes — 0.03mm edges in a 5mm-cell gyroid, for example, encode detail no
-// printer can reproduce and balloon file sizes 10-100×. This floor is quality-
-// keyed to typical printer tolerances: draft/low = FDM-grade, med = SLA-grade,
-// high/ultra = DMLS or research-grade. The floor is applied as max(rawEdge,
-// floor) — if a recipe genuinely has sub-floor walls (e.g. wall_thickness=0.03),
-// the analytic estimator still wins and finer edges happen. We only raise
-// over-resolved edges up to physical reality.
-const PRINT_EDGE_MM_BY_QUAL={draft:0.30,low:0.20,med:0.10,high:0.05,ultra:0.03};
-// ── Resolution multiplier from recipe geometry ────────────────────────────────
-// Thinner walls and lower VF = more triangles needed per cell period.
-// Returns a multiplier > 1 that divides the base edge fraction (finer mesh).
-// ── Analytic feature-edge estimator ──────────────────────────────────────────
-// Returns edge length in WORLD units [-5,5]^3 that will resolve the thinnest
-// physical feature at the requested oversample factor.
-// For shape mode: multiply result by cellSizeMm/10 to get mm.
-//   oversampleFactor — voxels across the thinnest wall: 2=draft, 3=std, 4=fine
-function estimateFeatureEdge(recipe, oversampleFactor){
-  if(!recipe) return 0.08;
-  const j=recipe.json, f=j.field||{}, s=j.surface||{}, g=j.geometry||{};
-  const PI5=Math.PI/5;
-  const MIN_EDGE=0.01; // hard floor in world units
-
-  if(recipe.family==='tpms'){
-    const cellScale=g.cell_scale||1;
-    const freqScale=Math.PI*cellScale/5;          // radians per world unit
-    const mode=g.mode||'shell';
-    const terms=Array.isArray(s.terms)?s.terms.filter(t=>t.on):[];
-    const nTerms=Math.max(1,terms.length);
-    let wallParam;
-    if(mode==='pi-tpms')      wallParam=g.pipe_radius||0.18;
-    else if(mode==='solid')   wallParam=1/(2*freqScale); // half-period for curvature
-    else                       wallParam=g.wall_thickness||0.3;
-    // Physical wall = phi-space wall / (freqScale * sqrt(nActiveTerms))
-    const physWall=wallParam/(freqScale*Math.sqrt(nTerms));
-    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
-  }
-
-  if(recipe.family==='noise'){
-    const freq=s.frequency||0.3;
-    const halfW=s.half_width||0.15;
-    const octaves=s.octaves||1, lac=s.lacunarity||2;
-    const SCALE2=5.0/Math.PI;
-    // Gradient dominated by highest-frequency octave
-    const domFreq=freq*SCALE2*Math.pow(lac, octaves-1);
-    // halfW is in normalised field space; gradient already in world units
-    const physWall=halfW/domFreq;
-    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
-  }
-
-  if(recipe.family==='grain'){
-    const halfW=g.half_width||0.15;
-
-    if(f.type==='reactiondiffusion'){
-      const Du=f.rd_Du||0.14, F=f.rd_F||0.030, k=f.rd_k||0.057;
-      // Turing instability length in grid [0,1] scaled to world (grid->world = x10)
-      const physWall=(Math.PI/2)*Math.sqrt(Du/(F+k))*10;
-      return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
-    }
-
-    if(f.type==='hyperuniform'){
-      const bw=f.hu_width||0.04;
-      // Kernel narrow-axis width in world units: bw * 0.5 of [-pi,pi] -> world = bw*5
-      const kernelWidth=bw*5;
-      // Physical wall set by whichever is thinner: halfW / gradient or kernel width
-      const physWall=Math.min(halfW*kernelWidth, kernelWidth);
-      return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
-    }
-
-    // Spinodoid / GRF — wave superposition
-    const freq=f.frequency||0.27, nWaves=f.n_waves||48;
-    // RMS gradient of (1/N)*sum cos(k_i.p+phi_i) in world units
-    // |k_i| = 2*pi*freq*PI5;  RMS |grad| = |k| * sqrt(0.5/N)
-    const kMag=2*Math.PI*freq*PI5;
-    const gradMag=kMag*Math.sqrt(0.5/nWaves);
-    const physWall=halfW/gradMag;
-    return _safeEdge(physWall/oversampleFactor, MIN_EDGE);
-  }
-
-  return MIN_EDGE;
-}
-function _safeEdge(val, MIN_EDGE){
-  // Clamp to finite positive world-unit range [MIN_EDGE, 5.0]
-  if(!isFinite(val)||val<=0) return MIN_EDGE;
-  return Math.min(5.0, Math.max(MIN_EDGE, val));
-}
+// bake time for a typical orthopedic-scale mesh: draft ~1.5s, low ~5s, med ~10s,
+// high ~35s, ultra ~80s. Re-baked lazily on first export; cached; replaced if
+// a later export requests higher N. Float32 grid size: 1 MB (64³), 3.5 MB (96³),
+// 8 MB (128³), 28 MB (192³), 67 MB (256³). Curve shifted down one step in
+// rc11 (was 96/128/192/256/384) — 384³ at ultra was 226 MB / ~270 s, too heavy.
+const EXPORT_SHAPE_SDF_N_BY_QUAL={draft:64,low:96,med:128,high:192,ultra:256};
+// ── Export voxel edge per quality (mm) ───────────────────────────────────────
+// Fixed per-tier voxel size. User selects a tier, gets that edge length — no
+// per-recipe adaptation. Simpler and more predictable than the rc11 analytic
+// estimator (which was buggy for RD: 1.19 mm edge at High from a wavelength-
+// based formula unsuited to Gray-Scott regimes). Tradeoff: recipes with very
+// thin walls under-resolve at lower tiers unless the user picks High/Ultra
+// explicitly. MAX_EXPORT_VOXELS still applies as a safety net for huge bboxes.
+const QUAL_EDGE_MM={draft:0.40,low:0.20,med:0.12,high:0.05,ultra:0.03};
 
 let meshWorker=null;
 let currentOversample=3; // preview oversample factor (2=draft,3=std,4=fine)
@@ -2577,10 +2500,8 @@ function updateExportEstimate(){
     let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope
     if(importedShape){
       cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-      const rawEdge=estimateFeatureEdge(currentRecipe,EXPORT_OVERSAMPLE[currentExportQual]||6)*(cellSizeMm/10);
-      const printFloorMm=PRINT_EDGE_MM_BY_QUAL[currentExportQual]||0.10;
-      const flooredEdge=Math.max(rawEdge,printFloorMm);
-      const{safeEdge}=clampEdgeMm(flooredEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
+      const rawEdge=QUAL_EDGE_MM[currentExportQual]||0.10;
+      const{safeEdge}=clampEdgeMm(rawEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
       edgeMm=safeEdge;
       bbox=importedShape.bbox;
     } else {
@@ -2600,6 +2521,41 @@ function updateExportEstimate(){
     const totalSec=estSec+bakeSec;
     const bakeTxt=bakeSec>0?' (includes ~'+bakeSec+'s SDF bake)':'';
     el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+totalSec+'s'+bakeTxt;
+    // ── Wall-thickness resolution warning (v0.5.0-rc12) ─────────────────────
+    // With fixed per-tier voxel sizes (no adaptive estimator), thin-wall
+    // recipes can under-resolve at lower tiers. Warn when the thinnest
+    // physical feature has <3 voxels across it.
+    const warnEl=document.getElementById('expWarn');
+    if(warnEl){
+      warnEl.textContent='';
+      warnEl.classList.remove('crit');
+      const featMm = importedShape
+        ? getThinnestFeatureMm(currentRecipe, cellSizeMm)
+        : null; // cube-mode feature-ratio is meaningless without cellSize mapping
+      if(featMm && edgeMm){
+        const ratio = featMm/edgeMm;
+        if(ratio < 3){
+          // Find the coarsest tier that would give ratio ≥ 3 (a comfortable resolution).
+          const order=['draft','low','med','high','ultra'];
+          let rec=null;
+          for(const q of order){
+            const qEdge=voxelSizeForQuality(q,currentRecipe,cellSizeMm,bbox);
+            if(qEdge && featMm/qEdge >= 3){rec=q;break;}
+          }
+          const recTxt = rec && rec!==currentExportQual
+            ? ' · try '+rec[0].toUpperCase()+rec.slice(1)
+            : '';
+          if(ratio < 2){
+            warnEl.classList.add('crit');
+            warnEl.textContent='⚠ thinnest wall '+featMm.toFixed(3)+'mm is below Nyquist at '
+              +edgeMm.toFixed(3)+'mm voxels ('+ratio.toFixed(1)+'× across) — export likely empty or broken'+recTxt;
+          } else {
+            warnEl.textContent='⚠ thinnest wall '+featMm.toFixed(3)+'mm spans ~'
+              +ratio.toFixed(1)+' voxels at '+edgeMm.toFixed(3)+'mm — surface will be rough'+recTxt;
+          }
+        }
+      }
+    }
   }catch(e){el.textContent='';}
 }
 
@@ -2821,6 +2777,7 @@ function exportPanel(){
   </div>
 <button id="expBtn" onclick="triggerExport()">Export 3MF</button>
 <div id="expEstimate"></div>
+<div id="expWarn"></div>
 <div id="expElapsed"></div>
 <div id="expReport"></div>`;}
 function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${exportPanel()}`;}
@@ -2854,7 +2811,6 @@ const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN'};
 let currentRecipe=null;
 
 // ── Export state & functions ───────────────────────────────────────────────
-const QUAL_EDGE_MM={draft:.30,low:.20,med:.10,high:.05,ultra:.03};
 let currentExportQual='low';
 // Tracks whether the user has explicitly chosen a quality this session.
 // If false on recipe import, we default to 'low' (per Matt's UX preference);
@@ -2907,11 +2863,8 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
 // pick informed by their geometry.
 function voxelSizeForQuality(qual, recipe, cellSizeMm, bbox){
   if(!recipe || !bbox) return null;
-  const oversample = EXPORT_OVERSAMPLE[qual] || 6;
-  const rawEdgeMm  = estimateFeatureEdge(recipe, oversample) * (cellSizeMm/10);
-  const printFloor = PRINT_EDGE_MM_BY_QUAL[qual] || 0.10;
-  const flooredMm  = Math.max(rawEdgeMm, printFloor);
-  const {safeEdge} = clampEdgeMm(flooredMm, bbox, MAX_EXPORT_VOXELS);
+  const rawEdgeMm  = QUAL_EDGE_MM[qual] || 0.10;
+  const {safeEdge} = clampEdgeMm(rawEdgeMm, bbox, MAX_EXPORT_VOXELS);
   return safeEdge;
 }
 
@@ -2955,15 +2908,9 @@ window.triggerExport=async function(){
   let workerMsg, scale, domainLabel, edgeLabel;
   if(importedShape){
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-    const expOversample=EXPORT_OVERSAMPLE[currentExportQual]||6;
-    const expEdgeWorld=estimateFeatureEdge(currentRecipe,expOversample);
-    const rawRelEdgeMm=expEdgeWorld*(cellSizeMm/10);
-    // Apply printing-resolution floor: edges finer than a printer can resolve
-    // just inflate triangle counts without improving physical output.
-    const printFloorMm=PRINT_EDGE_MM_BY_QUAL[currentExportQual]||0.10;
-    const flooredEdgeMm=Math.max(rawRelEdgeMm,printFloorMm);
+    const rawRelEdgeMm=QUAL_EDGE_MM[currentExportQual]||0.10;
     const {mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
-    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(flooredEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
+    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(rawRelEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
     // ── Feature-aware simplify tolerance (v0.4.2; iso-aware in v0.5.0) ──────
     // Edge-based rule (15% of voxel edge) is the default. For recipes with
     // explicit thin features (wall_thickness, pipe_radius, half_width), cap

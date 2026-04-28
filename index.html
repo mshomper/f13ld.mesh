@@ -218,7 +218,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc13</span>
+      <span class="fh-version">v0.5.0-rc15</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -1064,8 +1064,8 @@ MeshRaymarcher.prototype.render=function(){
   var fmid=(this.fieldMin+this.fieldMax)*0.5;
   var fhr=Math.max((this.fieldMax-this.fieldMin)*0.5,0.001);
   gl.uniform1f(this._uFieldMid,fmid);gl.uniform1f(this._uFieldHalfR,fhr);
-  gl.uniform1f(this._uCenter,topo.center!=null?topo.center:0.0);
-  gl.uniform1f(this._uHalfW,topo.halfW!=null?topo.halfW:0.15);
+  gl.uniform1f(this._uCenter,topo.bakeRaw&&topo.rawUnits?(((topo.center??0)-fmid)/fhr):(topo.center!=null?topo.center:0.0));
+  gl.uniform1f(this._uHalfW,topo.bakeRaw&&topo.rawUnits?((topo.halfW??0.15)/fhr):(topo.halfW!=null?topo.halfW:0.15));
   var tm=topo.topoMode||'sheet';
   gl.uniform1f(this._uTopoMode,tm==='half'?1.0:tm==='solid'?2.0:0.0);
   gl.uniform1f(this._uHalfInvert,topo.halfInvert?1.0:0.0);
@@ -1619,7 +1619,19 @@ const Noise=(()=>{
 })();
 
 // ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
-function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
+// v0.5.0-rc15: canonical mulberry32 (replaces mislabeled xorshift32). Required
+// for bitwise determinism with f13ld.grain v0.9.1+ exports — see RD handoff §2.1
+// and §5. Negligible perf cost (~5-15% slower per call, but PRNG is only invoked
+// during init, not in the time-stepping loop where 99.9% of bake wall-time lives).
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = seed;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
 function sampleVMF(rng,kappa){
   if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
   var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);
@@ -1699,16 +1711,30 @@ function evalHUField(kernels,x,y,z){
   for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
   return s-.3;
 }
+// Periodic variant: wraps each displacement component to the nearest cell image
+// via min-image convention. Kernels near cell boundaries "see" query points on
+// the opposite side, eliminating tile seams. Cost: 3 extra Math.round per kernel
+// (negligible). Used for HU+shape preview where shader tiles via GL_REPEAT.
+function evalHUFieldPeriodic(kernels,x,y,z){
+  x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
+  var s=0,TP=2*Math.PI;
+  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;dx-=Math.round(dx/TP)*TP;dy-=Math.round(dy/TP)*TP;dz-=Math.round(dz/TP)*TP;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
+  return s-.3;
+}
 function evalField(waves,x,y,z,kernels){
   if(kernels)return evalHUField(kernels,x,y,z);
   var s=0,N=waves.length;for(var i=0;i<N;i++)s+=Math.cos(waves[i].kx*x+waves[i].ky*y+waves[i].kz*z+waves[i].phase);return s/Math.sqrt(N);
 }
 
 // ── Gray-Scott reaction-diffusion ────────────────────────────────────────
+// Wire-format: rdF=F (feed), rdK=k (kill), rdDu=activator diffusion.
+// rdDv is OPTIONAL for GS — handoff §1 specifies legacy GS exports may omit
+// it, in which case the historical hardcoded ratio (Du*0.5) is used.
 function buildGrayScott(params, N) {
   var rng = mulberry32(params.rngSeed||42);
   var F = params.rdF||0.030, k = params.rdK||0.057;
-  var Du = params.rdDu||0.14, Dv = Du*0.5;
+  var Du = params.rdDu||0.14;
+  var Dv = (params.rdDv!==undefined && params.rdDv!==null) ? params.rdDv : Du*0.5;
   var dt = Math.min(1.0, 0.9/(6.0*Du));
   var steps = params.rdSteps||3000;
   var u = new Float32Array(N*N*N), v = new Float32Array(N*N*N);
@@ -1738,6 +1764,98 @@ function buildGrayScott(params, N) {
   }
   return u;
 }
+
+// ── Brusselator reaction-diffusion ──────────────────────────────────────
+// v0.5.0-rc15: added per RD handoff §2.3.
+// Wire-format overload: rdF→a, rdK→b. Both Du AND Dv are exposed (no longer
+// derived from Du as in GS). Init perturbs ±1% around analytical steady state
+// (u0=a, v0=b/a). Reaction terms are unbounded in principle, so we soft-clamp
+// to [-100,100] purely as NaN protection (values stay near the steady state).
+// CRITICAL: u must be renormalized to [0,1] in-place before return — the
+// shader contract assumes iso ∈ [0,1] and geometry.center is interpreted in
+// that normalized space.
+function buildBrusselator(params, N) {
+  var rng = mulberry32(params.rngSeed||42);
+  var a = (params.rdF!==undefined ? params.rdF : 1.0);
+  var b = (params.rdK!==undefined ? params.rdK : 3.5);
+  var Du = (params.rdDu!==undefined ? params.rdDu : 2.0);
+  var Dv = (params.rdDv!==undefined && params.rdDv!==null) ? params.rdDv : 16.0;
+  var dt = Math.min(0.25, 0.9/(6.0*Math.max(Du, Dv)));
+  var steps = params.rdSteps||3000;
+  var N3 = N*N*N;
+  var u = new Float32Array(N3), v = new Float32Array(N3);
+  var u0 = a, v0 = b / Math.max(a, 1e-6);
+  for (var i = 0; i < N3; i++) {
+    u[i] = u0 + (rng()-0.5)*0.02;
+    v[i] = v0 + (rng()-0.5)*0.02;
+  }
+  var u2 = new Float32Array(N3), v2 = new Float32Array(N3), tmp;
+  for (var step = 0; step < steps; step++) {
+    for (var iz=0;iz<N;iz++) { var izm=(iz-1+N)%N, izp=(iz+1)%N;
+      for (var iy=0;iy<N;iy++) { var iym=(iy-1+N)%N, iyp=(iy+1)%N;
+        for (var ix=0;ix<N;ix++) { var ixm=(ix-1+N)%N, ixp=(ix+1)%N;
+          var idx=ix+iy*N+iz*N*N, uc=u[idx], vc=v[idx];
+          var lu=u[ixp+iy*N+iz*N*N]+u[ixm+iy*N+iz*N*N]+u[ix+iyp*N+iz*N*N]+u[ix+iym*N+iz*N*N]+u[ix+iy*N+izp*N*N]+u[ix+iy*N+izm*N*N]-6.0*uc;
+          var lv=v[ixp+iy*N+iz*N*N]+v[ixm+iy*N+iz*N*N]+v[ix+iyp*N+iz*N*N]+v[ix+iym*N+iz*N*N]+v[ix+iy*N+izp*N*N]+v[ix+iy*N+izm*N*N]-6.0*vc;
+          var uu=uc*uc, nu=uc+dt*(Du*lu + a - (b+1.0)*uc + uu*vc), nv=vc+dt*(Dv*lv + b*uc - uu*vc);
+          u2[idx]=nu<-100?-100:nu>100?100:nu; v2[idx]=nv<-100?-100:nv>100?100:nv;
+        }
+      }
+    }
+    tmp=u; u=u2; u2=tmp; tmp=v; v=v2; v2=tmp;
+  }
+  // Renormalize u to [0,1] in place (handoff §2.3 — shader contract requires this)
+  var minV=Infinity, maxV=-Infinity;
+  for (var i = 0; i < N3; i++) { var uv=u[i]; if(uv<minV)minV=uv; if(uv>maxV)maxV=uv; }
+  var rn = Math.max(maxV-minV, 1e-9);
+  for (var i = 0; i < N3; i++) u[i] = (u[i]-minV)/rn;
+  return u;
+}
+
+// ── Schnakenberg reaction-diffusion ─────────────────────────────────────
+// v0.5.0-rc15: added per RD handoff §2.4.
+// Wire-format overload: rdF→a, rdK→b. Steady state: u0=a+b, v0=b/(a+b)².
+// Soft-clamp to [0,100] (one-sided, since Schnakenberg variables are
+// concentration-like and stay non-negative). Same renormalize-then-return
+// pattern as Brusselator.
+function buildSchnakenberg(params, N) {
+  var rng = mulberry32(params.rngSeed||42);
+  var a = (params.rdF!==undefined ? params.rdF : 0.1);
+  var b = (params.rdK!==undefined ? params.rdK : 0.9);
+  var Du = (params.rdDu!==undefined ? params.rdDu : 1.0);
+  var Dv = (params.rdDv!==undefined && params.rdDv!==null) ? params.rdDv : 40.0;
+  var dt = Math.min(0.5, 0.9/(6.0*Math.max(Du, Dv)));
+  var steps = params.rdSteps||4000;
+  var N3 = N*N*N;
+  var u = new Float32Array(N3), v = new Float32Array(N3);
+  var apb = a+b, u0 = apb, v0 = b / Math.max(apb*apb, 1e-6);
+  for (var i = 0; i < N3; i++) {
+    u[i] = u0 + (rng()-0.5)*0.02;
+    v[i] = v0 + (rng()-0.5)*0.02;
+  }
+  var u2 = new Float32Array(N3), v2 = new Float32Array(N3), tmp;
+  for (var step = 0; step < steps; step++) {
+    for (var iz=0;iz<N;iz++) { var izm=(iz-1+N)%N, izp=(iz+1)%N;
+      for (var iy=0;iy<N;iy++) { var iym=(iy-1+N)%N, iyp=(iy+1)%N;
+        for (var ix=0;ix<N;ix++) { var ixm=(ix-1+N)%N, ixp=(ix+1)%N;
+          var idx=ix+iy*N+iz*N*N, uc=u[idx], vc=v[idx];
+          var lu=u[ixp+iy*N+iz*N*N]+u[ixm+iy*N+iz*N*N]+u[ix+iyp*N+iz*N*N]+u[ix+iym*N+iz*N*N]+u[ix+iy*N+izp*N*N]+u[ix+iy*N+izm*N*N]-6.0*uc;
+          var lv=v[ixp+iy*N+iz*N*N]+v[ixm+iy*N+iz*N*N]+v[ix+iyp*N+iz*N*N]+v[ix+iym*N+iz*N*N]+v[ix+iy*N+izp*N*N]+v[ix+iy*N+izm*N*N]-6.0*vc;
+          var uu=uc*uc, nu=uc+dt*(Du*lu + a - uc + uu*vc), nv=vc+dt*(Dv*lv + b - uu*vc);
+          u2[idx]=nu<0?0:nu>100?100:nu; v2[idx]=nv<0?0:nv>100?100:nv;
+        }
+      }
+    }
+    tmp=u; u=u2; u2=tmp; tmp=v; v=v2; v2=tmp;
+  }
+  // Renormalize u to [0,1] in place (handoff §2.4 — shader contract requires this)
+  var minV=Infinity, maxV=-Infinity;
+  for (var i = 0; i < N3; i++) { var uv=u[i]; if(uv<minV)minV=uv; if(uv>maxV)maxV=uv; }
+  var rn = Math.max(maxV-minV, 1e-9);
+  for (var i = 0; i < N3; i++) u[i] = (u[i]-minV)/rn;
+  return u;
+}
+
 function evalRDField(grid, N, u, v, w) {
   // u,v,w already in [0,1] (post-tile fract applied by caller)
   var fx=u*(N-1), fy=v*(N-1), fz=w*(N-1);
@@ -1767,21 +1885,30 @@ function evalNoiseRaw(surf,nx,ny,nz){
   return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
 }
 
-function buildNoiseSDF(json){
+function buildNoiseSDF(json,normOverride){
   const surf=json.surface,geom=json.geometry||{};
   const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
-  const PP=16,SCALE=5.0/Math.PI;let mn=Infinity,mx=-Infinity;
-  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
-    const px=((xi/(PP-1))*2-1)*Math.PI;
-    const py=((yi/(PP-1))*2-1)*Math.PI;
-    const pz=((zi/(PP-1))*2-1)*Math.PI;
-    const raw=evalNoiseRaw(surf,px*SCALE*freq*sx,py*SCALE*freq*sy,pz*SCALE*freq*sz);
-    if(raw<mn)mn=raw;if(raw>mx)mx=raw;
-  }
-  const range=mx-mn,noiseMin=mn-range*.05,noiseMax=mx+range*.05;
-  const mid=(noiseMin+noiseMax)*.5,halfR=Math.max((noiseMax-noiseMin)*.5,.001);
-  const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
   const SCALE2=5.0/Math.PI;
+  let mid,halfR;
+  if(normOverride){
+    // v0.5.0-rc14: use preview's fieldMin/Max — zero drift, zero pre-scan cost.
+    mid=(normOverride.fieldMin+normOverride.fieldMax)*0.5;
+    halfR=Math.max((normOverride.fieldMax-normOverride.fieldMin)*0.5,.001);
+  } else {
+    // Fallback pre-scan when preview hasn't cached a range yet (first export
+    // without a preview bake, or after setStale). Samples over world [-5,5]
+    // — the actual runtime query domain — at 16³ resolution, no padding.
+    // Matches what the preview bake worker does when it builds fieldMin/Max.
+    const PP=16;let mn=Infinity,mx=-Infinity;
+    for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
+      const px=(xi/(PP-1))*10-5, py=(yi/(PP-1))*10-5, pz=(zi/(PP-1))*10-5;
+      const raw=evalNoiseRaw(surf,px*SCALE2*freq*sx,py*SCALE2*freq*sy,pz*SCALE2*freq*sz);
+      if(raw<mn)mn=raw;if(raw>mx)mx=raw;
+    }
+    mid=(mn+mx)*.5;
+    halfR=Math.max((mx-mn)*.5,.001);
+  }
+  const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
   return p=>{
     // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
     const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
@@ -1873,55 +2000,59 @@ function buildTPMSSDF(json){
 }
 // ── HU domain-spanning helpers (shape mode) ──────────────────────────────────
 function buildHUKernelsMM(params,bbox,cellSizeMm){
-  var rng=mulberry32(params.rngSeed);
+  // Build the design-cell kernels in [-π,π]³ — same seed, same N, same RNG
+  // sequence as cube-mode preview. This guarantees the field pattern tiles.
+  var designK=buildHUKernels(params);
+  var TP=2*Math.PI,scale=cellSizeMm/TP;
+  var aspect=params.huAspect||4,bw=params.huWidth||.04;
+  // Scale kernel Gaussian widths from design-cell→mm
+  var a_mm=designK.length>0?designK[0].a*scale:(bw*aspect*.5*cellSizeMm);
+  var b_mm=designK.length>0?designK[0].b*scale:(bw*.5*cellSizeMm);
+  // Tile grid: how many cells span the bbox, +1 cell padding per side
+  // for Gaussian bleed across cell boundaries
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
-  var volRatio=(ddx*ddy*ddz)/Math.pow(cellSizeMm,3);
-  // Density: huN per design cell × volRatio = huN per cell in the full bbox.
-  // ×2 multiplier (v0.5.0-rc9 audit) densifies shape-mode to keep visible
-  // periodicity consistent with cube-mode render. No kernel-count cap —
-  // spatial hash below makes per-voxel query cost O(1) in kernel count.
-  var N=Math.max(1,Math.ceil((params.huN||80)*volRatio*2));
-  var aspect=params.huAspect||4,bw=params.huWidth||0.04;
-  var a=bw*aspect*0.5*cellSizeMm,b=bw*0.5*cellSizeMm;
-  var kappa=params.kappa||6,mode=params.dirMode||'single';
-  var tRad=(params.dirTheta||0)*Math.PI/180,pRad=(params.dirPhi||0)*Math.PI/180;
-  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
-  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
-  function cross3(aa,bb){return[aa[1]*bb[2]-aa[2]*bb[1],aa[2]*bb[0]-aa[0]*bb[2],aa[0]*bb[1]-aa[1]*bb[0]];}
-  function norm3(v){var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1;return[v[0]/l,v[1]/l,v[2]/l];}
-  var pts=jitteredGrid3D(N,rng);
+  var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
+  // Padding: 2 cell minimum for Gaussian bleed across periodic cell boundaries
+  // (preview) and export margin; more if kernel reach exceeds cell size
+  var pad=Math.max(2,Math.ceil(3.5*Math.max(a_mm,b_mm)/cellSizeMm));
   var kernels=[];
-  for(var i=0;i<N;i++){
-    var t2;
-    if(mode==='iso')t2=sampleVMF(rng,0);
-    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
-    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
-    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
-    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
-    kernels.push({px:bbox.mnx+pts[i][0]*ddx,py:bbox.mny+pts[i][1]*ddy,pz:bbox.mnz+pts[i][2]*ddz,
-      tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a,b:b});
+  for(var tz=-pad;tz<nTz+pad;tz++){
+    for(var ty=-pad;ty<nTy+pad;ty++){
+      for(var tx=-pad;tx<nTx+pad;tx++){
+        for(var ki=0;ki<designK.length;ki++){
+          var dk=designK[ki];
+          // Map kernel position from [-π,π] → [0,cellSizeMm] then offset by tile
+          kernels.push({
+            px:bbox.mnx+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
+            py:bbox.mny+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
+            pz:bbox.mnz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
+            tx:dk.tx,ty:dk.ty,tz:dk.tz,
+            n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
+            n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
+            a:a_mm,b:b_mm});
+        }
+      }
+    }
   }
   // ── Spatial hash for O(1) kernel queries ────────────────────────────────
-  // Kernel Gaussian support falls below ~1e-5 at 3.5σ, negligible beyond.
-  // cs = 3.5·max(a,b) ensures any kernel reachable from a query point lives
-  // within a 3×3×3 neighborhood of the query's hash cell. Cell list stored
-  // inline on the kernels array so the eval path doesn't need a new arg.
-  var cutoff=3.5*Math.max(a,b);
+  var cutoff=3.5*Math.max(a_mm,b_mm);
   var cs=Math.max(cutoff,1e-6);
-  var nx=Math.max(1,Math.ceil(ddx/cs)),ny=Math.max(1,Math.ceil(ddy/cs)),nz=Math.max(1,Math.ceil(ddz/cs));
+  var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
+  var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
+  var hddx=hmxx-hmnx,hddy=hmxy-hmny,hddz=hmxz-hmnz;
+  var nx=Math.max(1,Math.ceil(hddx/cs)),ny=Math.max(1,Math.ceil(hddy/cs)),nz=Math.max(1,Math.ceil(hddz/cs));
   var buckets=new Array(nx*ny*nz);
   for(var bi=0;bi<buckets.length;bi++)buckets[bi]=null;
-  for(var ki=0;ki<kernels.length;ki++){
-    var kk=kernels[ki];
-    var hx=Math.max(0,Math.min(nx-1,Math.floor((kk.px-bbox.mnx)/cs)));
-    var hy=Math.max(0,Math.min(ny-1,Math.floor((kk.py-bbox.mny)/cs)));
-    var hz=Math.max(0,Math.min(nz-1,Math.floor((kk.pz-bbox.mnz)/cs)));
+  for(var ki2=0;ki2<kernels.length;ki2++){
+    var kk=kernels[ki2];
+    var hx=Math.max(0,Math.min(nx-1,Math.floor((kk.px-hmnx)/cs)));
+    var hy=Math.max(0,Math.min(ny-1,Math.floor((kk.py-hmny)/cs)));
+    var hz=Math.max(0,Math.min(nz-1,Math.floor((kk.pz-hmnz)/cs)));
     var bIdx=hx+hy*nx+hz*nx*ny;
     if(buckets[bIdx]===null)buckets[bIdx]=[];
-    buckets[bIdx].push(ki);
+    buckets[bIdx].push(ki2);
   }
-  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:bbox.mnx,mny:bbox.mny,mnz:bbox.mnz,cs:cs};
+  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
   return kernels;
 }
 function evalHUFieldMM(kernels,x,y,z){
@@ -1966,11 +2097,13 @@ function bakeGridMM(evalFn,N,bbox){
   return grid;
 }
 
-function buildGrainSDF(json,shapeCtx){
+function buildGrainSDF(json,shapeCtx,normOverride){
   const f=json.field,g=json.geometry||{};
   const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
-  // Canonical SDF topology application — shared by all four sub-paths (RD, HU-shape,
-  // HU-cube, wave/GRF). Returns negative-inside matching design-tool shader at
+  // Canonical SDF topology application — used by RD path (which has no
+  // normalization). HU-shape, HU-cube, and wave/GRF paths use inline
+  // cN/hN transforms to map center/halfW from raw→normalized space.
+  // Returns negative-inside matching design-tool shader at
   // index_-_Grain.html:706 and index_-_Noise.html:1053.
   //   sheet: negative where |raw-center| < halfW (thin wall band)
   //   half:  halfInvert=false → negative where raw > center
@@ -1984,14 +2117,30 @@ function buildGrainSDF(json,shapeCtx){
   };
 
   // ── Reaction-diffusion ─────────────────────────────────────────────
+  // v0.5.0-rc15: rd_Dv and rd_system now parsed from JSON. rd_system selects
+  // among Gray-Scott / Brusselator / Schnakenberg builders. Wire-format key
+  // names rd_F / rd_k carry different meanings per system (handoff §1):
+  //   gray-scott     → F (feed) / k (kill)
+  //   brusselator    → a / b
+  //   schnakenberg   → a / b
+  // Missing rd_system defaults to "grayscott" for backward compat with pre-
+  // v0.9.1 grain exports.
   if(f.type==='reactiondiffusion'){
-    const rdParams={rdF:f.rd_F||0.030,rdK:f.rd_k||0.057,rdDu:f.rd_Du||0.14,rdSteps:f.rd_steps||3000,rngSeed:f.rng_seed||42};
+    const rdSys = f.rd_system || 'grayscott';
+    const rdParams={
+      rdF:f.rd_F!==undefined?f.rd_F:0.030,
+      rdK:f.rd_k!==undefined?f.rd_k:0.057,
+      rdDu:f.rd_Du!==undefined?f.rd_Du:0.14,
+      rdDv:(f.rd_Dv!==undefined?f.rd_Dv:null),
+      rdSteps:f.rd_steps||3000,
+      rngSeed:f.rng_seed||42
+    };
     const tile=f.rd_tile||1;
     let N_rd,getUVW;
     if(shapeCtx){
       // Shape mode: same 48³ simulation as cube preview.
       // Period = cellSizeMm so every tile in the domain matches the user's designed cell.
-      // Seamless tiling is guaranteed by the periodic BCs used in buildGrayScott.
+      // Seamless tiling is guaranteed by the periodic BCs in all three RD builders.
       const {cellSizeMm,bbox}=shapeCtx;
       N_rd=48;
       const frac=x=>x-Math.floor(x);
@@ -2005,7 +2154,9 @@ function buildGrainSDF(json,shapeCtx){
       const frac=x=>x-Math.floor(x);
       getUVW=p=>[frac((p[0]/10+0.5)*tile),frac((p[1]/10+0.5)*tile),frac((p[2]/10+0.5)*tile)];
     }
-    const grid=buildGrayScott(rdParams,N_rd);
+    const grid = rdSys==='brusselator'  ? buildBrusselator(rdParams,N_rd)
+               : rdSys==='schnakenberg' ? buildSchnakenberg(rdParams,N_rd)
+               :                          buildGrayScott(rdParams,N_rd);
     return p=>{
       const[u,v,w]=getUVW(p);
       const raw=evalRDField(grid,N_rd,u,v,w);
@@ -2038,24 +2189,34 @@ function buildGrainSDF(json,shapeCtx){
     const mmKernels=buildHUKernelsMM(params,bbox,cellSizeMm);
     self.postMessage({type:'progress',stage:'pre-baking HU field ('+N_hu+'\u00b3 grid, '+mmKernels.length+' kernels)...'});
     const huGrid=bakeGridMM((x,y,z)=>evalHUFieldMM(mmKernels,x,y,z),N_hu,bbox);
-    // ── Field normalization (v0.5.0-rc10 fix) ──────────────────────────────
-    // Preview's bakeRaw=true path normalizes raw field to ~[-1,1] using min/max
-    // from the baked grid, then applies halfW/center. Export must do the same
-    // or halfW is applied to un-normalized magnitudes → wrong wall thickness.
-    // For HU-shape the bake already happened, so scanning the Float32Array is
-    // essentially free. 5% padding mirrors buildNoiseSDF.
-    let hmn=Infinity,hmx=-Infinity;
-    for(let i=0;i<huGrid.length;i++){const v=huGrid[i];if(v<hmn)hmn=v;if(v>hmx)hmx=v;}
-    const hfMid=(hmn+hmx)*0.5;
-    const hfHalfR=Math.max((hmx-hmn)*0.55,1e-6);
+    // ── Field normalization (rc14: prefer preview override, else scan grid) ─
+    // Preview's bakeRaw=true path caches fieldMin/Max on the recipe; using
+    // those exactly matches preview's normalization. If absent (first export
+    // before any preview bake), fall back to scanning the already-baked
+    // huGrid Float32Array — essentially free, captures the true range at the
+    // bake resolution (matches preview's method, just on export's own bake).
+    let hfMid,hfHalfR;
+    if(normOverride){
+      hfMid=(normOverride.fieldMin+normOverride.fieldMax)*0.5;
+      hfHalfR=Math.max((normOverride.fieldMax-normOverride.fieldMin)*0.5,1e-6);
+    } else {
+      let hmn=Infinity,hmx=-Infinity;
+      for(let i=0;i<huGrid.length;i++){const v=huGrid[i];if(v<hmn)hmn=v;if(v>hmx)hmx=v;}
+      hfMid=(hmn+hmx)*0.5;
+      hfHalfR=Math.max((hmx-hmn)*0.5,1e-6);
+    }
     const c01=v=>v<0?0:v>1?1:v;
+    // Transform center/halfW from raw→normalized space (see cube-mode comment)
+    const cN=(center-hfMid)/hfHalfR,hN=halfW/hfHalfR;
     return p=>{
       const u=c01((p[0]*cellSizeMm/10-bbox.mnx)/ddx);
       const v=c01((p[1]*cellSizeMm/10-bbox.mny)/ddy);
       const w=c01((p[2]*cellSizeMm/10-bbox.mnz)/ddz);
       const raw=evalRDField(huGrid,N_hu,u,v,w);
       const norm=(raw-hfMid)/hfHalfR;
-      return applyTopology(norm);
+      if(topo==='half') return hi?(norm-cN):(cN-norm);
+      if(topo==='solid') return hN-Math.abs(norm-cN);
+      return Math.abs(norm-cN)-hN;
     };
   }
 
@@ -2063,33 +2224,44 @@ function buildGrainSDF(json,shapeCtx){
   const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
   const kernels=isHU?buildHUKernels(params):null;
   const PI5=Math.PI/5;
-  // ── Field normalization (v0.5.0-rc10 fix) ──────────────────────────────
-  // Preview's bakeRaw=true path computes fieldMin/fieldMax from the baked raw
-  // field, passes them to the shader as uFieldMid/uFieldHalfR, and normalizes
-  // to ~[-1,1] before applying halfW/center. Without this pre-scan here, the
-  // export's halfW=0.15 was being applied to un-normalized spinodoid values
-  // (range ~±5) yielding walls ~4-5× thinner than preview. Pattern matches
-  // buildNoiseSDF: 16³ pre-scan over [-5,5] world, 5% padding.
+  // ── Field normalization (rc14: prefer preview override, else pre-scan) ──
+  // Preview's bakeRaw=true path caches fieldMin/Max on the recipe. Using
+  // those exactly matches preview's normalization — no drift by construction.
+  // Fallback: 16³ pre-scan over world [-5,5] (matches runtime query domain).
+  // No padding — design tools don't pad, and the rc10 5% padding was a
+  // compensation for an earlier mis-sampled grid that rc14 supersedes.
   const evalRaw = isHU
     ? (px,py,pz)=>evalHUField(kernels,0.5+px/10,0.5+py/10,0.5+pz/10)
     : (px,py,pz)=>evalField(waves,px*PI5,py*PI5,pz*PI5,null);
-  const PP=16;let mnF=Infinity,mxF=-Infinity;
-  for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
-    const px=(xi/(PP-1))*10-5, py=(yi/(PP-1))*10-5, pz=(zi/(PP-1))*10-5;
-    const v=evalRaw(px,py,pz);
-    if(v<mnF)mnF=v;if(v>mxF)mxF=v;
+  let fieldMid,fieldHalfR;
+  if(normOverride){
+    fieldMid=(normOverride.fieldMin+normOverride.fieldMax)*0.5;
+    fieldHalfR=Math.max((normOverride.fieldMax-normOverride.fieldMin)*0.5,1e-6);
+  } else {
+    const PP=16;let mnF=Infinity,mxF=-Infinity;
+    for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
+      const px=(xi/(PP-1))*10-5, py=(yi/(PP-1))*10-5, pz=(zi/(PP-1))*10-5;
+      const v=evalRaw(px,py,pz);
+      if(v<mnF)mnF=v;if(v>mxF)mxF=v;
+    }
+    fieldMid=(mnF+mxF)*0.5;
+    fieldHalfR=Math.max((mxF-mnF)*0.5,1e-6);
   }
-  const fieldMid=(mnF+mxF)*0.5;
-  const fieldHalfR=Math.max((mxF-mnF)*0.55,1e-6);
+  // Transform center/halfW from raw→normalized space for grain fields.
+  // Grain design tool applies topology in raw field units; mesh normalizes
+  // to [-1,1] first, so we must map center/halfW into that same space.
+  const cN=(center-fieldMid)/fieldHalfR,hN=halfW/fieldHalfR;
   return p=>{
     const raw=evalRaw(p[0],p[1],p[2]);
     const norm=(raw-fieldMid)/fieldHalfR;
-    return applyTopology(norm);
+    if(topo==='half') return hi?(norm-cN):(cN-norm);
+    if(topo==='solid') return hN-Math.abs(norm-cN);
+    return Math.abs(norm-cN)-hN;
   };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CANONICAL SDF CONVENTION (v0.5.0-rc9 sign audit, rc10 normalization fix)
+// CANONICAL SDF CONVENTION (rc9 sign audit, rc10 normalization, rc14 override)
 // ═══════════════════════════════════════════════════════════════════════════
 // All SDF builders below (buildTPMSSDF, buildNoiseSDF, buildGrainSDF) return
 // a STANDARD NEGATIVE-INSIDE signed distance field:
@@ -2108,15 +2280,25 @@ function buildGrainSDF(json,shapeCtx){
 // Manifold's positive-inside happens EXACTLY ONCE — in the wrappedSDF closure
 // inside the 'export' worker path (search for "Canonical→Manifold flip").
 //
-// FIELD NORMALIZATION (rc10): non-periodic stochastic fields (noise, spinodoid,
-// GRF, hyperuniform) must be normalized to ~[-1,1] range BEFORE halfW/center
-// are applied, otherwise walls come out at the wrong thickness. The preview
-// shader does this via uFieldMid/uFieldHalfR uniforms computed from a baked
-// raw-field scan; the worker builders do it via an internal pre-scan (noise
-// and grain cube/wave branches) or by scanning the already-baked shape grid
-// (grain HU-shape). RD is naturally bounded in [0,1] so normalization is a
-// no-op for that path. TPMS has no normalization concept — phi field is
-// already in a well-defined implicit-function unit system.
+// FIELD NORMALIZATION (rc10 baseline, rc14 override): non-periodic stochastic
+// fields (noise, spinodoid, GRF, hyperuniform) must be normalized to ~[-1,1]
+// range BEFORE halfW/center are applied, otherwise walls come out at the
+// wrong thickness.
+//
+// Single source of truth: the PREVIEW bake's actual fieldMin/fieldMax.
+// After each preview bake, the main thread caches them on the recipe as
+// _previewFieldMin / _previewFieldMax. On export, buildSDF forwards these
+// to the noise/grain builders as normOverride. This guarantees
+// preview/export agreement BY CONSTRUCTION — no drift from grid resolution
+// or sampling density mismatches.
+//
+// Fallback: if override is absent (first export before any preview bake,
+// or after a setStale event), the builder does its own 16³ pre-scan over
+// world [-5,5]. No padding (rc14: the rc10 5% padding was compensation
+// for the old mis-domain pre-scan in noise; rc14 fixes that bug too).
+// RD path doesn't need normalization (Gray-Scott v-field is naturally in
+// [0,1]). TPMS has no normalization concept — phi is in a well-defined
+// implicit-function unit system.
 //
 // Iso offset semantics: +isoOffsetMm = THICKER WALLS. In canonical SDF terms,
 // thicker walls means the zero-crossing pushes outward (more of space becomes
@@ -2126,9 +2308,17 @@ function buildGrainSDF(json,shapeCtx){
 // a normalized field, and the one flip at wrappedSDF handles Manifold handoff.
 // ═══════════════════════════════════════════════════════════════════════════
 function buildSDF(recipe,shapeCtx){
-  if(recipe.family==='noise')return buildNoiseSDF(recipe.json);
+  // v0.5.0-rc14: if the preview cached fieldMin/Max on the recipe, forward
+  // them as a normalization override. Builders use the cached range instead
+  // of their own pre-scan — guarantees preview/export agreement by
+  // construction. Cache is cleared on setStale() so changed params fall back
+  // to the builder's internal pre-scan.
+  const normOverride = (recipe._previewFieldMin!==undefined && recipe._previewFieldMax!==undefined)
+    ? {fieldMin:recipe._previewFieldMin, fieldMax:recipe._previewFieldMax}
+    : null;
+  if(recipe.family==='noise')return buildNoiseSDF(recipe.json,normOverride);
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
-  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx);
+  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride);
   throw new Error('No evaluator for family: '+recipe.family);
 }
 
@@ -2158,12 +2348,17 @@ self.onmessage=async function(e){
           wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,
           huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
         const isHU=f.type==='hyperuniform';
+        // HU preview uses cube-mode evaluation (100 kernels, linear scan).
+        // When a shape is imported, evalHUFieldPeriodic wraps kernel distances
+        // to the nearest periodic image for seamless GL_REPEAT tiling.
+        // Full-bbox tiled kernels are only needed for export (buildGrainSDF).
         const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
         const kernels=isHU?buildHUKernels(params):null;
+        const huEval=isHU&&d.shapeCtx?evalHUFieldPeriodic:evalHUField;
         evalRaw=p=>isHU
-          ?evalHUField(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10)
+          ?huEval(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10)
           :evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
-        topology={bakeRaw:true,halfW:g.half_width??0.15,center:g.center??0,
+        topology={bakeRaw:true,rawUnits:true,halfW:g.half_width??0.15,center:g.center??0,
           topoMode:g.topology||'sheet',halfInvert:g.half_invert||false};
       }else if(fam==='noise'){
         const surf=json.surface,geom=json.geometry||{};
@@ -2644,20 +2839,38 @@ async function triggerPreview(quality){
   const needsRawBake=!periodic;
   let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
   if(!periodic&&importedShape){
-    // Stochastic field + shape: bake over full world extent — no tiling for aperiodic structures
+    // Stochastic field + shape: bake strategy depends on field type.
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     const s=10/cellSizeMm;
     const b=importedShape.bbox;
-    const wMin=[b.mnx*s,b.mny*s,b.mnz*s];
-    const wMax=[b.mxx*s,b.mxy*s,b.mxz*s];
-    // Fixed N per quality tier — consistent, predictable resolution
-    const nScaled=N;
-    bakeOpts={isPeriodic:false,bakeRaw:true,worldMin:wMin,worldMax:wMax,
-      shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
-    rm.setWorldBounds(wMin,wMax,false);
+    const isHUField=currentRecipe.json?.field?.type==='hyperuniform';
+    if(isHUField){
+      // HU fields: bake ONE periodic design cell, shader tiles via GL_REPEAT.
+      // Orders of magnitude faster than baking the full bbox — cost is fixed
+      // at N³ regardless of shape size. Rotation/translation handled by
+      // texture wrapping, no clamp artifacts possible.
+      bakeOpts={isPeriodic:true,bakeRaw:true,
+        shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
+      rm.setWorldBounds([-5,-5,-5],[5,5,5],true);
+    }else{
+      // Other stochastic fields (spinodoid/GRF/noise): bake over full shape extent
+      const wMin=[b.mnx*s,b.mny*s,b.mnz*s];
+      const wMax=[b.mxx*s,b.mxy*s,b.mxz*s];
+      bakeOpts={isPeriodic:false,bakeRaw:true,worldMin:wMin,worldMax:wMax,
+        shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
+      rm.setWorldBounds(wMin,wMax,false);
+    }
     await new Promise(r=>setTimeout(r,0));
-    const result=await bakeField(currentRecipe, nScaled, bakeOpts);
+    const result=await bakeField(currentRecipe, N, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
+    // reuse the same normalization instead of doing a sparser 16³ pre-scan.
+    // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
+    // don't need normalization since their fields are in known unit systems.
+    if(bakeOpts.bakeRaw && currentRecipe){
+      currentRecipe._previewFieldMin=result.fieldMin;
+      currentRecipe._previewFieldMax=result.fieldMax;
+    }
     clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
@@ -2669,6 +2882,11 @@ async function triggerPreview(quality){
   try{
     const result=await bakeField(currentRecipe, N, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    // v0.5.0-rc14: cache preview fieldMin/Max for export reuse (see shape path above).
+    if(bakeOpts.bakeRaw && currentRecipe){
+      currentRecipe._previewFieldMin=result.fieldMin;
+      currentRecipe._previewFieldMax=result.fieldMax;
+    }
     clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
@@ -2784,11 +3002,21 @@ function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.j
 function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
 function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
   if(f.type==='reactiondiffusion'){
-    return`<div class="sec-lbl">grain scaffold &middot; reaction-diffusion (gray-scott)</div>
+    // v0.5.0-rc15: system-aware labels. Wire fields rd_F / rd_k mean F/k for
+    // Gray-Scott but a/b for Brusselator and Schnakenberg (handoff §1).
+    const sys = f.rd_system || 'grayscott';
+    const sysLabel = sys==='brusselator' ? 'brusselator'
+                   : sys==='schnakenberg' ? 'schnakenberg'
+                   :                        'gray-scott';
+    const isGS = (sys==='grayscott');
+    const p1Label = isGS ? 'feed rate F' : 'param a';
+    const p2Label = isGS ? 'kill rate k' : 'param b';
+    return`<div class="sec-lbl">grain scaffold &middot; reaction-diffusion (${sysLabel})</div>
     <div class="meta-grid">
-    ${card('feature scale (Du)',f.rd_Du!=null?f.rd_Du.toFixed(2):'—')}
-    ${card('feed rate F',f.rd_F!=null?f.rd_F.toFixed(3):'—')}
-    ${card('kill rate k',f.rd_k!=null?f.rd_k.toFixed(3):'—')}
+    ${card('activator diffusion (Du)',f.rd_Du!=null?f.rd_Du.toFixed(2):'—')}
+    ${card('inhibitor diffusion (Dv)',f.rd_Dv!=null?f.rd_Dv.toFixed(2):(isGS?(f.rd_Du!=null?(f.rd_Du*0.5).toFixed(2)+' (derived)':'—'):'—'))}
+    ${card(p1Label,f.rd_F!=null?f.rd_F.toFixed(3):'—')}
+    ${card(p2Label,f.rd_k!=null?f.rd_k.toFixed(3):'—')}
     ${card('sim steps',f.rd_steps)}
     ${card('tile factor',f.rd_tile)}
     ${card('RNG seed',f.rng_seed)}
@@ -3168,6 +3396,14 @@ function setStale(){
   if(banner){banner.style.display='flex';}
   if(btn){btn.classList.add('pulsing');}
   if(area){area.classList.add('preview-stale');}
+  // v0.5.0-rc14: invalidate cached preview field range. If the user changes
+  // a parameter that affects the field (frequency, seed, wave count, etc.)
+  // without re-baking preview, the cached range is no longer trustworthy
+  // and export should fall back to its own pre-scan.
+  if(currentRecipe){
+    delete currentRecipe._previewFieldMin;
+    delete currentRecipe._previewFieldMax;
+  }
 }
 function clearStale(){
   const banner=document.getElementById('staleBanner');

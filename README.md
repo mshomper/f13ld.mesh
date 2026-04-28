@@ -28,6 +28,7 @@ Converts implicit scaffold recipes from F13LD's design tools into watertight 3MF
 | **Grain Explorer** | `spinodoid` | VMF-sampled wave superposition, all directional modes (single, orthotropic, isotropic) |
 | **Grain Explorer** | `gaussian` | Gaussian random field with spectral envelope |
 | **Grain Explorer** | `hyperuniform` | Jittered-grid kernel field |
+| **Grain Explorer** | `reaction-diffusion` | Stucture "grown" from competing fields |
 
 All geometry modes are supported: sheet, half-solid, solid, and PI-TPMS (two-phase intersection).
 

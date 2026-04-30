@@ -142,6 +142,13 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #cellSizeUnit{font-size:10px;color:var(--amber);opacity:.7}
 #cellOverlay input[type=number]{width:60px;font-size:14px;font-weight:600;background:transparent;border:none;border-bottom:.5px solid var(--cyan);color:var(--cyan);font-family:inherit;font-variant-numeric:tabular-nums;text-align:right;outline:none;padding:0 2px;appearance:none;-moz-appearance:textfield}
 #cellOverlay input[type=number]::-webkit-inner-spin-button,#cellOverlay input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0;display:none}
+#cellOverlay .co-sep{color:var(--amber);opacity:.4;margin:0 4px}
+#cellOverlay .co-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400;font-size:11px;color:var(--cyan);user-select:none}
+#cellOverlay .co-toggle input[type=checkbox]{width:13px;height:13px;margin:0;cursor:pointer;accent-color:var(--cyan)}
+#cellOverlay .co-toggle span{white-space:nowrap}
+#cellOverlay .co-inset{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
+#cellOverlay .co-inset-lbl{font-size:10px;color:var(--cyan);opacity:.7;letter-spacing:.05em;text-transform:lowercase}
+#cellOverlay .co-inset input[type=number]{width:36px;font-size:12px;padding:0 1px}
 
 #expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
 #expWarn{font-size:11px;color:var(--amber);margin-top:4px;line-height:1.4;letter-spacing:.01em}
@@ -218,7 +225,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc15</span>
+      <span class="fh-version">v0.5.0-rc19.1</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -254,7 +261,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
   <div id="dropzone">
     <div class="dz-icon">⬡</div>
     <div class="dz-main">Drop a JSON recipe here</div>
-    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; grain &nbsp;·&nbsp; spinodoid</div>
+    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; grain &nbsp;·&nbsp; beam &nbsp;·&nbsp; spinodoid</div>
     <div class="dz-pick" id="pickBtn">or pick a file</div>
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
@@ -302,7 +309,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
         <span class="tp-sep">·</span>
         <span class="tp-label">total</span><span class="tp-val" id="tpTotal">—</span>
       </div>
-      <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span></div>
+      <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span><span id="trimNodesWrap" style="display:none"><span class="co-sep">·</span><label class="co-toggle" title="When on, beams whose endpoints fall outside the shape (with auto-clamped inset) are dropped entirely instead of clipped — eliminates dangling capsule end-caps at the boundary."><input type="checkbox" id="trimToNodes" checked onchange="window.onTrimToNodesChange&&window.onTrimToNodesChange()"><span>trim to nodes</span></label><span id="trimInsetWrap" class="co-inset"><span class="co-inset-lbl">inset ×</span><input type="number" id="trimInsetMult" min="1.0" max="2.0" step="0.1" value="1.0" oninput="window.onTrimInsetMultChange&&window.onTrimInsetMultChange()" title="Inset multiplier — scales the auto-clamped inset to max(beam_radius, voxel_size × this). 1.0 = minimum safe (just above shape-SDF discretization error). 2.0 = aggressive trim with extra buffer for high-curvature surfaces."></span></span></div>
       <!-- ── Structure SDF transform (v0.5.0 Phase B) ───────────────────────
            Sits above cell overlay, same chip aesthetic, shown only with shape -->
       <div id="structXformOverlay">
@@ -527,9 +534,17 @@ function getSdfWorkerBlobUrl(){
     const src=`
 let THREE=null, MeshBVH=null;
 const ready=(async()=>{
+  // v0.5.0-rc19 fix: jsdelivr serves three-mesh-bvh's index.module.js with
+  // bare 'three' imports inside, which workers cannot resolve without an
+  // importmap (workers don't inherit the host page's importmap). esm.sh
+  // rewrites bare specifiers to absolute URLs at CDN-time. The ?deps=
+  // pin ensures bvh sees the same three version we explicitly load.
+  // Without this, every worker import threw and the orchestrator silently
+  // fell back to serial main-thread bake — which is why N=128 imports
+  // were taking ~30s instead of the ~2s they should.
   const [threeMod, bvhMod] = await Promise.all([
-    import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js'),
-    import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js')
+    import('https://esm.sh/three@0.158.0'),
+    import('https://esm.sh/three-mesh-bvh@0.7.8?deps=three@0.158.0')
   ]);
   THREE=threeMod; MeshBVH=bvhMod.MeshBVH;
 })();
@@ -537,7 +552,12 @@ const ready=(async()=>{
 self.onmessage=async function(e){
   try{
     await ready;
-    const {posArr,idxArr,bbox,N,zStart,zEnd,workerId}=e.data;
+    // v0.5.0-rc19: bandMask + coarseData are optional. If both present, the
+    // worker runs in narrow-band mode: precise BVH only for band voxels,
+    // trilinear sample of the coarse grid for far voxels. Otherwise falls
+    // back to the original full-precision per-voxel path.
+    const {posArr,idxArr,bbox,N,zStart,zEnd,workerId,bandMask,coarseData,coarseN}=e.data;
+    const useBand = !!(bandMask && coarseData && coarseN);
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
     geo.setIndex(new THREE.BufferAttribute(idxArr,1));
@@ -550,22 +570,56 @@ self.onmessage=async function(e){
     const closest={point:new THREE.Vector3()};
     const ray=new THREE.Ray();
     ray.direction.set(0.9732,0.1894,0.1225).normalize();
+    // Coarse-grid trilinear sampler. Coarse grid is dense over the full bbox
+    // at coarseN resolution. Cells are voxel-centered (matches the bake).
+    const cN = coarseN|0;
+    const cN2 = cN*cN;
+    function sampleCoarse(px,py,pz){
+      // Voxel-center uv in [0, cN] space
+      const u = (px-bbox.mnx)/dx*cN - 0.5;
+      const v = (py-bbox.mny)/dy*cN - 0.5;
+      const w = (pz-bbox.mnz)/dz*cN - 0.5;
+      const i0 = Math.max(0, Math.min(cN-2, Math.floor(u)));
+      const j0 = Math.max(0, Math.min(cN-2, Math.floor(v)));
+      const k0 = Math.max(0, Math.min(cN-2, Math.floor(w)));
+      const i1=i0+1, j1=j0+1, k1=k0+1;
+      const fu = Math.max(0, Math.min(1, u-i0));
+      const fv = Math.max(0, Math.min(1, v-j0));
+      const fw = Math.max(0, Math.min(1, w-k0));
+      const c000=coarseData[i0+j0*cN+k0*cN2], c100=coarseData[i1+j0*cN+k0*cN2];
+      const c010=coarseData[i0+j1*cN+k0*cN2], c110=coarseData[i1+j1*cN+k0*cN2];
+      const c001=coarseData[i0+j0*cN+k1*cN2], c101=coarseData[i1+j0*cN+k1*cN2];
+      const c011=coarseData[i0+j1*cN+k1*cN2], c111=coarseData[i1+j1*cN+k1*cN2];
+      const c00 = c000*(1-fu)+c100*fu, c10 = c010*(1-fu)+c110*fu;
+      const c01 = c001*(1-fu)+c101*fu, c11 = c011*(1-fu)+c111*fu;
+      const c0  = c00*(1-fv)+c10*fv,   c1  = c01*(1-fv)+c11*fv;
+      return c0*(1-fw)+c1*fw;
+    }
     let lastReport=performance.now();
     for(let iz=zStart;iz<zEnd;iz++){
       const localZ=iz-zStart;
       for(let iy=0;iy<N;iy++){
+        // bandMask is the slab-local portion (length N*N*nSlices), indexed by
+        // localZ. The output Float32 slab uses the same local indexing.
+        const rowBase = localZ*N*N + iy*N;
         for(let ix=0;ix<N;ix++){
-          qp.set(
-            bbox.mnx+(ix+0.5)/N*dx,
-            bbox.mny+(iy+0.5)/N*dy,
-            bbox.mnz+(iz+0.5)/N*dz
-          );
-          bvh.closestPointToPoint(qp,closest);
-          const dist=qp.distanceTo(closest.point);
-          ray.origin.copy(qp);
-          const hits=bvh.raycast(ray,THREE.DoubleSide);
-          const inside=(hits.length&1)===1;
-          const val=inside?-dist:dist;
+          const px = bbox.mnx+(ix+0.5)/N*dx;
+          const py = bbox.mny+(iy+0.5)/N*dy;
+          const pz = bbox.mnz+(iz+0.5)/N*dz;
+          let val;
+          if(useBand && !bandMask[rowBase+ix]){
+            // Far from surface — trilinear sample of coarse grid.
+            val = sampleCoarse(px,py,pz);
+          } else {
+            // In band (or full-precision mode) — precise BVH.
+            qp.set(px,py,pz);
+            bvh.closestPointToPoint(qp,closest);
+            const dist=qp.distanceTo(closest.point);
+            ray.origin.copy(qp);
+            const hits=bvh.raycast(ray,THREE.DoubleSide);
+            const inside=(hits.length&1)===1;
+            val = inside?-dist:dist;
+          }
           slab[ix+iy*N+localZ*N*N]=val;
           if(val<minV)minV=val;
           if(val>maxV)maxV=val;
@@ -585,6 +639,60 @@ self.onmessage=async function(e){
     _sdfWorkerBlobUrl=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
   }
   return _sdfWorkerBlobUrl;
+}
+
+// ── Narrow-band acceleration (v0.5.0-rc19) ────────────────────────────────
+// For shape-SDF bakes at fine N (≥96), most voxels are far from the surface
+// and only need a sign + rough magnitude. We pre-compute a coarse SDF (32³
+// or 48³) for the "far" voxels via trilinear sampling, and reserve the
+// expensive BVH closest-point + raycast for voxels within a narrow band
+// around the surface. Triangle-bbox marking identifies the band: every
+// voxel within ±bandWidth of any triangle's expanded bbox is "active".
+//
+// For typical orthopedic shapes (~5% surface coverage), this drops bake
+// time from ~30s → ~1-2s for 192³ on a 12-core machine.
+//
+// Returns a Uint8Array of length N³ with 1 = band voxel (use precise BVH),
+// 0 = far voxel (use coarse fallback).
+function buildBandMask(posArr, idxArr, bbox, N, bandWidth){
+  const mask = new Uint8Array(N*N*N);
+  const dx = (bbox.mxx-bbox.mnx)/N;
+  const dy = (bbox.mxy-bbox.mny)/N;
+  const dz = (bbox.mxz-bbox.mnz)/N;
+  const bx = bbox.mnx, by = bbox.mny, bz = bbox.mnz;
+  const triCount = idxArr.length / 3;
+  for(let t=0; t<triCount; t++){
+    const ia = idxArr[t*3]*3, ib = idxArr[t*3+1]*3, ic = idxArr[t*3+2]*3;
+    const x0=posArr[ia],   y0=posArr[ia+1], z0=posArr[ia+2];
+    const x1=posArr[ib],   y1=posArr[ib+1], z1=posArr[ib+2];
+    const x2=posArr[ic],   y2=posArr[ic+1], z2=posArr[ic+2];
+    // Triangle bbox in voxel coords, expanded by bandWidth on each side
+    const xMin = Math.min(x0,x1,x2), xMax = Math.max(x0,x1,x2);
+    const yMin = Math.min(y0,y1,y2), yMax = Math.max(y0,y1,y2);
+    const zMin = Math.min(z0,z1,z2), zMax = Math.max(z0,z1,z2);
+    const ix0 = Math.max(0,   Math.floor((xMin-bx)/dx) - bandWidth);
+    const ix1 = Math.min(N-1, Math.ceil ((xMax-bx)/dx) + bandWidth);
+    const iy0 = Math.max(0,   Math.floor((yMin-by)/dy) - bandWidth);
+    const iy1 = Math.min(N-1, Math.ceil ((yMax-by)/dy) + bandWidth);
+    const iz0 = Math.max(0,   Math.floor((zMin-bz)/dz) - bandWidth);
+    const iz1 = Math.min(N-1, Math.ceil ((zMax-bz)/dz) + bandWidth);
+    for(let iz=iz0; iz<=iz1; iz++){
+      for(let iy=iy0; iy<=iy1; iy++){
+        const rowBase = iz*N*N + iy*N;
+        for(let ix=ix0; ix<=ix1; ix++){
+          mask[rowBase + ix] = 1;
+        }
+      }
+    }
+  }
+  return mask;
+}
+
+// Count active band voxels — for diagnostics in the progress message.
+function countBandMask(mask){
+  let n=0;
+  for(let i=0;i<mask.length;i++) if(mask[i]) n++;
+  return n;
 }
 
 // ── Main-thread fallback: original serial implementation ──────────────────
@@ -633,6 +741,12 @@ async function _computeShapeSDF_serial(posArr, idxArr, bbox, N, onProgress){
 // Spawns min(hardwareConcurrency-1, 12) workers, each baking a contiguous
 // Z-slab. Progress is aggregated as a weighted average across workers.
 // Fallback to serial main-thread implementation if workers fail to spawn.
+//
+// v0.5.0-rc19: For fine bakes (N >= 96), pre-compute a coarse SDF + band
+// mask so workers can skip BVH queries for far-from-surface voxels. Workers
+// receive only their slab's portion of the band mask (~600KB at N=192)
+// instead of the full grid (~7MB) to keep structured-clone transfer cost
+// proportional to bake size, not bake count.
 async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
   _sdfBakeAborted=false;
   _activeSdfWorkers=[];
@@ -643,6 +757,38 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
   // Serial fallback — on very-low-core machines or if worker spawn fails later.
   if(nWorkers<=1){
     return _computeShapeSDF_serial(posArr, idxArr, bbox, N, onProgress);
+  }
+  // ── Narrow-band prep (rc19) ──────────────────────────────────────────────
+  // Coarse SDF + triangle-bbox band mask. Skip for small N — the prep
+  // overhead (~1.3s serial: 48³ coarse bake + mask construction) only
+  // breaks even with the saved BVH work above N=128, and the user
+  // perceives the serial freeze as slowness even when total wall time
+  // is shorter. Threshold of 160 ensures clear 2×+ speedup before
+  // we spend that frozen second. Import default (N=128) skips this
+  // path; export at high (N=192) and ultra (N=256) get the full benefit.
+  const COARSE_N = 48;
+  const BAND_WIDTH = 5;       // ±5 voxels of precise SDF around each triangle
+  const NARROW_BAND_MIN_N = 160;
+  let bandMask = null, coarseData = null;
+  if(N >= NARROW_BAND_MIN_N){
+    try{
+      // Coarse precise SDF (main thread, ~1s for 48³ on typical mesh).
+      // Reuses existing serial code so no separate worker spawn needed.
+      const coarse = await _computeShapeSDF_serial(posArr, idxArr, bbox, COARSE_N, null);
+      coarseData = coarse.data;
+      if(_sdfBakeAborted) throw new Error('cancelled');
+      // Triangle-bbox marker (main thread, ~100-300ms).
+      bandMask = buildBandMask(posArr, idxArr, bbox, N, BAND_WIDTH);
+      if(_sdfBakeAborted) throw new Error('cancelled');
+      // Diagnostics — only logged once per bake; not user-facing.
+      const bandPct = 100 * countBandMask(bandMask) / (N*N*N);
+      console.log('[SDF bake] narrow-band: '+bandPct.toFixed(1)+'% active voxels at N='+N);
+    }catch(e){
+      if(e.message==='cancelled') throw e;
+      // Prep failed for some other reason — fall through to full-precision bake.
+      console.warn('[SDF bake] narrow-band prep failed, using full precision:',e);
+      bandMask = null; coarseData = null;
+    }
   }
   // Partition Z-slices into contiguous slabs (equal-size, last takes remainder).
   const perWorker=Math.floor(N/nWorkers);
@@ -694,6 +840,11 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
         }
       };
       worker.onerror=e=>{worker.terminate();reject(new Error(e.message||'worker error'));};
+      // Slab-local band mask: only the portion this worker needs. Halves
+      // structured-clone time and memory peak vs sending the full grid.
+      const slabMask = bandMask
+        ? bandMask.slice(slab.zStart*N*N, slab.zEnd*N*N)
+        : null;
       // Structured-clone copies the buffers — each worker gets its own copy.
       // For a typical 50k-tri orthopedic shape, ~1.2 MB per copy × 12 workers =
       // ~14 MB extra RAM during bake. Acceptable; avoids transfer-ownership mess.
@@ -701,7 +852,10 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
         posArr,idxArr,
         bbox,N,
         zStart:slab.zStart, zEnd:slab.zEnd,
-        workerId:slab.workerId
+        workerId:slab.workerId,
+        bandMask: slabMask,
+        coarseData: coarseData,
+        coarseN: coarseData ? COARSE_N : 0
       });
     })));
   }catch(e){
@@ -1336,7 +1490,16 @@ async function handleShapeFile(file){
     const bbox=computeShapeBbox(posArr); // now centered on origin
     setShapeUI('loading', name, null, 'building shape SDF…');
     showComputing('loading shape…','building shape SDF…');
-    const sdfGrid = await computeShapeSDF(posArr, idxArr, bbox);
+    // v0.5.0-rc19: import bake at N=64 for snappy preview. The export path
+    // re-bakes at higher N when needed (med=128, high=192, ultra=256), so
+    // this only affects the live preview boundary smoothness — at 30mm
+    // bbox, N=64 gives 0.47mm voxels which is fine for a raymarched preview.
+    // Previous default N=128 was 2.1M voxels (~10-30s on typical hardware);
+    // N=64 is 262K voxels (~1-3s).
+    console.log('[F13LD.mesh] importing '+name+': '+tris.toLocaleString()+' triangles, bbox '+bbox.maxDim.toFixed(2)+'mm');
+    console.time('[F13LD.mesh] preview SDF bake');
+    const sdfGrid = await computeShapeSDF(posArr, idxArr, bbox, 64);
+    console.timeEnd('[F13LD.mesh] preview SDF bake');
     const suggestedCell=Math.max(0.5, parseFloat((bbox.maxDim/5).toFixed(1)));
     importedShape={posArr, idxArr, bbox, sdfGrid, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}};
     // Reset structure transform on every new shape (user spec: don't persist).
@@ -1413,6 +1576,15 @@ function setShapeUI(state, name, meta, errMsg, suggestedCell){
     if(xfOv) xfOv.style.display='flex';
     const inp=document.getElementById('shapeCellSizeMm');
     if(inp&&suggestedCell) inp.value=suggestedCell;
+    // v0.5.0-rc17: trim-to-nodes toggle is beam-family-only (other families
+    // have continuous fields with no node concept). Show only when current
+    // recipe is a beam recipe AND a shape is loaded.
+    // v0.5.0-rc18: multiplier visibility tracks the toggle state.
+    const trimWrap=document.getElementById('trimNodesWrap');
+    if(trimWrap) trimWrap.style.display=(currentRecipe&&currentRecipe.family==='beam')?'inline':'none';
+    const trimMul=document.getElementById('trimInsetWrap');
+    const trimTg=document.getElementById('trimToNodes');
+    if(trimMul) trimMul.style.display=(currentRecipe&&currentRecipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
   } else if(cellOv && (state==='err'||state==='idle')){
     cellOv.style.display='none';
     if(xfOv) xfOv.style.display='none';
@@ -1998,6 +2170,208 @@ function buildTPMSSDF(json){
     return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
   };
 }
+
+// ── Beam (capsule lattice) SDF builder ─────────────────────────────────────
+// v0.5.0-rc16: F13LD.beam handoff. Beams are stored in cell-local [-1,+1]³
+// coordinates as flat 6-element arrays [ax,ay,az,bx,by,bz]. Radius is in
+// the same cell-local units (so wall thickness in mm = radius·cellSizeMm/2).
+//
+// World-to-cell mapping: one cell is cell_scale wide across world [-5,+5].
+// Default cell_scale=1 (one cell fills the cube). Cell-local q[i] obtained
+// by wrapping (p[i]·cell_scale/5) into [-1,+1] via mod-2-shift-1.
+//
+// Tiling: when q is within (radius+halo) of a face/edge/corner, also evaluate
+// the capsule union over the 6 face / 12 edge / 8 corner neighbor cells with
+// ±2 offset on the relevant axes — same scheme the beam tool's preview shader
+// uses (index_-_beam.html lines 1526-1565). Halo = radius + 0.02 in cell-local
+// units (matches beam tool, per Matt's sign-off).
+//
+// Returns canonical NEGATIVE-INSIDE in cell-local distance units. The caller
+// (buildSDF) returns this directly; the existing wrappedSDF in the export path
+// applies worldToMm = cellSizeMm/10 to convert to mm. Cell-local 1 unit =
+// cellSizeMm/2 mm, so the world-units → mm scaling needs a 5× compensation:
+// we scale the SDF output by 5 here, so 1 returned unit = 1 world unit
+// (matching TPMS convention where SDF is in world units).
+//
+// v0.5.0-rc17: optional pruneCtx parameter enables per-tile beam masking for
+// shape-mode export ("trim to nodes"). When provided, beams whose endpoints
+// lie outside the shape (with inset margin) are excluded from the union for
+// that specific lattice tile. Mask layout:
+//   pruneCtx = { mask:Uint8Array, tXMin,tYMin,tZMin, NX,NY,NZ }
+//   mask[((tz-tZMin)*NY*NX + (ty-tYMin)*NX + (tx-tXMin)) * BC + beamIdx]
+// Tiles outside the pre-computed range get zero beams (safe: out-of-bbox
+// regions correspond to outside the shape anyway, where the intersection
+// with -shape will yield void).
+function buildBeamSDF(json, pruneCtx){
+  const beams=json.beams||[];
+  const r=(json.geometry&&json.geometry.radius)||0.1;
+  const cellScale=(json.geometry&&json.geometry.cell_scale)||1; // user-controllable in future; default 1
+  const halo=r+0.02;
+  const W2L=cellScale/5; // world → cell-local scale per axis
+  const L2W=5/cellScale; // cell-local → world scale per axis (for SDF return)
+
+  // Pre-extract beam endpoints into typed arrays for tight inner loop
+  const N=beams.length;
+  const ax=new Float64Array(N), ay=new Float64Array(N), az=new Float64Array(N);
+  const bx=new Float64Array(N), by=new Float64Array(N), bz=new Float64Array(N);
+  for(let i=0;i<N;i++){
+    const b=beams[i];
+    ax[i]=b[0]; ay[i]=b[1]; az[i]=b[2];
+    bx[i]=b[3]; by[i]=b[4]; bz[i]=b[5];
+  }
+
+  // Capsule SDF — returns distance from p to segment(a,b) minus radius.
+  // p,a,b are all in cell-local [-1,+1] units. Vectorized over the
+  // pre-extracted arrays for speed.
+  function capsuleUnion(qx,qy,qz){
+    let d=1e6;
+    for(let i=0;i<N;i++){
+      const dx=qx-ax[i], dy=qy-ay[i], dz=qz-az[i];
+      const ex=bx[i]-ax[i], ey=by[i]-ay[i], ez=bz[i]-az[i];
+      const ll=ex*ex+ey*ey+ez*ez;
+      let h=ll>1e-12?(dx*ex+dy*ey+dz*ez)/ll:0;
+      if(h<0)h=0; else if(h>1)h=1;
+      const px=dx-ex*h, py=dy-ey*h, pz=dz-ez*h;
+      const di=Math.sqrt(px*px+py*py+pz*pz)-r;
+      if(di<d)d=di;
+    }
+    return d;
+  }
+
+  // Mask-gated capsule union: same as capsuleUnion but skips beams whose
+  // mask byte is 0 for the given tile. tileBase is the precomputed offset
+  // ((tz-tZMin)*NY*NX + (ty-tYMin)*NX + (tx-tXMin)) * N. Returns 1e6 when
+  // tile is out of mask range (treated as "no beams here").
+  function capsuleUnionMasked(qx,qy,qz,tileBase,mask){
+    if(tileBase<0) return 1e6; // out-of-range tile
+    let d=1e6;
+    for(let i=0;i<N;i++){
+      if(!mask[tileBase+i]) continue;
+      const dx=qx-ax[i], dy=qy-ay[i], dz=qz-az[i];
+      const ex=bx[i]-ax[i], ey=by[i]-ay[i], ez=bz[i]-az[i];
+      const ll=ex*ex+ey*ey+ez*ez;
+      let h=ll>1e-12?(dx*ex+dy*ey+dz*ez)/ll:0;
+      if(h<0)h=0; else if(h>1)h=1;
+      const px=dx-ex*h, py=dy-ey*h, pz=dz-ez*h;
+      const di=Math.sqrt(px*px+py*py+pz*pz)-r;
+      if(di<d)d=di;
+    }
+    return d;
+  }
+
+  // ── Un-pruned path (preview, cube-mode export, or shape-mode without trim)
+  if(!pruneCtx){
+    return p=>{
+      // Map world point to cell-local q in [-1,+1]
+      const lx=p[0]*W2L, ly=p[1]*W2L, lz=p[2]*W2L;
+      // Wrap to single cell.
+      const qx=((lx+1)-2*Math.floor((lx+1)/2))-1;
+      const qy=((ly+1)-2*Math.floor((ly+1)/2))-1;
+      const qz=((lz+1)-2*Math.floor((lz+1)/2))-1;
+
+      let d=capsuleUnion(qx,qy,qz);
+
+      const nx_=qx>1-halo, px_=qx<-1+halo;
+      const ny_=qy>1-halo, py_=qy<-1+halo;
+      const nz_=qz>1-halo, pz_=qz<-1+halo;
+
+      if(nx_||px_||ny_||py_||nz_||pz_){
+        if(nx_) d=Math.min(d,capsuleUnion(qx-2,qy,qz));
+        if(px_) d=Math.min(d,capsuleUnion(qx+2,qy,qz));
+        if(ny_) d=Math.min(d,capsuleUnion(qx,qy-2,qz));
+        if(py_) d=Math.min(d,capsuleUnion(qx,qy+2,qz));
+        if(nz_) d=Math.min(d,capsuleUnion(qx,qy,qz-2));
+        if(pz_) d=Math.min(d,capsuleUnion(qx,qy,qz+2));
+        if(nx_&&ny_) d=Math.min(d,capsuleUnion(qx-2,qy-2,qz));
+        if(nx_&&py_) d=Math.min(d,capsuleUnion(qx-2,qy+2,qz));
+        if(px_&&ny_) d=Math.min(d,capsuleUnion(qx+2,qy-2,qz));
+        if(px_&&py_) d=Math.min(d,capsuleUnion(qx+2,qy+2,qz));
+        if(nx_&&nz_) d=Math.min(d,capsuleUnion(qx-2,qy,qz-2));
+        if(nx_&&pz_) d=Math.min(d,capsuleUnion(qx-2,qy,qz+2));
+        if(px_&&nz_) d=Math.min(d,capsuleUnion(qx+2,qy,qz-2));
+        if(px_&&pz_) d=Math.min(d,capsuleUnion(qx+2,qy,qz+2));
+        if(ny_&&nz_) d=Math.min(d,capsuleUnion(qx,qy-2,qz-2));
+        if(ny_&&pz_) d=Math.min(d,capsuleUnion(qx,qy-2,qz+2));
+        if(py_&&nz_) d=Math.min(d,capsuleUnion(qx,qy+2,qz-2));
+        if(py_&&pz_) d=Math.min(d,capsuleUnion(qx,qy+2,qz+2));
+        if(nx_&&ny_&&nz_) d=Math.min(d,capsuleUnion(qx-2,qy-2,qz-2));
+        if(nx_&&ny_&&pz_) d=Math.min(d,capsuleUnion(qx-2,qy-2,qz+2));
+        if(nx_&&py_&&nz_) d=Math.min(d,capsuleUnion(qx-2,qy+2,qz-2));
+        if(nx_&&py_&&pz_) d=Math.min(d,capsuleUnion(qx-2,qy+2,qz+2));
+        if(px_&&ny_&&nz_) d=Math.min(d,capsuleUnion(qx+2,qy-2,qz-2));
+        if(px_&&ny_&&pz_) d=Math.min(d,capsuleUnion(qx+2,qy-2,qz+2));
+        if(px_&&py_&&nz_) d=Math.min(d,capsuleUnion(qx+2,qy+2,qz-2));
+        if(px_&&py_&&pz_) d=Math.min(d,capsuleUnion(qx+2,qy+2,qz+2));
+      }
+
+      return d*L2W;
+    };
+  }
+
+  // ── Pruned path (shape-mode export with trim-to-nodes) ─────────────────
+  // Same neighbor-halo logic, but each capsuleUnion call consults the
+  // appropriate tile's mask. Tile index for the current p_world matches
+  // the wrap math: tile_x = floor((lx+1)/2) where lx = p_world*cellScale/5.
+  const {mask, tXMin, tYMin, tZMin, NX, NY, NZ}=pruneCtx;
+  const NXY=NX*NY;
+  // Compute mask base offset (in bytes) for tile (tx,ty,tz). Returns -1 if
+  // out of precomputed range.
+  function tileBaseOf(tx,ty,tz){
+    const ix=tx-tXMin, iy=ty-tYMin, iz=tz-tZMin;
+    if(ix<0||ix>=NX||iy<0||iy>=NY||iz<0||iz>=NZ) return -1;
+    return ((iz*NY+iy)*NX+ix)*N;
+  }
+  return p=>{
+    const lx=p[0]*W2L, ly=p[1]*W2L, lz=p[2]*W2L;
+    const qx=((lx+1)-2*Math.floor((lx+1)/2))-1;
+    const qy=((ly+1)-2*Math.floor((ly+1)/2))-1;
+    const qz=((lz+1)-2*Math.floor((lz+1)/2))-1;
+    // Tile index from world coords (matches the wrap math above)
+    const tx=Math.floor((lx+1)/2);
+    const ty=Math.floor((ly+1)/2);
+    const tz=Math.floor((lz+1)/2);
+
+    let d=capsuleUnionMasked(qx,qy,qz,tileBaseOf(tx,ty,tz),mask);
+
+    const nx_=qx>1-halo, px_=qx<-1+halo;
+    const ny_=qy>1-halo, py_=qy<-1+halo;
+    const nz_=qz>1-halo, pz_=qz<-1+halo;
+
+    if(nx_||px_||ny_||py_||nz_||pz_){
+      // For each neighbor offset, look up that neighbor tile's mask.
+      // qx-2 corresponds to neighbor at tx-1 (we crossed the boundary into
+      // the previous tile's frame); qx+2 → tx+1.
+      if(nx_) d=Math.min(d,capsuleUnionMasked(qx-2,qy,qz,tileBaseOf(tx-1,ty,tz),mask));
+      if(px_) d=Math.min(d,capsuleUnionMasked(qx+2,qy,qz,tileBaseOf(tx+1,ty,tz),mask));
+      if(ny_) d=Math.min(d,capsuleUnionMasked(qx,qy-2,qz,tileBaseOf(tx,ty-1,tz),mask));
+      if(py_) d=Math.min(d,capsuleUnionMasked(qx,qy+2,qz,tileBaseOf(tx,ty+1,tz),mask));
+      if(nz_) d=Math.min(d,capsuleUnionMasked(qx,qy,qz-2,tileBaseOf(tx,ty,tz-1),mask));
+      if(pz_) d=Math.min(d,capsuleUnionMasked(qx,qy,qz+2,tileBaseOf(tx,ty,tz+1),mask));
+      if(nx_&&ny_) d=Math.min(d,capsuleUnionMasked(qx-2,qy-2,qz,tileBaseOf(tx-1,ty-1,tz),mask));
+      if(nx_&&py_) d=Math.min(d,capsuleUnionMasked(qx-2,qy+2,qz,tileBaseOf(tx-1,ty+1,tz),mask));
+      if(px_&&ny_) d=Math.min(d,capsuleUnionMasked(qx+2,qy-2,qz,tileBaseOf(tx+1,ty-1,tz),mask));
+      if(px_&&py_) d=Math.min(d,capsuleUnionMasked(qx+2,qy+2,qz,tileBaseOf(tx+1,ty+1,tz),mask));
+      if(nx_&&nz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy,qz-2,tileBaseOf(tx-1,ty,tz-1),mask));
+      if(nx_&&pz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy,qz+2,tileBaseOf(tx-1,ty,tz+1),mask));
+      if(px_&&nz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy,qz-2,tileBaseOf(tx+1,ty,tz-1),mask));
+      if(px_&&pz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy,qz+2,tileBaseOf(tx+1,ty,tz+1),mask));
+      if(ny_&&nz_) d=Math.min(d,capsuleUnionMasked(qx,qy-2,qz-2,tileBaseOf(tx,ty-1,tz-1),mask));
+      if(ny_&&pz_) d=Math.min(d,capsuleUnionMasked(qx,qy-2,qz+2,tileBaseOf(tx,ty-1,tz+1),mask));
+      if(py_&&nz_) d=Math.min(d,capsuleUnionMasked(qx,qy+2,qz-2,tileBaseOf(tx,ty+1,tz-1),mask));
+      if(py_&&pz_) d=Math.min(d,capsuleUnionMasked(qx,qy+2,qz+2,tileBaseOf(tx,ty+1,tz+1),mask));
+      if(nx_&&ny_&&nz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy-2,qz-2,tileBaseOf(tx-1,ty-1,tz-1),mask));
+      if(nx_&&ny_&&pz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy-2,qz+2,tileBaseOf(tx-1,ty-1,tz+1),mask));
+      if(nx_&&py_&&nz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy+2,qz-2,tileBaseOf(tx-1,ty+1,tz-1),mask));
+      if(nx_&&py_&&pz_) d=Math.min(d,capsuleUnionMasked(qx-2,qy+2,qz+2,tileBaseOf(tx-1,ty+1,tz+1),mask));
+      if(px_&&ny_&&nz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy-2,qz-2,tileBaseOf(tx+1,ty-1,tz-1),mask));
+      if(px_&&ny_&&pz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy-2,qz+2,tileBaseOf(tx+1,ty-1,tz+1),mask));
+      if(px_&&py_&&nz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy+2,qz-2,tileBaseOf(tx+1,ty+1,tz-1),mask));
+      if(px_&&py_&&pz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy+2,qz+2,tileBaseOf(tx+1,ty+1,tz+1),mask));
+    }
+
+    return d*L2W;
+  };
+}
 // ── HU domain-spanning helpers (shape mode) ──────────────────────────────────
 function buildHUKernelsMM(params,bbox,cellSizeMm){
   // Build the design-cell kernels in [-π,π]³ — same seed, same N, same RNG
@@ -2319,12 +2693,36 @@ function buildSDF(recipe,shapeCtx){
   if(recipe.family==='noise')return buildNoiseSDF(recipe.json,normOverride);
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
   if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride);
+  if(recipe.family==='beam') return buildBeamSDF(recipe.json);
   throw new Error('No evaluator for family: '+recipe.family);
 }
 
 self.onmessage=async function(e){
   const d=e.data,t0=performance.now();
   let lastStage='initializing';
+  // v0.5.0-rc19.1: friendly translation of WASM heap-exhaustion errors.
+  // Manifold throws "RuntimeError: memory access out of bounds" when its
+  // marching-cubes working memory exceeds the WASM heap (typically around
+  // ~2GB). The raw error tells the user nothing useful; this wrapper
+  // converts it into actionable advice. Non-OOM errors propagate unchanged
+  // so real bugs still surface clearly.
+  function safeLevelSet(sdfFn, bounds, edge, stageLabel){
+    try {
+      return ManifoldAPI.Manifold.levelSet(sdfFn, bounds, edge);
+    } catch(err){
+      const msg = (err && err.message) || String(err);
+      const isWasmOOM = /out of bounds/i.test(msg) || (err && err.name === 'RuntimeError');
+      if(isWasmOOM){
+        throw new Error(
+          'Geometry too complex at this quality — Manifold ran out of working ' +
+          'memory during '+(stageLabel||'marching cubes')+'. Try a coarser ' +
+          'export quality (Med or Low), or increase your cell size to make ' +
+          'each beam/wall thicker relative to the voxel grid.'
+        );
+      }
+      throw err;
+    }
+  }
   try{
     // ── Bake mode: field → N³ SDF grid, no Manifold needed ──────────────────
     if(d.mode==='bake'&&d.bakeRaw){
@@ -2522,15 +2920,161 @@ self.onmessage=async function(e){
         //   local_mm = R^T × q_mm
         //   sc_local_mm = -lattice_eval(local_mm + pivot_mm) + xfIsoMm
         // R^T (xfRot) is column-major; xfRot[c*3+r] reads col c, row r.
+
+        // ── Trim-to-nodes precompute (v0.5.0-rc17) ────────────────────────
+        // For beam recipes with d.pruneToNodes set, build a per-tile beam
+        // mask. Each beam is "kept" for a tile iff both its endpoints sit
+        // at least pruneInsetMm INSIDE the shape. Endpoints are computed in
+        // shape mm-space, accounting for the structure transform so a
+        // rotated lattice gets pruned against the shape correctly.
+        let activeSdfFn = sdfFn;
+        if(d.recipe.family==='beam' && d.pruneToNodes){
+          const beamsArr = d.recipe.json.beams || [];
+          const radiusLocal = (d.recipe.json.geometry && d.recipe.json.geometry.radius) || 0.1;
+          const cellScaleP = (d.recipe.json.geometry && d.recipe.json.geometry.cell_scale) || 1;
+          const radiusMm = radiusLocal * d.cellSizeMm / 2;
+          // v0.5.0-rc18: auto-clamp the inset so it's never tighter than the
+          // shape SDF discretization. Trilinear interpolation can mis-classify
+          // endpoints by up to ~½ voxel; using full voxel size as the floor
+          // gives a safety margin that covers high-curvature regions where
+          // the boundary error grows. Multiplier (1.0–2.0) lets the user
+          // ratchet up further for shapes with very fine surface features.
+          const insetMult = (typeof d.pruneInsetMult==='number'&&d.pruneInsetMult>=1.0&&d.pruneInsetMult<=2.0) ? d.pruneInsetMult : 1.0;
+          const voxelSizeMm = Math.max(bsizeX, bsizeY, bsizeZ) / shapeN;
+          const insetCandidate = voxelSizeMm * insetMult;
+          const insetMm = Math.max(radiusMm, insetCandidate);
+          const insetReason = (insetMm===radiusMm) ? 'radius'
+                             : ('voxel × '+insetMult.toFixed(1)+' = '+insetCandidate.toFixed(3)+' mm');
+          self.postMessage({type:'progress',stage:'trim-to-nodes inset: '+insetMm.toFixed(3)+' mm ('+insetReason+', voxel='+voxelSizeMm.toFixed(3)+' mm)'});
+          // Lattice mm pitch: one cell spans cellSizeMm/cellScaleP mm in
+          // shape-mm space (default cellScaleP=1 → cellSizeMm per cell).
+          const cellPitchMm = d.cellSizeMm / cellScaleP;
+          // Tile centers in lattice-mm sit at integer multiples of cellPitchMm
+          // (origin-centered, matching the wrap math: tile 0 has center at 0).
+          // Tile range covering bbox in lattice-mm. We need to invert the
+          // structure transform on the bbox corners to see what lattice-mm
+          // range to pre-compute over.
+          // For identity transform, lattice-mm == shape-mm.
+          // For non-identity, we approximate by checking the 8 bbox corners
+          // mapped through the inverse transform, then take the bounding
+          // tile-range. This is conservative (may include a few extra tiles
+          // outside the actual sweep) but correct.
+          let lminX=Infinity,lminY=Infinity,lminZ=Infinity;
+          let lmaxX=-Infinity,lmaxY=-Infinity,lmaxZ=-Infinity;
+          const cornersShape=[
+            [bminX,bminY,bminZ],[bmaxX,bminY,bminZ],[bminX,bmaxY,bminZ],[bmaxX,bmaxY,bminZ],
+            [bminX,bminY,bmaxZ],[bmaxX,bminY,bmaxZ],[bminX,bmaxY,bmaxZ],[bmaxX,bmaxY,bmaxZ]
+          ];
+          for(const c of cornersShape){
+            // shape-mm → lattice-mm: same transform the wrappedSDF applies.
+            const qx=c[0]-xfPivotMmX-xfOffMmX, qy=c[1]-xfPivotMmY-xfOffMmY, qz=c[2]-xfPivotMmZ-xfOffMmZ;
+            const lx=xfRot[0]*qx+xfRot[3]*qy+xfRot[6]*qz;
+            const ly=xfRot[1]*qx+xfRot[4]*qy+xfRot[7]*qz;
+            const lz=xfRot[2]*qx+xfRot[5]*qy+xfRot[8]*qz;
+            const lmmX=lx+xfPivotMmX, lmmY=ly+xfPivotMmY, lmmZ=lz+xfPivotMmZ;
+            if(lmmX<lminX)lminX=lmmX; if(lmmX>lmaxX)lmaxX=lmmX;
+            if(lmmY<lminY)lminY=lmmY; if(lmmY>lmaxY)lmaxY=lmmY;
+            if(lmmZ<lminZ)lminZ=lmmZ; if(lmmZ>lmaxZ)lmaxZ=lmmZ;
+          }
+          // Tile_x = round(lattice_mm_x / cellPitchMm). Range floor/ceil
+          // with one-tile padding so neighbor halo lookups don't miss edges.
+          const tXMin=Math.floor(lminX/cellPitchMm-0.5)-1;
+          const tXMax=Math.floor(lmaxX/cellPitchMm+0.5)+1;
+          const tYMin=Math.floor(lminY/cellPitchMm-0.5)-1;
+          const tYMax=Math.floor(lmaxY/cellPitchMm+0.5)+1;
+          const tZMin=Math.floor(lminZ/cellPitchMm-0.5)-1;
+          const tZMax=Math.floor(lmaxZ/cellPitchMm+0.5)+1;
+          const NX=tXMax-tXMin+1, NY=tYMax-tYMin+1, NZ=tZMax-tZMin+1;
+          const BC=beamsArr.length;
+          const totalTiles=NX*NY*NZ;
+          // Sanity cap: refuse pathological mask sizes (would indicate misuse).
+          // 100³ tiles × 200 beams ≈ 200 MB, well over what we'd ever want.
+          const maskBytes=totalTiles*BC;
+          if(maskBytes>64*1024*1024){
+            self.postMessage({type:'progress',stage:'trim-to-nodes mask too large ('+(maskBytes/1e6).toFixed(0)+' MB) — skipping prune'});
+          } else {
+            self.postMessage({type:'progress',stage:'computing trim-to-nodes mask ('+totalTiles.toLocaleString()+' tiles × '+BC+' beams)...'});
+            const mask=new Uint8Array(maskBytes);
+            // Forward transform: lattice-mm → shape-mm (inverse of wrappedSDF math).
+            // q = R × l ; shape = q + pivot + offset.
+            // R = transpose of R^T (xfRot stored as R^T col-major).
+            // Forward: shape_mm[i] = sum_j R[i,j] × l_centered[j] + pivot_i + offset_i
+            // Where R[i,j] = R^T[j,i] = xfRot[i*3+j].
+            const fwd=(lmmX,lmmY,lmmZ)=>{
+              const lx=lmmX-xfPivotMmX, ly=lmmY-xfPivotMmY, lz=lmmZ-xfPivotMmZ;
+              const sx=xfRot[0]*lx+xfRot[1]*ly+xfRot[2]*lz;
+              const sy=xfRot[3]*lx+xfRot[4]*ly+xfRot[5]*lz;
+              const sz=xfRot[6]*lx+xfRot[7]*ly+xfRot[8]*lz;
+              return [sx+xfPivotMmX+xfOffMmX, sy+xfPivotMmY+xfOffMmY, sz+xfPivotMmZ+xfOffMmZ];
+            };
+            const halfPitch=cellPitchMm*0.5;
+            let kept=0;
+            for(let iz=0;iz<NZ;iz++){
+              const tz=iz+tZMin;
+              const cz_lattice=tz*cellPitchMm; // tile center in lattice-mm
+              for(let iy=0;iy<NY;iy++){
+                const ty=iy+tYMin;
+                const cy_lattice=ty*cellPitchMm;
+                for(let ix=0;ix<NX;ix++){
+                  const tx=ix+tXMin;
+                  const cx_lattice=tx*cellPitchMm;
+                  const tileBase=((iz*NY+iy)*NX+ix)*BC;
+                  for(let bi=0;bi<BC;bi++){
+                    const b=beamsArr[bi];
+                    // Endpoint A in lattice-mm (cell-local [-1,+1] → mm)
+                    const amx=cx_lattice+b[0]*halfPitch;
+                    const amy=cy_lattice+b[1]*halfPitch;
+                    const amz=cz_lattice+b[2]*halfPitch;
+                    // Endpoint B in lattice-mm
+                    const bmx=cx_lattice+b[3]*halfPitch;
+                    const bmy=cy_lattice+b[4]*halfPitch;
+                    const bmz=cz_lattice+b[5]*halfPitch;
+                    // Forward-transform to shape-mm
+                    const aShape=fwd(amx,amy,amz);
+                    const bShape=fwd(bmx,bmy,bmz);
+                    // Sample shape SDF at both endpoints. Inside-with-inset:
+                    // sh_sdf <= -insetMm.
+                    const aInside=sampleShapeSDF(aShape[0],aShape[1],aShape[2])<=-insetMm;
+                    const bInside=sampleShapeSDF(bShape[0],bShape[1],bShape[2])<=-insetMm;
+                    if(aInside && bInside){ mask[tileBase+bi]=1; kept++; }
+                  }
+                }
+              }
+            }
+            const totalCandidates=totalTiles*BC;
+            self.postMessage({type:'progress',stage:'trim-to-nodes: '+kept.toLocaleString()+' / '+totalCandidates.toLocaleString()+' beams kept ('+(100*kept/Math.max(1,totalCandidates)).toFixed(1)+'%)'});
+            // Override sdfFn with mask-aware version
+            activeSdfFn = buildBeamSDF(d.recipe.json, {mask,tXMin,tYMin,tZMin,NX,NY,NZ});
+          }
+        }
+        // ── Move 1 (v0.5.0-rc19): SDF-eval short-circuit ─────────────────────
+        // wrappedSDF is called ~50M+ times during MC; ~70% of that time is the
+        // lattice eval (36+ capsule SDFs per voxel). For voxels well outside
+        // the shape, min(sc_mm, sh_mm) is dominated by sh_mm and Manifold needs
+        // no surface there — so we can skip the lattice eval entirely.
+        //
+        // Threshold = 2× current pass's voxel edge. Since sampleShapeSDF is
+        // Lipschitz-1 (true SDF), adjacent voxels differ by at most one edge,
+        // so a voxel at sh_mm < -2*edge guarantees no sign-crossing within
+        // its neighbors → no MC iso surface there.
+        //
+        // Coarse and fine passes use different edge sizes; the variable
+        // currentVoxelEdge is updated before each levelSet call below.
+        let currentVoxelEdge = relEdgeMm;
         const wrappedSDF = xfIsIdentity
           ? p=>{
-              const sc_world=sdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
-              const sc_mm=-sc_world*worldToMm;  // canonical neg-inside → Manifold pos-inside
               const sh_mm=-sampleShapeSDF(p[0],p[1],p[2]);
+              // Far outside shape — skip lattice eval, return sh_mm directly.
+              if(sh_mm < -2*currentVoxelEdge) return sh_mm;
+              const sc_world=activeSdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
+              const sc_mm=-sc_world*worldToMm;  // canonical neg-inside → Manifold pos-inside
               if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
               return sc_mm<sh_mm?sc_mm:sh_mm;
             }
           : p=>{
+              const sh_mm = -sampleShapeSDF(p[0],p[1],p[2]);
+              // Far outside shape — skip lattice + transform math.
+              if(sh_mm < -2*currentVoxelEdge) return sh_mm;
               // Translate to pivot, subtract spatial offset.
               const qx = p[0] - xfPivotMmX - xfOffMmX;
               const qy = p[1] - xfPivotMmY - xfOffMmY;
@@ -2547,9 +3091,8 @@ self.onmessage=async function(e){
               const wx_mm = lx + xfPivotMmX;
               const wy_mm = ly + xfPivotMmY;
               const wz_mm = lz + xfPivotMmZ;
-              const sc_world = sdfFn([wx_mm*mmToWorld, wy_mm*mmToWorld, wz_mm*mmToWorld]);
+              const sc_world = activeSdfFn([wx_mm*mmToWorld, wy_mm*mmToWorld, wz_mm*mmToWorld]);
               const sc_mm = -sc_world*worldToMm + xfIsoMm;  // canonical neg-inside → Manifold pos-inside, + iso
-              const sh_mm = -sampleShapeSDF(p[0],p[1],p[2]);
               if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
               return sc_mm<sh_mm?sc_mm:sh_mm;
             };
@@ -2563,7 +3106,8 @@ self.onmessage=async function(e){
       const coarseVox=Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3)/1e6);
       lastStage='coarse pass ('+eCoarseEdge.toFixed(1)+'mm, ~'+coarseVox+'M voxels)';
       self.postMessage({type:'progress',stage:lastStage+'...'});
-      let eCoarseMfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},eCoarseEdge);
+      currentVoxelEdge = eCoarseEdge; // v0.5.0-rc19: short-circuit threshold tracks pass edge
+      let eCoarseMfld=safeLevelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},eCoarseEdge,'coarse pass');
       if(eCoarseMfld.isEmpty()){eCoarseMfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
       lastStage='extracting coarse bbox';
       const ecm=eCoarseMfld.getMesh(),evp=ecm.vertProperties;
@@ -2584,7 +3128,8 @@ self.onmessage=async function(e){
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
       self.postMessage({type:'progress',stage:lastStage+'...'});
       const tLevelSet=performance.now();
-      mfld=ManifoldAPI.Manifold.levelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm);
+      currentVoxelEdge = relEdgeMm; // v0.5.0-rc19: short-circuit threshold tracks pass edge
+      mfld=safeLevelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh in fine pass.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
       // Shape-sdf export mode falls through to the unified extract+simplify+done
@@ -2592,7 +3137,7 @@ self.onmessage=async function(e){
       } else {
         self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
         const tLevelSet=performance.now();
-        mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
+        mfld=safeLevelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
         msLevelSet=Math.round(performance.now()-tLevelSet);
       }
@@ -2600,7 +3145,7 @@ self.onmessage=async function(e){
       // Cube preview mode (d.mode is not 'shape' or 'export')
       self.postMessage({type:'progress',stage:'level set...'});
       const tLevelSet=performance.now();
-      mfld=ManifoldAPI.Manifold.levelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld);
+      mfld=safeLevelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube preview level set');
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check SDF parameters.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
     }
@@ -2680,6 +3225,36 @@ function clampEdgeWorld(edgeWorld, maxVoxels){
   return{safeEdge,clamped};
 }
 const MAX_PREVIEW_VOXELS=8e6;
+// v0.5.0-rc19.1: family-aware export voxel caps.
+// Different scaffold families produce wildly different mesh complexity per
+// voxel — beam lattices have ~10× the surface-area-per-volume of TPMS shells,
+// so Manifold's working memory peaks much higher for beams at the same N.
+// The previous single 50M cap was tuned for TPMS-class geometry and let
+// beam exports at high quality crash the WASM heap with "memory access out
+// of bounds" during marching cubes. These per-family caps keep peak memory
+// under the ~2GB browser ceiling on typical hardware.
+//
+// Cap tuning (working assumption — adjust if real exports keep crashing):
+//   beam      30M — high SA/V, capsule unions stress Manifold's vertex tables
+//   noise     40M — bicontinuous topology, moderate-high SA/V
+//   grain     40M — similar to noise
+//   tpms      50M — shells, moderate SA/V (what the original cap was tuned for)
+//   default   40M — conservative for unknown families
+const MAX_EXPORT_VOXELS_BY_FAMILY = {
+  beam: 30e6,
+  noise: 40e6,
+  grain: 40e6,
+  tpms: 50e6
+};
+const MAX_EXPORT_VOXELS_DEFAULT = 40e6;
+function getMaxExportVoxels(recipe){
+  const fam = recipe?.family;
+  if(fam && MAX_EXPORT_VOXELS_BY_FAMILY[fam] != null) return MAX_EXPORT_VOXELS_BY_FAMILY[fam];
+  return MAX_EXPORT_VOXELS_DEFAULT;
+}
+// Legacy alias kept for any inadvertent reference; new code uses
+// getMaxExportVoxels(recipe) instead. Equals the most permissive family cap
+// so call sites that haven't migrated still produce sensible numbers.
 const MAX_EXPORT_VOXELS=50e6;
 // ── Live export estimate display ──────────────────────────────────────────────
 function updateExportEstimate(){
@@ -2696,7 +3271,7 @@ function updateExportEstimate(){
     if(importedShape){
       cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
       const rawEdge=QUAL_EDGE_MM[currentExportQual]||0.10;
-      const{safeEdge}=clampEdgeMm(rawEdge,importedShape.bbox,MAX_EXPORT_VOXELS);
+      const{safeEdge}=clampEdgeMm(rawEdge,importedShape.bbox,getMaxExportVoxels(currentRecipe));
       edgeMm=safeEdge;
       bbox=importedShape.bbox;
     } else {
@@ -2802,6 +3377,7 @@ function updateQualButtonVoxelSizes(){
 function recipeIsPeriodic(recipe){
   if(!recipe) return false;
   if(recipe.family==='tpms') return true;
+  if(recipe.family==='beam') return true;  // v0.5.0-rc16: cubic tile via wrap+halo neighbors
   if(recipe.family==='grain'){
     const ft=recipe.json.field&&recipe.json.field.type;
     return ft==='reactiondiffusion';
@@ -2913,6 +3489,21 @@ window.onCellSizeInput=function(){
   updateExportEstimate();
 };
 
+// v0.5.0-rc17: trim-to-nodes is an export-only operation (preview shows the
+// un-trimmed lattice for performance — bake stays one-cell). Toggling it
+// only refreshes the export estimate; no re-preview required.
+// v0.5.0-rc18: multiplier visibility follows the toggle state.
+window.onTrimToNodesChange=function(){
+  const tg=document.getElementById('trimToNodes');
+  const im=document.getElementById('trimInsetWrap');
+  if(im) im.style.display=(tg&&tg.checked)?'inline-flex':'none';
+  updateExportEstimate();
+};
+window.onTrimInsetMultChange=function(){
+  // Pure export-time setting; no re-preview, just refresh the size estimate.
+  updateExportEstimate();
+};
+
 // ── Structure transform handlers (v0.5.0 Phase B) ─────────────────────────
 // Input handler: read all 7 numeric inputs into structureTransform state,
 // recompute the inverse-rotation matrix, push as uniforms to the raymarcher,
@@ -2968,9 +3559,21 @@ Object.defineProperty(window,'currentOversample',{get:()=>currentOversample});
 
 // ── Recipe router ─────────────────────────────────────────────────────────
 function routeRecipe(json){
+  // v0.5.0-rc16: beam family. Detected by meta.tool ('beam' for presets,
+  // 'beam-builder' for custom cells). Both export shapes carry beams[]
+  // (beam tool ≥ v0.2.1) and geometry.{radius,cell}; presets also have
+  // topology.{name,beam_count}, custom cells have cell.{name,beam_count}.
+  if(json.meta&&(json.meta.tool==='beam'||json.meta.tool==='beam-builder')){
+    if(!Array.isArray(json.beams)||json.beams.length===0){
+      const v=json.meta.version||'(unknown)';
+      throw new Error('Beam recipe is missing beams[] array (was exported from F13LD.beam v'+v+'). Re-export from F13LD.beam v0.2.1 or newer — preset exports now include the beam endpoint list.');
+    }
+    const sub=(json.topology&&json.topology.name)||(json.cell&&json.cell.name)||'custom';
+    return{family:'beam',subtype:sub,json};
+  }
   if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform','reactiondiffusion'].includes(ft))return{family:'grain',subtype:ft,json};}
   if(json.surface&&json.surface.type){const st=json.surface.type;if(st==='noise')return{family:'noise',subtype:json.surface.noise_type||'simplex',json};if(st==='terms'||st==='raw_preset')return{family:'tpms',subtype:json.surface.preset||json.geometry?.mode||'custom',json};}
-  throw new Error('Unrecognized recipe format — expected surface.type ("noise"/"terms") or field.type ("spinodoid"/"gaussian"/"hyperuniform").');
+  throw new Error('Unrecognized recipe format — expected surface.type ("noise"/"terms"), field.type ("spinodoid"/"gaussian"/"hyperuniform"), or meta.tool ("beam"/"beam-builder").');
 }
 
 // ── Summary renderers ─────────────────────────────────────────────────────
@@ -3027,7 +3630,31 @@ function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.jso
   }
   const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';
   return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${exportPanel()}`;}
-function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);}
+// v0.5.0-rc16: Beam-family summary. Uses MPa engineering_constants & Zener
+// from the F13LD.beam JSON (different schema than the noise/tpms/grain
+// homogenization block, so cannot reuse homoSection).
+function buildBeamSummary(r){
+  const j=r.json,g=j.geometry||{},m=j.metrics||{},h=j.homogenization||{};
+  const ec=h.engineering_constants_MPa||{},nu=h.poisson_ratios||{},an=h.anisotropy||{};
+  const topoName=(j.topology&&j.topology.name)||(j.cell&&j.cell.name)||'custom';
+  const beamCount=(j.topology&&j.topology.beam_count)||(j.cell&&j.cell.beam_count)||(j.beams?j.beams.length:'?');
+  const isCustom=j.meta&&j.meta.tool==='beam-builder';
+  const toGPa=v=>v!=null?(v/1000).toFixed(2):null;
+  const homoBlock=(ec.Ex!=null||an.zener_A!=null)?
+    `<hr class="div"><div class="sec-lbl">homogenization &middot; DSM-PBC frame</div>
+     <div class="homo-row">${hchip('VF',m.relative_density_pct!=null?m.relative_density_pct.toFixed(1):null,'%')}${hchip('Ex',toGPa(ec.Ex),'GPa')}${hchip('Ey',toGPa(ec.Ey),'GPa')}${hchip('Ez',toGPa(ec.Ez),'GPa')}${hchip('Gxy',toGPa(ec.Gxy),'GPa')}${hchip('A',an.zener_A!=null?an.zener_A.toFixed(2):null,'')}${hchip('νxy',nu.nuxy!=null?nu.nuxy.toFixed(3):null,'')}</div>`
+    :'';
+  return`<div class="sec-lbl">beam scaffold &middot; ${isCustom?'custom':'preset'}</div>
+    <div class="meta-grid">
+    ${card('topology',topoName.toUpperCase())}
+    ${card('beam count',beamCount)}
+    ${card('beam radius',g.radius)}
+    ${card('cell',g.cell,'mm')}
+    ${card('relative density',m.relative_density_pct!=null?m.relative_density_pct.toFixed(2):'—','%')}
+    ${an.zener_label?card('anisotropy',an.zener_label):''}
+    </div>${homoBlock}${exportPanel()}`;
+}
+function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);}
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 const dropzone=document.getElementById('dropzone'),recipeView=document.getElementById('recipeView');
@@ -3035,7 +3662,7 @@ const errorBox=document.getElementById('errorBox'),typeBadge=document.getElement
 const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill');
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
-const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN'};
+const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM'};
 let currentRecipe=null;
 
 // ── Export state & functions ───────────────────────────────────────────────
@@ -3073,6 +3700,11 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
   const g = recipe.json?.geometry || {};
   const s = recipe.json?.surface  || {};
   const w2mm = cellSizeMm / 10;
+  // v0.5.0-rc16: Beam family — radius is in cell-local [-1,+1] half-units,
+  // so beam half-thickness in mm is radius*cellSizeMm/2. This is twice as
+  // dense (per cell-local unit) as the wall_thickness/half_width fields,
+  // which use the [-π,+π] convention via w2mm = cellSizeMm/10.
+  if(recipe.family==='beam' && g.radius != null && g.radius > 0) return g.radius * cellSizeMm / 2;
   // TPMS shell (wall_thickness is half-thickness: SDF = wall_thickness - |φ|)
   if(g.wall_thickness != null && g.wall_thickness > 0) return g.wall_thickness * w2mm;
   // PI-TPMS pipe filaments (pipe_radius is the filament half-thickness)
@@ -3092,13 +3724,20 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
 function voxelSizeForQuality(qual, recipe, cellSizeMm, bbox){
   if(!recipe || !bbox) return null;
   const rawEdgeMm  = QUAL_EDGE_MM[qual] || 0.10;
-  const {safeEdge} = clampEdgeMm(rawEdgeMm, bbox, MAX_EXPORT_VOXELS);
+  const {safeEdge} = clampEdgeMm(rawEdgeMm, bbox, getMaxExportVoxels(recipe));
   return safeEdge;
 }
 
 function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   const g=recipe?.json?.geometry||{};
-  const wallFrac=g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
+  // v0.5.0-rc16: beam family — radius is in cell-local half-units, so the
+  // 'effective' wall fraction scales as 2·radius (beam diameter as fraction
+  // of half-cell). Empirically a 0.10 radius octet ≈ 13% density, similar
+  // to a 0.30 wall TPMS, so we treat radius·2 as comparable to half_width·2
+  // in the existing heuristic.
+  const wallFrac=recipe?.family==='beam' && g.radius!=null
+                ?Math.min(1,(g.radius*2)/0.30)
+                :g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
                 :g.half_width!=null?Math.min(1,(g.half_width*2)/0.30)
                 :g.pipe_radius!=null?Math.min(1,g.pipe_radius/0.18):0.5;
   let estTris;
@@ -3138,7 +3777,7 @@ window.triggerExport=async function(){
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     const rawRelEdgeMm=QUAL_EDGE_MM[currentExportQual]||0.10;
     const {mnx,mny,mnz,mxx,mxy,mxz}=importedShape.bbox;
-    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(rawRelEdgeMm,importedShape.bbox,MAX_EXPORT_VOXELS);
+    const{safeEdge:relEdgeMm,clamped:exportClamped}=clampEdgeMm(rawRelEdgeMm,importedShape.bbox,getMaxExportVoxels(currentRecipe));
     // ── Feature-aware simplify tolerance (v0.4.2; iso-aware in v0.5.0) ──────
     // Edge-based rule (15% of voxel edge) is the default. For recipes with
     // explicit thin features (wall_thickness, pipe_radius, half_width), cap
@@ -3220,6 +3859,20 @@ window.triggerExport=async function(){
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
       cellSizeMm,relEdgeMm,simplifyTol,scale,
       simplifyCappedByFeature,featMm:effectiveFeatMm,
+      // v0.5.0-rc17: trim-to-nodes for beam family (no-op for other families).
+      // Read from UI checkbox; default ON when checkbox missing.
+      // v0.5.0-rc18: pruneInsetMult scales the auto-clamped inset (default 1.0,
+      // range 1.0–2.0). Worker uses max(beam_radius, voxel_size × multiplier).
+      pruneToNodes: (function(){
+        if(currentRecipe.family!=='beam') return false;
+        const el=document.getElementById('trimToNodes');
+        return el ? !!el.checked : true;
+      })(),
+      pruneInsetMult: (function(){
+        const el=document.getElementById('trimInsetMult');
+        const v=el?parseFloat(el.value):1.0;
+        return (isFinite(v)&&v>=1.0&&v<=2.0) ? v : 1.0;
+      })(),
       // ── Structure SDF transform (v0.5.0 Phase B) ────────────────────────
       // Mm-unit values; worker does its own world conversion using cellSizeMm
       // and shape bbox (matches main-thread MeshRaymarcher.setStructureTransform).
@@ -3435,6 +4088,19 @@ async function showRecipe(recipe){
   document.getElementById('shapeStrip').style.display='block';
   typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
   summaryEl.innerHTML=renderSummary(recipe);
+  // v0.5.0-rc17: refresh trim-to-nodes toggle visibility for the new family.
+  // setShapeUI only fires on shape state changes, so if a shape was already
+  // loaded when this recipe arrives, the toggle wouldn't update otherwise.
+  // v0.5.0-rc18: multiplier visibility tracks the toggle state.
+  const trimWrap=document.getElementById('trimNodesWrap');
+  if(trimWrap){
+    const cellOv=document.getElementById('cellOverlay');
+    const shapeLoaded=cellOv&&cellOv.style.display!=='none';
+    trimWrap.style.display=(shapeLoaded&&recipe.family==='beam')?'inline':'none';
+    const trimMul=document.getElementById('trimInsetWrap');
+    const trimTg=document.getElementById('trimToNodes');
+    if(trimMul) trimMul.style.display=(shapeLoaded&&recipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+  }
   setActivBtn(PREVIEW_BTN_ID[initialPreviewQ]||'btnLow');
   triggerPreview(initialPreviewQ);
   setTimeout(updateExportEstimate,0); // panel renders async

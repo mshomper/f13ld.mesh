@@ -2108,7 +2108,22 @@ const RAW_PRESETS={
 
 function buildTPMSSDF(json){
   const s=json.surface,g=json.geometry||{};
-  const cellScale=g.cell_scale||1,freqScale=(Math.PI*cellScale)/5.0;
+  // Per-axis cell scale (anisotropic-tiling spec v1.0). New recipes from
+  // F13LD.sweep v0.10+ ship cell_scale_x/y/z; older recipes only have the
+  // scalar cell_scale, which we fall back to (preserves isotropic behaviour
+  // for hand-authored and pre-v0.10 recipes). TPMS is fully analytic — sin/cos
+  // are intrinsically 2π-periodic — so we only need per-axis frequency
+  // scaling on tx/ty/tz; no explicit modulo wrap required (unlike noise/grain
+  // baked-field paths which sample R8 textures and DO need wrap).
+  const csX=g.cell_scale_x??g.cell_scale??1;
+  const csY=g.cell_scale_y??g.cell_scale??1;
+  const csZ=g.cell_scale_z??g.cell_scale??1;
+  // Fail loud — zero/negative produces NaN every voxel and a black render
+  if(!(csX>0)||!(csY>0)||!(csZ>0))
+    throw new Error('TPMS cell_scale must be positive on all axes (got '+csX+','+csY+','+csZ+')');
+  const fsX=(Math.PI*csX)/5.0;
+  const fsY=(Math.PI*csY)/5.0;
+  const fsZ=(Math.PI*csZ)/5.0;
   const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
   const TP=2*Math.PI;
 
@@ -2135,7 +2150,20 @@ function buildTPMSSDF(json){
   }
   function evalTerms(tx,ty,tz){
     let sum=0;
-    for(const term of terms){if(!term.on)continue;let prod=term.coef??1;for(const f of term.factors)prod*=evalFactor(f,tx,ty,tz);sum+=prod;}
+    // Per-term phase_shift is in field-coord radians (sweep v0.13.1+).
+    // Constant additive offset per term — preserves the term's period, so the
+    // integer-period bake fix downstream is unaffected. Spec section 5 mandates
+    // this for fidelity to what F13LD.sweep's solver characterized.
+    for(const term of terms){
+      if(!term.on)continue;
+      const tps=term.phase_shift;
+      const ttx=tps?tx+(tps.x||0):tx;
+      const tty=tps?ty+(tps.y||0):ty;
+      const ttz=tps?tz+(tps.z||0):tz;
+      let prod=term.coef??1;
+      for(const f of term.factors)prod*=evalFactor(f,ttx,tty,ttz);
+      sum+=prod;
+    }
     return sum;
   }
 
@@ -2144,7 +2172,7 @@ function buildTPMSSDF(json){
   }
 
   return p=>{
-    const tx=p[0]*freqScale,ty=p[1]*freqScale,tz=p[2]*freqScale;
+    const tx=p[0]*fsX,ty=p[1]*fsY,tz=p[2]*fsZ;
     if(gradOn){
       const t01x=Math.max(0,Math.min(1,p[0]/10+0.5));
       const t01y=Math.max(0,Math.min(1,p[1]/10+0.5));
@@ -2169,6 +2197,39 @@ function buildTPMSSDF(json){
     if(mode==='solid') return phiA-(g.offset||0);
     return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
   };
+}
+
+// Compute integer-period bake bounds for a TPMS recipe — preview-only fix
+// for non-integer cell_scale_x/y/z. The raymarcher's R8 field texture uses
+// GL_REPEAT wrap, which only produces seamless tiling when the bake span is
+// an integer multiple of the field's period per axis. The field's period in
+// world units is 10/cs_axis (because freqScale = π·cs_axis/5 maps world
+// [-5,+5] to field [-π·cs_axis,+π·cs_axis]). When cs_axis is non-integer,
+// the default [-5,+5] bake span doesn't span integer periods → the field
+// values at the +5 face don't match the -5 face → REPEAT creates visible
+// diagonal seams.
+//
+// Fix: per axis, choose K = max(1, round(cs_axis)) periods to bake, and set
+// bake half-span = 5·K/cs_axis. K is chosen to keep the bake span close to
+// 10 world units (preserves preview voxel density). For integer cs_axis,
+// K = cs_axis exactly → returns [±5,±5,±5] (identical to current behaviour).
+//
+// Export path is unaffected: Manifold.levelSet evaluates the analytic SDF
+// directly at every voxel — no texture, no wrap, no seams.
+function computeTPMSBakeBounds(recipe){
+  const g=recipe?.json?.geometry||{};
+  const csX=g.cell_scale_x??g.cell_scale??1;
+  const csY=g.cell_scale_y??g.cell_scale??1;
+  const csZ=g.cell_scale_z??g.cell_scale??1;
+  // Defensive — if anything's invalid, fall back to default cube bounds.
+  // buildTPMSSDF will throw the loud error when the SDF is actually called.
+  if(!(csX>0)||!(csY>0)||!(csZ>0))
+    return {wMin:[-5,-5,-5],wMax:[5,5,5]};
+  const Kx=Math.max(1,Math.round(csX));
+  const Ky=Math.max(1,Math.round(csY));
+  const Kz=Math.max(1,Math.round(csZ));
+  const halfX=5*Kx/csX, halfY=5*Ky/csY, halfZ=5*Kz/csZ;
+  return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
 }
 
 // ── Beam (capsule lattice) SDF builder ─────────────────────────────────────
@@ -3404,6 +3465,26 @@ function bakeField(recipe, N, opts){
 }
 // ── Preview via Raymarcher (no Manifold, instant) ────────────────────────────
 const PREVIEW_BAKE_N={draft:48,low:64,med:96,high:128,ultra:192};
+
+// Main-thread copy of computeTPMSBakeBounds — see the identical helper inside
+// the worker template literal at ~line 2200 for full rationale. Triggered from
+// triggerPreview before it sends the bake job to the worker. The function must
+// live here (outside the worker template) because triggerPreview runs in the
+// main thread and needs to populate bakeOpts.worldMin/worldMax before postMessage.
+function computeTPMSBakeBounds(recipe){
+  const g=recipe?.json?.geometry||{};
+  const csX=g.cell_scale_x??g.cell_scale??1;
+  const csY=g.cell_scale_y??g.cell_scale??1;
+  const csZ=g.cell_scale_z??g.cell_scale??1;
+  if(!(csX>0)||!(csY>0)||!(csZ>0))
+    return {wMin:[-5,-5,-5],wMax:[5,5,5]};
+  const Kx=Math.max(1,Math.round(csX));
+  const Ky=Math.max(1,Math.round(csY));
+  const Kz=Math.max(1,Math.round(csZ));
+  const halfX=5*Kx/csX, halfY=5*Ky/csY, halfZ=5*Kz/csZ;
+  return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
+}
+
 async function triggerPreview(quality){
   if(!currentRecipe||!rm)return;
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
@@ -3454,7 +3535,18 @@ async function triggerPreview(quality){
     return;
   }
   // Periodic or no shape: bake one cell with tiling
-  rm.setWorldBounds([-5,-5,-5],[5,5,5],periodic);
+  // For TPMS: use integer-period bake bounds per axis when cell_scale_x/y/z
+  // is non-integer (anisotropic-tiling spec v1.0). Eliminates GL_REPEAT seam
+  // artifacts that appear in the preview when bake span isn't an integer
+  // multiple of the field period. Other families (noise, grain, beam) keep
+  // [-5,5]³ — they don't have the same period-vs-bake-span constraint.
+  let pMin=[-5,-5,-5], pMax=[5,5,5];
+  if(currentRecipe.family==='tpms'){
+    const b=computeTPMSBakeBounds(currentRecipe);
+    pMin=b.wMin; pMax=b.wMax;
+    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+  }
+  rm.setWorldBounds(pMin,pMax,periodic);
   try{
     const result=await bakeField(currentRecipe, N, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
@@ -3602,7 +3694,14 @@ function exportPanel(){
 <div id="expElapsed"></div>
 <div id="expReport"></div>`;}
 function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${exportPanel()}`;}
-function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',g.cell_scale)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
+function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;
+  // Anisotropic-tiling spec v1.0: show per-axis cell scale when the recipe
+  // ships cell_scale_x/y/z and they aren't all equal; fall back to scalar.
+  const cx=g.cell_scale_x,cy=g.cell_scale_y,cz=g.cell_scale_z;
+  const hasPerAxis=(cx!=null||cy!=null||cz!=null);
+  const aniso=hasPerAxis&&!(cx===cy&&cy===cz);
+  const cellLbl=aniso?`${cx??g.cell_scale}·${cy??g.cell_scale}·${cz??g.cell_scale}`:g.cell_scale;
+  return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',cellLbl)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
 function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
   if(f.type==='reactiondiffusion'){
     // v0.5.0-rc15: system-aware labels. Wire fields rd_F / rd_k mean F/k for

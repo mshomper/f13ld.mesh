@@ -98,15 +98,19 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .exp-err{font-size:11px;color:#ffb4b4;margin-top:6px;line-height:1.5}
 
 /* ── Shape import strip ─────────────────────────────────────────────────── */
-#shapeStrip{margin:0 16px;flex-shrink:0}
-#shapeDZ{display:flex;align-items:center;gap:10px;padding:8px 12px;border:.5px dashed var(--border);border-radius:0 0 0 0;background:rgba(24,243,112,.025);cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
-#shapeDZ:hover,#shapeDZ.dragover{border-color:var(--green);background:rgba(24,243,112,.045)}
+#shapeStrip{margin:0 16px 12px;flex-shrink:0}
+.shapeStrip-hdr{padding:14px 4px 10px}
+.ssh-title{font-size:14px;color:var(--dim);font-weight:500;letter-spacing:.02em}
+.ssh-title .ssh-optional{color:var(--muted);font-weight:400;font-size:13px;margin-left:4px}
+.ssh-sub{font-size:13px;color:var(--muted);margin-top:4px;line-height:1.45}
+#shapeDZ{display:flex;align-items:center;gap:14px;padding:20px 22px;border:.5px dashed var(--border);border-radius:10px;background:rgba(24,243,112,.025);cursor:pointer;transition:border-color .15s,background .15s;user-select:none}
+#shapeDZ:hover,#shapeDZ.dragover{border-color:var(--green);background:rgba(24,243,112,.06)}
 #shapeDZ.dragover{border-style:solid}
-.sdz-icon{font-size:16px;opacity:.55;flex-shrink:0;line-height:1}
-.sdz-label{font-size:16px;color:var(--dim);white-space:nowrap;font-weight:500}
+.sdz-icon{font-size:28px;opacity:.55;flex-shrink:0;line-height:1}
+.sdz-label{font-size:18px;color:var(--dim);white-space:nowrap;font-weight:500}
 .sdz-sub{font-size:14px;color:var(--muted);white-space:nowrap}
-.sdz-pills{display:flex;gap:3px;flex-shrink:0}
-.sdz-pill{font-size:8px;letter-spacing:.08em;padding:1px 5px;border-radius:3px;border:.5px solid}
+.sdz-pills{display:flex;gap:4px;flex-shrink:0}
+.sdz-pill{font-size:9px;letter-spacing:.08em;padding:2px 6px;border-radius:4px;border:.5px solid}
 .sdz-pill.mesh{color:#5a8ae0;border-color:#2a3a5a}
 .sdz-pill.cad{color:#a05ae0;border-color:#3a2a5a}
 .sdz-sep{flex:1}
@@ -151,9 +155,6 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #cellOverlay .co-inset input[type=number]{width:36px;font-size:12px;padding:0 1px}
 
 #expEstimate{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px;letter-spacing:.02em}
-#expWarn{font-size:11px;color:var(--amber);margin-top:4px;line-height:1.4;letter-spacing:.01em}
-#expWarn:empty{display:none}
-#expWarn.crit{color:var(--fail)}
 #expElapsed{display:none;font-size:10px;color:var(--amber);margin-top:4px;font-variant-numeric:tabular-nums}
 
 /* ── Timings pill (v0.4.0; restacked v0.5.0-rc8) — shows after export ──
@@ -225,7 +226,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc19.1</span>
+      <span class="fh-version">v0.5.0-rc20</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -335,6 +336,10 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
     <div id="shapeStrip" style="display:none">
+      <div class="shapeStrip-hdr">
+        <div class="ssh-title">Bound to a shape <span class="ssh-optional">(optional)</span></div>
+        <div class="ssh-sub">Drop a CAD or mesh file below to fill it with this lattice instead of exporting a periodic cube.</div>
+      </div>
       <div id="shapeDZ">
         <span class="sdz-icon">⬡</span>
         <span class="sdz-label">Bounding Shape</span>
@@ -881,6 +886,282 @@ window._cancelSdfBake=function(){
   // rather than waiting for the next yield-cadence check.
   _activeSdfWorkers.forEach(w=>{try{w.terminate();}catch(_){}});
   _activeSdfWorkers=[];
+};
+
+// ── HU field bake worker pool (v0.5.0-rc20) ─────────────────────────────────
+// Mirrors the shape-SDF Z-slab worker pattern. The HU pre-bake (24k+ kernels
+// over an N_hu³ grid) was previously a serial loop inside the export worker
+// (bakeGridMM, ~10s for typical orthopedic shapes). Moving to a parallel
+// main-thread bake hands a finished grid to the export worker, so the export
+// only does composition + levelSet. Each HU worker rebuilds its own kernels
+// from a small params object — same RNG seed → bit-identical kernels across
+// workers, slabs concatenate to the same grid as the serial path.
+let _huBakeAborted=false;
+let _activeHuWorkers=[];
+let _huBakeWorkerBlobUrl=null;
+function getHuBakeWorkerBlobUrl(){
+  if(_huBakeWorkerBlobUrl) return _huBakeWorkerBlobUrl;
+  // Helpers inlined verbatim from main-thread definitions. No external imports
+  // needed (HU bake is pure math — no THREE/BVH dependency).
+  const src=`
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = seed;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function sampleVMF(rng,kappa){
+  if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
+  var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);
+  if(w<-1)w=-1;if(w>1)w=1;var phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-w*w));return[sr*Math.cos(phi),sr*Math.sin(phi),w];
+}
+function rotateTo(v,mux,muy,muz){
+  if(Math.abs(muz+1)<1e-6)return[-v[0],-v[1],-v[2]];if(Math.abs(muz-1)<1e-6)return v.slice();
+  var ax=-muy,ay=mux,al=Math.sqrt(ax*ax+ay*ay);ax/=al;ay/=al;
+  var angle=Math.acos(Math.min(Math.max(muz,-1),1)),c=Math.cos(angle),s=Math.sin(angle),t=1-c,vx=v[0],vy=v[1],vz=v[2];
+  return[(t*ax*ax+c)*vx+(t*ax*ay)*vy+(s*ay)*vz,(t*ax*ay)*vx+(t*ay*ay+c)*vy+(-s*ax)*vz,(-s*ay)*vx+(s*ax)*vy+c*vz];
+}
+function jitteredGrid3D(N,rng){
+  var cells=Math.ceil(Math.pow(N,1/3)),cs=1/cells,pts=[];
+  for(var ix=0;ix<cells;ix++)for(var iy=0;iy<cells;iy++)for(var iz=0;iz<cells;iz++){
+    var px=(ix+.5+(rng()-.5)*.9)*cs,py=(iy+.5+(rng()-.5)*.9)*cs,pz=(iz+.5+(rng()-.5)*.9)*cs;
+    pts.push([Math.max(.01,Math.min(.99,px)),Math.max(.01,Math.min(.99,py)),Math.max(.01,Math.min(.99,pz))]);
+  }
+  for(var i=pts.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var tmp=pts[i];pts[i]=pts[j];pts[j]=tmp;}
+  return pts.slice(0,N);
+}
+function buildHUKernels(params){
+  var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
+  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
+  var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
+  var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
+  function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+  function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}
+  var kernels=[],TP=2*Math.PI;
+  for(var i=0;i<N;i++){
+    var t2;
+    if(mode==='iso')t2=sampleVMF(rng,0);
+    else if(mode==='single')t2=rotateTo(sampleVMF(rng,kappa),mux,muy,muz);
+    else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
+    var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
+    var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
+    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
+  }
+  return kernels;
+}
+function buildHUKernelsMM(params,bbox,cellSizeMm){
+  var designK=buildHUKernels(params);
+  var TP=2*Math.PI,scale=cellSizeMm/TP;
+  var aspect=params.huAspect||4,bw=params.huWidth||.04;
+  var a_mm=designK.length>0?designK[0].a*scale:(bw*aspect*.5*cellSizeMm);
+  var b_mm=designK.length>0?designK[0].b*scale:(bw*.5*cellSizeMm);
+  var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
+  var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
+  var pad=Math.max(2,Math.ceil(3.5*Math.max(a_mm,b_mm)/cellSizeMm));
+  var kernels=[];
+  for(var tz=-pad;tz<nTz+pad;tz++)for(var ty=-pad;ty<nTy+pad;ty++)for(var tx=-pad;tx<nTx+pad;tx++){
+    for(var ki=0;ki<designK.length;ki++){
+      var dk=designK[ki];
+      kernels.push({
+        px:bbox.mnx+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
+        py:bbox.mny+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
+        pz:bbox.mnz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
+        tx:dk.tx,ty:dk.ty,tz:dk.tz,
+        n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
+        n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
+        a:a_mm,b:b_mm});
+    }
+  }
+  var cutoff=3.5*Math.max(a_mm,b_mm);
+  var cs=Math.max(cutoff,1e-6);
+  var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
+  var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
+  var hddx=hmxx-hmnx,hddy=hmxy-hmny,hddz=hmxz-hmnz;
+  var nx=Math.max(1,Math.ceil(hddx/cs)),ny=Math.max(1,Math.ceil(hddy/cs)),nz=Math.max(1,Math.ceil(hddz/cs));
+  var buckets=new Array(nx*ny*nz);
+  for(var bi=0;bi<buckets.length;bi++)buckets[bi]=null;
+  for(var ki2=0;ki2<kernels.length;ki2++){
+    var kk=kernels[ki2];
+    var hx=Math.max(0,Math.min(nx-1,Math.floor((kk.px-hmnx)/cs)));
+    var hy=Math.max(0,Math.min(ny-1,Math.floor((kk.py-hmny)/cs)));
+    var hz=Math.max(0,Math.min(nz-1,Math.floor((kk.pz-hmnz)/cs)));
+    var bIdx=hx+hy*nx+hz*nx*ny;
+    if(buckets[bIdx]===null)buckets[bIdx]=[];
+    buckets[bIdx].push(ki2);
+  }
+  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
+  return kernels;
+}
+function evalHUFieldMM(kernels,x,y,z){
+  var h=kernels.hash;
+  if(!h){
+    var s=0;
+    for(var i=0;i<kernels.length;i++){
+      var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
+      var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
+      s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+    }
+    return s-0.3;
+  }
+  var cs=h.cs,nx=h.nx,ny=h.ny,nz=h.nz,nxny=nx*ny;
+  var ix=Math.floor((x-h.mnx)/cs),iy=Math.floor((y-h.mny)/cs),iz=Math.floor((z-h.mnz)/cs);
+  var ix0=ix-1<0?0:ix-1,ix1=ix+1>=nx?nx-1:ix+1;
+  var iy0=iy-1<0?0:iy-1,iy1=iy+1>=ny?ny-1:iy+1;
+  var iz0=iz-1<0?0:iz-1,iz1=iz+1>=nz?nz-1:iz+1;
+  if(ix1<ix0||iy1<iy0||iz1<iz0)return -0.3;
+  var sum=0;
+  for(var jz=iz0;jz<=iz1;jz++)for(var jy=iy0;jy<=iy1;jy++)for(var jx=ix0;jx<=ix1;jx++){
+    var bucket=h.buckets[jx+jy*nx+jz*nxny];
+    if(bucket===null)continue;
+    for(var bi=0;bi<bucket.length;bi++){
+      var k=kernels[bucket[bi]];
+      var dx=x-k.px,dy=y-k.py,dz=z-k.pz;
+      var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
+      sum+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+    }
+  }
+  return sum-0.3;
+}
+self.onmessage=function(e){
+  try{
+    const {params,bbox,cellSizeMm,N,zStart,zEnd,workerId}=e.data;
+    const kernels=buildHUKernelsMM(params,bbox,cellSizeMm);
+    const ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
+    const nSlices=zEnd-zStart;
+    const slab=new Float32Array(N*N*nSlices);
+    let minV=Infinity,maxV=-Infinity,lastReport=performance.now();
+    for(let iz=zStart;iz<zEnd;iz++){
+      const localZ=iz-zStart;
+      for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
+        const v=evalHUFieldMM(kernels,
+          bbox.mnx+(ix+0.5)/N*ddx,
+          bbox.mny+(iy+0.5)/N*ddy,
+          bbox.mnz+(iz+0.5)/N*ddz);
+        slab[ix+iy*N+localZ*N*N]=v;
+        if(v<minV)minV=v; if(v>maxV)maxV=v;
+      }
+      if(performance.now()-lastReport>80){
+        self.postMessage({type:'progress',workerId,pct:(iz-zStart+1)/nSlices});
+        lastReport=performance.now();
+      }
+    }
+    self.postMessage({type:'done',workerId,slab:slab.buffer,zStart,zEnd,fieldMin:minV,fieldMax:maxV},[slab.buffer]);
+  }catch(err){
+    self.postMessage({type:'error',message:err.message||String(err)});
+  }
+};
+`;
+  _huBakeWorkerBlobUrl=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+  return _huBakeWorkerBlobUrl;
+}
+
+// Serial fallback — used when worker spawn fails or hardwareConcurrency≤2.
+// Mirrors the in-export-worker bakeGridMM (line ~2526) so the result is
+// numerically identical to the legacy path.
+function _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress){
+  const kernels=buildHUKernelsMM(params, bbox, cellSizeMm);
+  const ddx=bbox.mxx-bbox.mnx, ddy=bbox.mxy-bbox.mny, ddz=bbox.mxz-bbox.mnz;
+  const grid=new Float32Array(N*N*N);
+  let minV=Infinity, maxV=-Infinity;
+  for(let iz=0;iz<N;iz++){
+    if(_huBakeAborted) throw new Error('cancelled');
+    for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
+      const v=evalHUFieldMM(kernels,
+        bbox.mnx+(ix+0.5)/N*ddx,
+        bbox.mny+(iy+0.5)/N*ddy,
+        bbox.mnz+(iz+0.5)/N*ddz);
+      grid[ix+iy*N+iz*N*N]=v;
+      if(v<minV)minV=v; if(v>maxV)maxV=v;
+    }
+    if(onProgress) onProgress((iz+1)/N);
+  }
+  return {data:grid, N, fieldMin:minV, fieldMax:maxV};
+}
+
+async function computeHUGridMM(params, bbox, cellSizeMm, N, onProgress){
+  _huBakeAborted=false;
+  _activeHuWorkers=[];
+  const hc=navigator.hardwareConcurrency||2;
+  const nWorkers=Math.max(1, Math.min(12, hc-1, N));
+  if(nWorkers<=1){
+    return _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress);
+  }
+  // Partition Z-slices into contiguous slabs.
+  const perWorker=Math.floor(N/nWorkers);
+  const extra=N-perWorker*nWorkers;
+  const slabs=[];
+  let z=0;
+  for(let w=0;w<nWorkers;w++){
+    const len=perWorker+(w<extra?1:0);
+    slabs.push({workerId:w, zStart:z, zEnd:z+len});
+    z+=len;
+  }
+  const progressByWorker=new Array(nWorkers).fill(0);
+  const sliceWeights=slabs.map(s=>(s.zEnd-s.zStart)/N);
+  const reportProgress=()=>{
+    if(!onProgress) return;
+    let pct=0;
+    for(let i=0;i<nWorkers;i++) pct+=progressByWorker[i]*sliceWeights[i];
+    onProgress(pct);
+  };
+  const results=new Array(nWorkers);
+  let minV=Infinity, maxV=-Infinity;
+  try{
+    await Promise.all(slabs.map(slab=>new Promise((resolve,reject)=>{
+      let worker;
+      try{ worker=new Worker(getHuBakeWorkerBlobUrl()); }
+      catch(we){ reject(we); return; }
+      _activeHuWorkers.push(worker);
+      worker.onmessage=e=>{
+        const d=e.data;
+        if(d.type==='progress'){
+          progressByWorker[d.workerId]=d.pct;
+          reportProgress();
+        } else if(d.type==='done'){
+          results[d.workerId]={slab:new Float32Array(d.slab), zStart:d.zStart, zEnd:d.zEnd};
+          if(d.fieldMin<minV) minV=d.fieldMin;
+          if(d.fieldMax>maxV) maxV=d.fieldMax;
+          progressByWorker[d.workerId]=1;
+          reportProgress();
+          worker.terminate();
+          resolve();
+        } else if(d.type==='error'){
+          worker.terminate();
+          reject(new Error('hu worker '+slab.workerId+': '+d.message));
+        }
+      };
+      worker.onerror=e=>{ worker.terminate(); reject(new Error(e.message||'hu worker error')); };
+      worker.postMessage({
+        params, bbox, cellSizeMm, N,
+        zStart:slab.zStart, zEnd:slab.zEnd,
+        workerId:slab.workerId
+      });
+    })));
+  }catch(e){
+    _activeHuWorkers.forEach(w=>{ try{ w.terminate(); }catch(_){} });
+    _activeHuWorkers=[];
+    if(_huBakeAborted||e.message==='cancelled') throw new Error('cancelled');
+    console.warn('[HU bake] parallel workers failed, falling back to serial:',e);
+    return _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress);
+  }
+  _activeHuWorkers=[];
+  // Stitch slabs into the final grid.
+  const grid=new Float32Array(N*N*N);
+  for(const r of results){
+    grid.set(r.slab, r.zStart*N*N);
+  }
+  return {data:grid, N, fieldMin:minV, fieldMax:maxV};
+}
+
+window._cancelHuBake=function(){
+  _huBakeAborted=true;
+  _activeHuWorkers.forEach(w=>{ try{ w.terminate(); }catch(_){} });
+  _activeHuWorkers=[];
 };
 // ── MeshRaymarcher — WebGL2 raymarcher for combined scaffold + shape preview ──
 // Adapted from F13LD Grain tool. Two TEXTURE_3D slots:
@@ -1643,7 +1924,7 @@ const EXPORT_SHAPE_SDF_N_BY_QUAL={draft:64,low:96,med:128,high:192,ultra:256};
 // based formula unsuited to Gray-Scott regimes). Tradeoff: recipes with very
 // thin walls under-resolve at lower tiers unless the user picks High/Ultra
 // explicitly. MAX_EXPORT_VOXELS still applies as a safety net for huge bboxes.
-const QUAL_EDGE_MM={draft:0.40,low:0.20,med:0.12,high:0.05,ultra:0.03};
+const QUAL_EDGE_MM={draft:0.40,low:0.20,med:0.12,high:0.09,ultra:0.075};
 
 let meshWorker=null;
 let currentOversample=3; // preview oversample factor (2=draft,3=std,4=fine)
@@ -2612,28 +2893,47 @@ function buildGrainSDF(json,shapeCtx,normOverride){
   // ── HU shape mode: full-domain kernel field baked to a grid ───────────
   // Kernels are distributed throughout the bounding volume (not just one cell).
   // A pre-baked grid makes levelSet evaluation O(1) per sample after setup.
+  // v0.5.0-rc20: when shapeCtx.huGrid is supplied (parallel main-thread bake),
+  // skip the in-worker serial bakeGridMM and use the supplied grid directly.
+  // Falls through to the legacy serial bake when no grid is supplied (e.g.
+  // main-thread bake skipped or the worker pool failed gracefully). The
+  // supplied-grid path uses shapeCtx.huBbox (rotation-aware bake bbox) for
+  // uvw mapping so rotated queries land inside the baked region; the legacy
+  // path falls back to the shape bbox (rotation+HU was broken on that path
+  // pre-rc20 anyway, and it's defensive code that's unreachable in normal
+  // flow now that the main-thread bake is always populated for HU recipes).
   if(isHU&&shapeCtx){
     const {cellSizeMm,bbox}=shapeCtx;
-    const ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
-    const maxCells=Math.max(ddx,ddy,ddz)/cellSizeMm;
-    // Grid resolution: 32 voxels per design cell. Cap removed in v0.5.0-rc9
-    // — spatial hash in evalHUFieldMM makes per-voxel cost O(1) in kernel
-    // count, so total bake cost scales with voxel count × constant. Practical
-    // upper end: 10-cell-wide bbox → 320³ voxels → ~30-60 sec first-pass bake.
-    const N_hu=Math.max(32,Math.ceil(32*maxCells));
-    const mmKernels=buildHUKernelsMM(params,bbox,cellSizeMm);
-    self.postMessage({type:'progress',stage:'pre-baking HU field ('+N_hu+'\u00b3 grid, '+mmKernels.length+' kernels)...'});
-    const huGrid=bakeGridMM((x,y,z)=>evalHUFieldMM(mmKernels,x,y,z),N_hu,bbox);
-    // ── Field normalization (rc14: prefer preview override, else scan grid) ─
-    // Preview's bakeRaw=true path caches fieldMin/Max on the recipe; using
-    // those exactly matches preview's normalization. If absent (first export
-    // before any preview bake), fall back to scanning the already-baked
-    // huGrid Float32Array — essentially free, captures the true range at the
-    // bake resolution (matches preview's method, just on export's own bake).
+    let huGrid, N_hu, prebakedFieldMin, prebakedFieldMax, gridBbox;
+    if(shapeCtx.huGrid && shapeCtx.huGridN){
+      huGrid=new Float32Array(shapeCtx.huGrid);
+      N_hu=shapeCtx.huGridN;
+      prebakedFieldMin=shapeCtx.huFieldMin;
+      prebakedFieldMax=shapeCtx.huFieldMax;
+      gridBbox=shapeCtx.huBbox || bbox; // huBbox absent → legacy callers, fall back
+      self.postMessage({type:'progress',stage:'using pre-baked HU field ('+N_hu+'\u00b3 grid)'});
+    } else {
+      // Legacy serial in-worker bake (defensive; unreachable in normal flow).
+      const lddx=bbox.mxx-bbox.mnx, lddy=bbox.mxy-bbox.mny, lddz=bbox.mxz-bbox.mnz;
+      const maxCells=Math.max(lddx,lddy,lddz)/cellSizeMm;
+      N_hu=Math.max(32,Math.ceil(32*maxCells));
+      const mmKernels=buildHUKernelsMM(params,bbox,cellSizeMm);
+      self.postMessage({type:'progress',stage:'pre-baking HU field ('+N_hu+'\u00b3 grid, '+mmKernels.length+' kernels)...'});
+      huGrid=bakeGridMM((x,y,z)=>evalHUFieldMM(mmKernels,x,y,z),N_hu,bbox);
+      gridBbox=bbox;
+    }
+    const gddx=gridBbox.mxx-gridBbox.mnx;
+    const gddy=gridBbox.mxy-gridBbox.mny;
+    const gddz=gridBbox.mxz-gridBbox.mnz;
+    // ── Field normalization (rc14: prefer preview override, else pre-baked
+    // range from main-thread bake, else scan grid here) ────────────────────
     let hfMid,hfHalfR;
     if(normOverride){
       hfMid=(normOverride.fieldMin+normOverride.fieldMax)*0.5;
       hfHalfR=Math.max((normOverride.fieldMax-normOverride.fieldMin)*0.5,1e-6);
+    } else if(prebakedFieldMin!==undefined && prebakedFieldMax!==undefined){
+      hfMid=(prebakedFieldMin+prebakedFieldMax)*0.5;
+      hfHalfR=Math.max((prebakedFieldMax-prebakedFieldMin)*0.5,1e-6);
     } else {
       let hmn=Infinity,hmx=-Infinity;
       for(let i=0;i<huGrid.length;i++){const v=huGrid[i];if(v<hmn)hmn=v;if(v>hmx)hmx=v;}
@@ -2644,9 +2944,9 @@ function buildGrainSDF(json,shapeCtx,normOverride){
     // Transform center/halfW from raw→normalized space (see cube-mode comment)
     const cN=(center-hfMid)/hfHalfR,hN=halfW/hfHalfR;
     return p=>{
-      const u=c01((p[0]*cellSizeMm/10-bbox.mnx)/ddx);
-      const v=c01((p[1]*cellSizeMm/10-bbox.mny)/ddy);
-      const w=c01((p[2]*cellSizeMm/10-bbox.mnz)/ddz);
+      const u=c01((p[0]*cellSizeMm/10-gridBbox.mnx)/gddx);
+      const v=c01((p[1]*cellSizeMm/10-gridBbox.mny)/gddy);
+      const w=c01((p[2]*cellSizeMm/10-gridBbox.mnz)/gddz);
       const raw=evalRDField(huGrid,N_hu,u,v,w);
       const norm=(raw-hfMid)/hfHalfR;
       if(topo==='half') return hi?(norm-cN):(cN-norm);
@@ -2886,7 +3186,21 @@ self.onmessage=async function(e){
     if(!ManifoldAPI)throw new Error('Manifold not available in worker.');
     await meshoptReady;
     self.postMessage({type:'progress',stage:'building SDF...'});
-    const shapeCtx=(d.mode==='export'&&d.shapePos)?{cellSizeMm:d.cellSizeMm,bbox:d.bbox}:null;
+    const shapeCtx=(d.mode==='export'&&d.shapeSdfData)?{
+      cellSizeMm:d.cellSizeMm,
+      bbox:d.bbox,
+      // v0.5.0-rc20: pre-baked HU grid from main-thread parallel pool.
+      // Optional — absent for non-HU recipes; absent + falls back to legacy
+      // serial bakeGridMM if the main-thread bake was skipped or failed.
+      // huBbox is the rotation-aware bake bbox (mm); for identity transforms
+      // it equals d.bbox. The supplied-grid SDF closure uses it for uvw
+      // mapping; legacy serial fallback uses d.bbox.
+      huGrid: d.huGridData,
+      huGridN: d.huGridN,
+      huFieldMin: d.huFieldMin,
+      huFieldMax: d.huFieldMax,
+      huBbox: d.huBbox
+    }:null;
     const sdfFn=buildSDF(d.recipe,shapeCtx);
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
@@ -3196,19 +3510,22 @@ self.onmessage=async function(e){
       // Shape-sdf export mode falls through to the unified extract+simplify+done
       // block below. msLevelSet captured here so timings-pill stays accurate.
       } else {
+        // Cube export — apply the canonical→Manifold sign flip that wrappedSDF
+        // does for shape-clipped exports. Builders return negative-inside;
+        // Manifold treats positive as solid for marching cubes. Without the
+        // flip, cube exports come out topologically inverted relative to the
+        // renderer (which uses canonical negative-inside as designed).
         self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
         const tLevelSet=performance.now();
-        mfld=safeLevelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
+        mfld=safeLevelSet(p=>-sdfFn(p),{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
         msLevelSet=Math.round(performance.now()-tLevelSet);
       }
     } else {
-      // Cube preview mode (d.mode is not 'shape' or 'export')
-      self.postMessage({type:'progress',stage:'level set...'});
-      const tLevelSet=performance.now();
-      mfld=safeLevelSet(sdfFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube preview level set');
-      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check SDF parameters.');}
-      msLevelSet=Math.round(performance.now()-tLevelSet);
+      // Defensive — only mode='bake' (handled+returned earlier) and mode='export'
+      // (handled above) are dispatched anywhere in the codebase. Surface any
+      // future regression where a new mode bypasses the export branches.
+      throw new Error('unknown worker mode: '+d.mode);
     }
     // ── Unified extract + meshopt simplify + done ─────────────────────────────
     // All paths (shape CSG, cube-export, cube-preview) funnel here with mfld set.
@@ -3223,8 +3540,12 @@ self.onmessage=async function(e){
     const simplifyTol=d.simplifyTol||0;
     let msSimplify=0;
     if(simplifyTol>0){
-      // Tolerance display in microns when below 0.01mm — easier to read than 0.003
-      const tolStr = simplifyTol < 0.01 ? (simplifyTol*1000).toFixed(1)+'µm' : simplifyTol.toFixed(3)+'mm';
+      // Tolerance is in vertex units (mm for shape-clipped exports where
+      // d.scale=1.0; world units for cube exports where d.scale=domainMm/10).
+      // Convert to mm for the user-facing pill: tol_mm = tol_vert × scale.
+      const tolMm = simplifyTol * (d.scale || 1.0);
+      // Display in microns when below 0.01mm — easier to read than 0.003
+      const tolStr = tolMm < 0.01 ? (tolMm*1000).toFixed(1)+'µm' : tolMm.toFixed(3)+'mm';
       const capStr = d.simplifyCappedByFeature
         ? ' (capped by feature size, '+(d.featMm*1000).toFixed(0)+'µm half-thickness)'
         : '';
@@ -3259,6 +3580,7 @@ function showCancelBtn(show){const b=document.getElementById('cancelMeshBtn');if
 window.cancelMesh=function(){
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
   if(window._cancelSdfBake)window._cancelSdfBake();
+  if(window._cancelHuBake)window._cancelHuBake();
   hideComputing();setBtns(true);showCancelBtn(false);
 };
 
@@ -3344,49 +3666,50 @@ function updateExportEstimate(){
     // Rough bake time estimate: empirically ~4µs per voxel on typical meshes;
     // scales with N³. Only shown when a re-bake would actually happen.
     let bakeSec=0;
+    let huBakeSec=0;
     if(importedShape){
+      // Shape SDF bake is parallel via Z-slab worker pool (computeShapeSDF).
+      // Worker count formula matches the orchestrator: min(12, hc-1, N).
+      // Per-voxel cost ~4µs serial; near-linear scaling with workers.
+      const hc=navigator.hardwareConcurrency||2;
       const targetN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
       const cachedN=importedShape.sdfGrid?importedShape.sdfGrid.N:0;
-      if(cachedN<targetN){bakeSec=Math.round(targetN*targetN*targetN*4e-6);}
-    }
-    const totalSec=estSec+bakeSec;
-    const bakeTxt=bakeSec>0?' (includes ~'+bakeSec+'s SDF bake)':'';
-    el.textContent='~'+(estTris/1e6).toFixed(1)+'M triangles · ~'+totalSec+'s'+bakeTxt;
-    // ── Wall-thickness resolution warning (v0.5.0-rc12) ─────────────────────
-    // With fixed per-tier voxel sizes (no adaptive estimator), thin-wall
-    // recipes can under-resolve at lower tiers. Warn when the thinnest
-    // physical feature has <3 voxels across it.
-    const warnEl=document.getElementById('expWarn');
-    if(warnEl){
-      warnEl.textContent='';
-      warnEl.classList.remove('crit');
-      const featMm = importedShape
-        ? getThinnestFeatureMm(currentRecipe, cellSizeMm)
-        : null; // cube-mode feature-ratio is meaningless without cellSize mapping
-      if(featMm && edgeMm){
-        const ratio = featMm/edgeMm;
-        if(ratio < 3){
-          // Find the coarsest tier that would give ratio ≥ 3 (a comfortable resolution).
-          const order=['draft','low','med','high','ultra'];
-          let rec=null;
-          for(const q of order){
-            const qEdge=voxelSizeForQuality(q,currentRecipe,cellSizeMm,bbox);
-            if(qEdge && featMm/qEdge >= 3){rec=q;break;}
-          }
-          const recTxt = rec && rec!==currentExportQual
-            ? ' · try '+rec[0].toUpperCase()+rec.slice(1)
-            : '';
-          if(ratio < 2){
-            warnEl.classList.add('crit');
-            warnEl.textContent='⚠ thinnest wall '+featMm.toFixed(3)+'mm is below Nyquist at '
-              +edgeMm.toFixed(3)+'mm voxels ('+ratio.toFixed(1)+'× across) — export likely empty or broken'+recTxt;
-          } else {
-            warnEl.textContent='⚠ thinnest wall '+featMm.toFixed(3)+'mm spans ~'
-              +ratio.toFixed(1)+' voxels at '+edgeMm.toFixed(3)+'mm — surface will be rough'+recTxt;
-          }
+      if(cachedN<targetN){
+        const sdfWorkers=Math.max(1,Math.min(12,hc-1,targetN));
+        bakeSec=Math.max(1,Math.round(targetN*targetN*targetN*4e-6/sdfWorkers));
+      }
+      // HU pre-bake (rc20) — fires for grain+HU recipes when grid isn't cached.
+      // Same worker formula as shape SDF; per-voxel cost ~6µs (hashed kernel
+      // eval pulls 3³ buckets per query).
+      const isHU = currentRecipe.family==='grain' && currentRecipe.json.field?.type==='hyperuniform';
+      if(isHU){
+        const ddx=bbox.mxx-bbox.mnx, ddy=bbox.mxy-bbox.mny, ddz=bbox.mxz-bbox.mnz;
+        const maxCells=Math.max(ddx,ddy,ddz)/cellSizeMm;
+        const huN=Math.max(32,Math.ceil(32*maxCells));
+        // Cache check by N (rough; exact key check would duplicate the
+        // export-time signature). Misses a small fraction of cache hits but
+        // never overstates time when the grid is genuinely cached.
+        const cached=currentRecipe._huGridCache;
+        const cacheHit=cached && cached.N===huN;
+        if(!cacheHit){
+          const huWorkers=Math.max(1,Math.min(12,hc-1,huN));
+          huBakeSec=Math.max(1,Math.round(huN*huN*huN*6e-6/huWorkers));
         }
       }
     }
+    const totalSec=estSec+bakeSec+huBakeSec;
+    const bakeBits=[];
+    if(bakeSec>0)   bakeBits.push('~'+bakeSec+'s SDF bake');
+    if(huBakeSec>0) bakeBits.push('~'+huBakeSec+'s HU bake');
+    const bakeTxt = bakeBits.length ? ' (includes '+bakeBits.join(', ')+')' : '';
+    el.textContent='~'+estTris.toLocaleString()+' triangles · ~'+totalSec+'s'+bakeTxt;
+    // v0.5.0-rc20: thinnest-wall warning removed. The formula
+    // (half_width × cellSizeMm/10) is dimensionally wrong for stochastic
+    // fields — half_width is an iso-band threshold on a normalized field,
+    // not a physical length. It's accurate for beam (radius in cell-local
+    // half-units) and roughly correct for tpms thin walls, but the false
+    // positives on grain/HU/spinodoid/GRF dominate. Quality-button voxel-
+    // size labels already give users what they need to judge resolution.
   }catch(e){el.textContent='';}
 }
 
@@ -3510,9 +3833,36 @@ async function triggerPreview(quality){
         shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
       rm.setWorldBounds([-5,-5,-5],[5,5,5],true);
     }else{
-      // Other stochastic fields (spinodoid/GRF/noise): bake over full shape extent
-      const wMin=[b.mnx*s,b.mny*s,b.mnz*s];
-      const wMax=[b.mxx*s,b.mxy*s,b.mxz*s];
+      // Other stochastic fields (spinodoid/GRF/noise): bake over the AABB of
+      // the structure-transformed shape bbox in world coords. The shader
+      // queries the bake at xform(p) = R^T·(p - pivot - offset) + pivot for
+      // p in shape_bbox (world coords). Sizing the bake to the un-transformed
+      // shape bbox produced clamp-to-edge artifacts (extruded columnar
+      // features) when rotation or offset pushed queries outside the bake —
+      // the boundary slice of the texture got repeated along the now-long
+      // axis. Fix: bake over the AABB of {xform(corner) : corner ∈ shape_bbox}
+      // so every query the shader will make lands strictly inside the bake.
+      // Identity transform reduces to the original shape_bbox bake exactly.
+      const pX=(b.mnx+b.mxx)*0.5*s, pY=(b.mny+b.mxy)*0.5*s, pZ=(b.mnz+b.mxz)*0.5*s;
+      const oX=structureTransform.spatialOffsetMmX*s;
+      const oY=structureTransform.spatialOffsetMmY*s;
+      const oZ=structureTransform.spatialOffsetMmZ*s;
+      const R=structureTransform.rotMat; // column-major R^T (inverse rotation)
+      let aMnX=Infinity,aMnY=Infinity,aMnZ=Infinity;
+      let aMxX=-Infinity,aMxY=-Infinity,aMxZ=-Infinity;
+      for(let cx=0;cx<2;cx++)for(let cy=0;cy<2;cy++)for(let cz=0;cz<2;cz++){
+        const wx=(cx?b.mxx:b.mnx)*s, wy=(cy?b.mxy:b.mny)*s, wz=(cz?b.mxz:b.mnz)*s;
+        const qx=wx-pX-oX, qy=wy-pY-oY, qz=wz-pZ-oZ;
+        // R^T · q  (column-major: R[col*3 + row])
+        const rx=R[0]*qx+R[3]*qy+R[6]*qz;
+        const ry=R[1]*qx+R[4]*qy+R[7]*qz;
+        const rz=R[2]*qx+R[5]*qy+R[8]*qz;
+        const tx=rx+pX, ty=ry+pY, tz=rz+pZ;
+        if(tx<aMnX)aMnX=tx; if(ty<aMnY)aMnY=ty; if(tz<aMnZ)aMnZ=tz;
+        if(tx>aMxX)aMxX=tx; if(ty>aMxY)aMxY=ty; if(tz>aMxZ)aMxZ=tz;
+      }
+      const wMin=[aMnX,aMnY,aMnZ];
+      const wMax=[aMxX,aMxY,aMxZ];
       bakeOpts={isPeriodic:false,bakeRaw:true,worldMin:wMin,worldMax:wMax,
         shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
       rm.setWorldBounds(wMin,wMax,false);
@@ -3599,7 +3949,9 @@ window.onTrimInsetMultChange=function(){
 // ── Structure transform handlers (v0.5.0 Phase B) ─────────────────────────
 // Input handler: read all 7 numeric inputs into structureTransform state,
 // recompute the inverse-rotation matrix, push as uniforms to the raymarcher,
-// and mark dirty for re-render. No re-bake required — uniforms only.
+// and mark dirty for re-render. Iso-only changes are uniform-only (no rebake);
+// rotation or spatial-offset changes alter the required bake region (see the
+// shape-mode bake bbox path) so they schedule a debounced re-bake.
 function readStructureTransformFromUI(){
   const v=id=>{const el=document.getElementById(id);return el?(parseFloat(el.value)||0):0;};
   structureTransform.rotXDeg=v('sxRotX');
@@ -3612,8 +3964,31 @@ function readStructureTransformFromUI(){
   recomputeStructureRotMat();
 }
 
+// Debounced rebake scheduling. Inputs use `oninput` so they fire per
+// keystroke; coalesce rapid changes into a single rebake ~300 ms after the
+// user stops typing/clicking. Skipped when no shape is loaded or the recipe
+// is periodic (bake region is fixed at one cell — rotation handled by
+// shader sampling, no rebake needed).
+let _structXformRebakeTimer=null;
+function _scheduleStructXformRebake(){
+  if(!importedShape) return;
+  if(!currentRecipe||recipeIsPeriodic(currentRecipe)) return;
+  if(_structXformRebakeTimer) clearTimeout(_structXformRebakeTimer);
+  _structXformRebakeTimer=setTimeout(()=>{
+    _structXformRebakeTimer=null;
+    if(typeof triggerPreview==='function') triggerPreview();
+  },300);
+}
+
 window.onStructXformInput=function(){
   if(!importedShape) return;
+  // Snapshot rotation/offset before re-reading UI so we can detect whether
+  // an iso-only change happened (no rebake) vs. a rotation/offset change
+  // (debounced rebake).
+  const before={
+    rx:structureTransform.rotXDeg, ry:structureTransform.rotYDeg, rz:structureTransform.rotZDeg,
+    ox:structureTransform.spatialOffsetMmX, oy:structureTransform.spatialOffsetMmY, oz:structureTransform.spatialOffsetMmZ
+  };
   readStructureTransformFromUI();
   // Push transform uniforms to raymarcher and trigger redraw.
   if(rm && rm.setStructureTransform){
@@ -3622,10 +3997,24 @@ window.onStructXformInput=function(){
   }
   // Re-estimate triangle count (iso offset can change geometry density).
   updateExportEstimate();
+  // Rotation or spatial offset change → debounced rebake. Iso-only → skip.
+  const xformChanged=
+    structureTransform.rotXDeg!==before.rx ||
+    structureTransform.rotYDeg!==before.ry ||
+    structureTransform.rotZDeg!==before.rz ||
+    structureTransform.spatialOffsetMmX!==before.ox ||
+    structureTransform.spatialOffsetMmY!==before.oy ||
+    structureTransform.spatialOffsetMmZ!==before.oz;
+  if(xformChanged) _scheduleStructXformRebake();
 };
 
 window.onStructXformReset=function(){
   if(!importedShape) return;
+  // If rotation or offset was non-identity before reset, the bake region was
+  // expanded — reset back to identity needs a rebake to tighten it again.
+  const wasNonIdentity=
+    structureTransform.rotXDeg!==0 || structureTransform.rotYDeg!==0 || structureTransform.rotZDeg!==0 ||
+    structureTransform.spatialOffsetMmX!==0 || structureTransform.spatialOffsetMmY!==0 || structureTransform.spatialOffsetMmZ!==0;
   resetStructureTransform();
   refreshStructureTransformUI();
   if(rm && rm.setStructureTransform){
@@ -3633,6 +4022,7 @@ window.onStructXformReset=function(){
     rm._dirty=true;
   }
   updateExportEstimate();
+  if(wasNonIdentity) _scheduleStructXformRebake();
 };
 
 // Pushes current structureTransform values into the UI inputs. Called on
@@ -3690,7 +4080,7 @@ function exportPanel(){
   </div>
 <button id="expBtn" onclick="triggerExport()">Export 3MF</button>
 <div id="expEstimate"></div>
-<div id="expWarn"></div>
+
 <div id="expElapsed"></div>
 <div id="expReport"></div>`;}
 function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${exportPanel()}`;}
@@ -3852,8 +4242,11 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
     estTris=Math.round(vol/Math.pow(edgeMm,3)*surfFactor);
   }
   estTris=Math.max(1000, estTris);
-  // Empirical: ~0.08ms per triangle (validated: 305k tris → ~25s)
-  const estSec=Math.max(1,Math.round(estTris*0.00008));
+  // Empirical: ~0.12ms per triangle for the full export pipeline. Was 0.08
+  // (calibrated against fine-pass alone, 305k → ~25s); rc20 bumped to 0.12 to
+  // cover the coarse pass (~3% of fine) and meshopt simplify (~50% of fine)
+  // that actual exports also pay. Refine with new validation as needed.
+  const estSec=Math.max(1,Math.round(estTris*0.00012));
   return{estTris,estSec};
 }
 window.triggerExport=async function(){
@@ -3941,6 +4334,95 @@ window.triggerExport=async function(){
       }
       showCancelBtn(false);
     }
+    // ── HU pre-bake (v0.5.0-rc20) ─────────────────────────────────────────
+    // Hyperuniform recipes need a full-domain kernel grid baked in mm-space.
+    // Doing it in the export worker was a serial bottleneck (~10s+ for typical
+    // orthopedic shapes); doing it on the main thread via a parallel worker
+    // pool drops to ~1-2s. Result is cached on the recipe so re-exports at the
+    // same quality reuse the grid (iso/quality changes don't invalidate; field
+    // params, bbox/cellSizeMm, AND structure rotation+offset all change the
+    // bake bbox so they DO invalidate).
+    let huGridForExport = null;
+    const isHURecipe = currentRecipe.family==='grain' && currentRecipe.json.field?.type==='hyperuniform';
+    if(isHURecipe){
+      const f=currentRecipe.json.field;
+      let dirTheta=0, dirPhi=0;
+      if(f.dir_mode==='single' && f.principal_direction){
+        const [mx,my,mz]=f.principal_direction;
+        dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
+        dirPhi=Math.atan2(my,mx)*180/Math.PI;
+      }
+      const huParams={
+        kappa:f.kappa||6, rngSeed:f.rng_seed||42,
+        dirMode:f.dir_mode||'single', dirTheta, dirPhi,
+        wX:f.ortho_weights?.[0]??.33, wY:f.ortho_weights?.[1]??.33, wZ:f.ortho_weights?.[2]??.34,
+        huN:f.hu_n||80, huAspect:f.hu_aspect||4, huWidth:f.hu_width||.04
+      };
+      // Bake bbox = AABB of structure-transformed shape bbox corners (mm).
+      // The export worker queries the grid at xform(p) = R^T·(p - pivot - off) + pivot
+      // for p ∈ shape_bbox. The grid must cover that set; otherwise the SDF
+      // closure's c01 clamp produces boundary-slice extrusion artifacts in
+      // the rotated direction (same failure mode as the rc20 spinodoid fix,
+      // just in mm-space here). For identity rotation + zero offset, the
+      // AABB collapses to the shape bbox exactly — no behavior change.
+      const xfR=structureTransform.rotMat;
+      const xfPivX=(mnx+mxx)*0.5, xfPivY=(mny+mxy)*0.5, xfPivZ=(mnz+mxz)*0.5;
+      const xfOffX=structureTransform.spatialOffsetMmX;
+      const xfOffY=structureTransform.spatialOffsetMmY;
+      const xfOffZ=structureTransform.spatialOffsetMmZ;
+      let bMnx=Infinity,bMny=Infinity,bMnz=Infinity, bMxx=-Infinity,bMxy=-Infinity,bMxz=-Infinity;
+      for(let cx=0;cx<2;cx++)for(let cy=0;cy<2;cy++)for(let cz=0;cz<2;cz++){
+        const px=cx?mxx:mnx, py=cy?mxy:mny, pz=cz?mxz:mnz;
+        const qx=px-xfPivX-xfOffX, qy=py-xfPivY-xfOffY, qz=pz-xfPivZ-xfOffZ;
+        const lx=xfR[0]*qx+xfR[3]*qy+xfR[6]*qz;
+        const ly=xfR[1]*qx+xfR[4]*qy+xfR[7]*qz;
+        const lz=xfR[2]*qx+xfR[5]*qy+xfR[8]*qz;
+        const tx=lx+xfPivX, ty=ly+xfPivY, tz=lz+xfPivZ;
+        if(tx<bMnx)bMnx=tx; if(ty<bMny)bMny=ty; if(tz<bMnz)bMnz=tz;
+        if(tx>bMxx)bMxx=tx; if(ty>bMxy)bMxy=ty; if(tz>bMxz)bMxz=tz;
+      }
+      const huBbox={mnx:bMnx, mny:bMny, mnz:bMnz, mxx:bMxx, mxy:bMxy, mxz:bMxz};
+      // N_hu sized to the BAKE bbox (rotation can grow extents beyond the
+      // shape bbox). Keeps the "32 voxels per design cell" target consistent.
+      const _ddx=huBbox.mxx-huBbox.mnx, _ddy=huBbox.mxy-huBbox.mny, _ddz=huBbox.mxz-huBbox.mnz;
+      const _maxCells=Math.max(_ddx,_ddy,_ddz)/cellSizeMm;
+      const huN=Math.max(32, Math.ceil(32*_maxCells));
+      // Cache key uses the bake bbox directly — captures rotation+offset
+      // dependency without needing separate fields. Quality/iso don't appear
+      // because they sit downstream of the bake.
+      const huCacheKey=`${huParams.rngSeed}|${huParams.huN}|${huParams.huAspect}|${huParams.huWidth}|${huParams.kappa}|${huParams.dirMode}|${huParams.dirTheta}|${huParams.dirPhi}|${huParams.wX}|${huParams.wY}|${huParams.wZ}|${cellSizeMm}|${huBbox.mnx}|${huBbox.mny}|${huBbox.mnz}|${huBbox.mxx}|${huBbox.mxy}|${huBbox.mxz}|${huN}`;
+      if(currentRecipe._huGridCache && currentRecipe._huGridCache.key===huCacheKey){
+        huGridForExport=currentRecipe._huGridCache;
+      } else {
+        coMain.textContent='preparing export...';
+        coSub.textContent='pre-baking HU field ('+huN+'\u00b3 grid)...';
+        overlay.classList.remove('hidden');
+        showCancelBtn(true);
+        const huStart=performance.now();
+        try{
+          const huResult=await computeHUGridMM(
+            huParams, huBbox, cellSizeMm, huN,
+            pct=>{
+              const elapsed=Math.round((performance.now()-huStart)/1000);
+              const remaining=Math.max(0,Math.round(elapsed/Math.max(pct,0.01)-elapsed));
+              coSub.textContent='pre-baking HU field ('+huN+'\u00b3) · '+Math.round(pct*100)+'% · ~'+remaining+'s left';
+            }
+          );
+          huGridForExport={key:huCacheKey, data:huResult.data, N:huResult.N, fieldMin:huResult.fieldMin, fieldMax:huResult.fieldMax, bbox:huBbox};
+          currentRecipe._huGridCache=huGridForExport;
+        }catch(e){
+          if(e.message==='cancelled'){
+            if(elapsedTimer)clearInterval(elapsedTimer);
+            if(elapsedEl)elapsedEl.style.display='none';
+            hideComputing(); showCancelBtn(false);
+            btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
+            return;
+          }
+          throw e;
+        }
+        showCancelBtn(false);
+      }
+    }
     const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
     if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
     coMain.textContent='exporting...';
@@ -3951,6 +4433,9 @@ window.triggerExport=async function(){
     edgeLabel=relEdgeMm.toFixed(2)+'mm';
     // Transfer a COPY of the SDF buffer so the cache survives in main thread.
     const shapeSdfBuffer=importedShape.sdfGrid.data.buffer.slice(0);
+    // Same pattern for HU grid: clone so the recipe-level cache survives the
+    // transfer. ~10 MB temp peak for typical bbox+cellSize combinations.
+    const huGridBuffer = huGridForExport ? huGridForExport.data.buffer.slice(0) : null;
     workerMsg={
       mode:'export',recipe:currentRecipe,
       shapeSdfData:shapeSdfBuffer,
@@ -3958,6 +4443,18 @@ window.triggerExport=async function(){
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
       cellSizeMm,relEdgeMm,simplifyTol,scale,
       simplifyCappedByFeature,featMm:effectiveFeatMm,
+      // v0.5.0-rc20: HU shape-mode grid baked in parallel on main thread.
+      // Worker uses these instead of running its own serial bakeGridMM.
+      // Absent for non-HU recipes; absent + falls back to legacy serial bake
+      // if the parallel orchestrator failed gracefully.
+      huGridData: huGridBuffer || undefined,
+      huGridN:    huGridForExport ? huGridForExport.N : undefined,
+      huFieldMin: huGridForExport ? huGridForExport.fieldMin : undefined,
+      huFieldMax: huGridForExport ? huGridForExport.fieldMax : undefined,
+      // Bake bbox (mm). Differs from `bbox` (shape bbox) when structure
+      // rotation or offset is non-identity — covers the rotated query set so
+      // the SDF closure can map uvw without clamping at boundaries.
+      huBbox:     huGridForExport ? huGridForExport.bbox : undefined,
       // v0.5.0-rc17: trim-to-nodes for beam family (no-op for other families).
       // Read from UI checkbox; default ON when checkbox missing.
       // v0.5.0-rc18: pruneInsetMult scales the auto-clamped inset (default 1.0,
@@ -3999,7 +4496,25 @@ window.triggerExport=async function(){
     scale=domainMm/10;
     domainLabel=domainMm+'mm';
     edgeLabel=edgeMm+'mm';
-    workerMsg={mode:'export',recipe:currentRecipe,edgeWorld,simplifyTol:0,scale};
+    // Cube exports run levelSet over [-5,5]³ world space, so vertices come
+    // out in world units (scaled to mm in main thread via scale=domainMm/10).
+    // Simplify tol must therefore be in world units. Same 15%-of-edge default
+    // and 5%-of-feature cap as the shape-clipped path. domainMm is the right
+    // "cellSizeMm" to pass getThinnestFeatureMm because the cube spans one
+    // design cell.
+    const cubeEdgeTolWorld = edgeWorld * 0.15;
+    const cubeFeatMm = getThinnestFeatureMm(currentRecipe, domainMm);
+    const cubeFeatWorld = (cubeFeatMm != null && cubeFeatMm > 0) ? cubeFeatMm * 10 / domainMm : null;
+    const cubeCappedTolWorld = (cubeFeatWorld != null) ? cubeFeatWorld * 0.05 : Infinity;
+    const cubeSimplifyTol = Math.min(cubeEdgeTolWorld, cubeCappedTolWorld);
+    const cubeSimplifyCappedByFeature = cubeFeatWorld != null && cubeCappedTolWorld < cubeEdgeTolWorld;
+    workerMsg={
+      mode:'export',recipe:currentRecipe,edgeWorld,
+      simplifyTol:cubeSimplifyTol,
+      simplifyCappedByFeature:cubeSimplifyCappedByFeature,
+      featMm:cubeFeatMm,  // mm value, for timings-pill display
+      scale
+    };
   }
 
   try{
@@ -4013,8 +4528,14 @@ window.triggerExport=async function(){
         else if(d.type==='error') reject(new Error(d.message));
       };
       worker.onerror=e=>reject(new Error(e.message||'Worker error'));
-      if(workerMsg.shapeSdfData){
-        worker.postMessage(workerMsg,[workerMsg.shapeSdfData]);
+      // Build transfer list — only include buffers that are actually present.
+      // shapeSdfData is mandatory for shape-clipped exports; huGridData is
+      // optional (only set for HU recipes when the parallel pre-bake ran).
+      const transferList=[];
+      if(workerMsg.shapeSdfData) transferList.push(workerMsg.shapeSdfData);
+      if(workerMsg.huGridData) transferList.push(workerMsg.huGridData);
+      if(transferList.length){
+        worker.postMessage(workerMsg, transferList);
       } else {
         worker.postMessage(workerMsg);
       }

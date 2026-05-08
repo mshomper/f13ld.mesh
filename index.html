@@ -226,7 +226,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc20</span>
+      <span class="fh-version">v0.5.0-rc21</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -2406,6 +2406,9 @@ function buildTPMSSDF(json){
   const fsY=(Math.PI*csY)/5.0;
   const fsZ=(Math.PI*csZ)/5.0;
   const ps=g.phase_shift||{x:0,y:0,z:0},mode=g.mode||'shell';
+  // v0.5.0-rc21: normal_weights — anisotropic shell-wall modulation.
+  // Shell-only by spec; sweep doesn't generate it on pi-tpms or solid.
+  const nw=g.normal_weights||null;
   const TP=2*Math.PI;
 
   // Gradient — matches TPMS shader: gF=mix(lo,hi,t01) where t01=(p+H)/(2H)
@@ -2452,6 +2455,36 @@ function buildTPMSSDF(json){
     return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
   }
 
+  // v0.5.0-rc21: unit world-space surface normal magnitudes via central
+  // differences. Returns null at degenerate points (∇φ ≈ 0). Branches on
+  // gradOn so the gradient is computed against whichever phi expression
+  // the shell return uses. Treats gxF/gyF/gzF as locally constant across
+  // the eps step — fine for typical recipes since they vary slowly in p.
+  function shellNormalAbs(p){
+    const eps=1e-3;
+    const tx=p[0]*fsX,ty=p[1]*fsY,tz=p[2]*fsZ;
+    let aX,aY,aZ,scX,scY,scZ;
+    if(gradOn){
+      const t01x=Math.max(0,Math.min(1,p[0]/10+0.5));
+      const t01y=Math.max(0,Math.min(1,p[1]/10+0.5));
+      const t01z=Math.max(0,Math.min(1,p[2]/10+0.5));
+      const gxF=gxLo+(gxHi-gxLo)*t01x;
+      const gyF=gyLo+(gyHi-gyLo)*t01y;
+      const gzF=gzLo+(gzHi-gzLo)*t01z;
+      aX=tx*gxF; aY=ty*gyF; aZ=tz*gzF;
+      scX=fsX*gxF; scY=fsY*gyF; scZ=fsZ*gzF;
+    } else {
+      aX=tx; aY=ty; aZ=tz;
+      scX=fsX; scY=fsY; scZ=fsZ;
+    }
+    const dx=(evalPhi(aX+eps,aY,aZ)-evalPhi(aX-eps,aY,aZ))*scX;
+    const dy=(evalPhi(aX,aY+eps,aZ)-evalPhi(aX,aY-eps,aZ))*scY;
+    const dz=(evalPhi(aX,aY,aZ+eps)-evalPhi(aX,aY,aZ-eps))*scZ;
+    const len=Math.hypot(dx,dy,dz);
+    if(len<1e-9) return null;
+    return [Math.abs(dx/len),Math.abs(dy/len),Math.abs(dz/len)];
+  }
+
   return p=>{
     const tx=p[0]*fsX,ty=p[1]*fsY,tz=p[2]*fsZ;
     if(gradOn){
@@ -2468,7 +2501,9 @@ function buildTPMSSDF(json){
       }
       const phiA=evalPhi(tx*gxF,ty*gyF,tz*gzF);
       if(mode==='solid') return phiA-(g.offset||0);
-      return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
+      {let wt=g.wall_thickness||0.3;
+       if(nw){const nrm=shellNormalAbs(p);if(nrm)wt*=(nw.wx*nrm[0]+nw.wy*nrm[1]+nw.wz*nrm[2]);}
+       return Math.abs(phiA-(g.offset||0))-wt;}
     }
     const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
@@ -2476,7 +2511,9 @@ function buildTPMSSDF(json){
       return Math.max(Math.abs(phiA),Math.abs(phiB))-(g.pipe_radius||.18);
     }
     if(mode==='solid') return phiA-(g.offset||0);
-    return Math.abs(phiA-(g.offset||0))-(g.wall_thickness||.3);
+    {let wt=g.wall_thickness||0.3;
+     if(nw){const nrm=shellNormalAbs(p);if(nrm)wt*=(nw.wx*nrm[0]+nw.wy*nrm[1]+nw.wz*nrm[2]);}
+     return Math.abs(phiA-(g.offset||0))-wt;}
   };
 }
 

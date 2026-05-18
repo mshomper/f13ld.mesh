@@ -226,7 +226,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc21</span>
+      <span class="fh-version">v0.5.0-rc27</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -447,41 +447,45 @@ let structureTransform = {
   rotMat: [1,0,0, 0,1,0, 0,0,1] // identity by default
 };
 
-// Builds an inverse-rotation (R^T) column-major 3x3 from Euler angles in
-// degrees. Order: extrinsic XYZ — apply X, then Y, then Z about world axes.
-// Returns the transpose of the composed rotation, so the matrix can be used
-// directly as `M × q` in code (rather than needing per-call transpose).
-function eulerXYZToInvMat3(rxDeg, ryDeg, rzDeg){
-  const rx=rxDeg*Math.PI/180, ry=ryDeg*Math.PI/180, rz=rzDeg*Math.PI/180;
-  const cx=Math.cos(rx), sx=Math.sin(rx);
-  const cy=Math.cos(ry), sy=Math.sin(ry);
-  const cz=Math.cos(rz), sz=Math.sin(rz);
-  // Forward (extrinsic XYZ): R = Rz * Ry * Rx
-  // Compose R, then return its transpose.
-  // Rx:
-  // | 1  0   0  |
-  // | 0  cx -sx |
-  // | 0  sx  cx |
-  // Ry:
-  // | cy  0  sy |
-  // | 0   1  0  |
-  // |-sy  0  cy |
-  // Rz:
-  // | cz -sz 0 |
-  // | sz  cz 0 |
-  // | 0   0  1 |
-  // R = Rz * Ry * Rx (composed):
-  const r00 = cz*cy;
-  const r01 = cz*sy*sx - sz*cx;
-  const r02 = cz*sy*cx + sz*sx;
-  const r10 = sz*cy;
-  const r11 = sz*sy*sx + cz*cx;
-  const r12 = sz*sy*cx - cz*sx;
-  const r20 = -sy;
-  const r21 = cy*sx;
-  const r22 = cy*cx;
-  // Return R^T in column-major order (col*3+row).
-  // R^T means swap rows and cols, so col c, row r of R^T = col r, row c of R.
+// Builds an inverse-rotation (R^T) column-major 3x3 from a rotation vector
+// (Rodrigues / exponential coordinates) in degrees.
+//
+// Interpretation: v = (rxDeg, ryDeg, rzDeg) defines a single rotation by
+//   angle = ‖v‖ degrees about axis = v / ‖v‖.
+// Single-axis cases reduce to the obvious behavior:
+//   (a, 0, 0) → rotate a° about world X
+//   (0, a, 0) → rotate a° about world Y
+//   (0, 0, a) → rotate a° about world Z
+// Composite cases rotate about the resultant axis by its magnitude.
+//
+// Replaces the v0.5.0 Euler-XYZ parameterization, which had a gimbal-lock
+// singularity at rotY = ±90° (rotX and rotZ collapsed to the same axis).
+// Rotation-vector / axis-angle is free of gimbal lock at every input.
+//
+// Returns R^T in column-major order so the matrix can be used directly as
+// `M × q` in code (rather than needing per-call transpose). Output contract
+// is identical to the prior eulerXYZToInvMat3 — all downstream sites (shader
+// uniform, bake bbox math, per-voxel transform, trim-to-nodes) need no change.
+function rotVecToInvMat3(rxDeg, ryDeg, rzDeg){
+  const vx = rxDeg*Math.PI/180, vy = ryDeg*Math.PI/180, vz = rzDeg*Math.PI/180;
+  const th = Math.sqrt(vx*vx + vy*vy + vz*vz);
+  if(th < 1e-9){
+    // Identity. Avoid the 0/0 in axis normalization.
+    return [1,0,0, 0,1,0, 0,0,1];
+  }
+  const ax = vx/th, ay = vy/th, az = vz/th;
+  const c = Math.cos(th), s = Math.sin(th), C = 1 - c;
+  // Rodrigues' rotation formula — forward R (rotates p by th about axis).
+  const r00 = c + ax*ax*C;
+  const r01 = ax*ay*C - az*s;
+  const r02 = ax*az*C + ay*s;
+  const r10 = ay*ax*C + az*s;
+  const r11 = c + ay*ay*C;
+  const r12 = ay*az*C - ax*s;
+  const r20 = az*ax*C - ay*s;
+  const r21 = az*ay*C + ax*s;
+  const r22 = c + az*az*C;
+  // R^T in column-major (col*3+row): col c, row r of R^T = col r, row c of R.
   return [
     r00, r01, r02,   // col 0 of R^T = row 0 of R
     r10, r11, r12,   // col 1 of R^T = row 1 of R
@@ -490,7 +494,7 @@ function eulerXYZToInvMat3(rxDeg, ryDeg, rzDeg){
 }
 
 function recomputeStructureRotMat(){
-  structureTransform.rotMat = eulerXYZToInvMat3(
+  structureTransform.rotMat = rotVecToInvMat3(
     structureTransform.rotXDeg,
     structureTransform.rotYDeg,
     structureTransform.rotZDeg
@@ -2341,30 +2345,50 @@ function evalNoiseRaw(surf,nx,ny,nz){
 function buildNoiseSDF(json,normOverride){
   const surf=json.surface,geom=json.geometry||{};
   const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
-  const SCALE2=5.0/Math.PI;
+  // v0.5.0-rc27: SCALE2=5/π removed. The canonical F13LD.noise tool's preview
+  // cube is solver-space [-π, π] and applies SCALE=5/π to map solver→noise-input,
+  // giving ±5*freq*scale at cube edge. Mesh's world cube is [-5, 5], so the
+  // correct chain is world * (π/5) [world→solver] * (5/π) [solver→noise] = world.
+  // Previously SCALE2 was being applied directly to world coords, producing a
+  // 5/π ≈ 1.59× over-stretch in noise-input space — same recipe rendered ~1.59×
+  // more pattern oscillations per cube than the canonical noise tool / F13LD.sweep
+  // showed, and shifted the empirical mid (because wider sampling found more
+  // extreme min values for asymmetric noise types like ridged/billow). Visible
+  // effect was most pronounced in half/solid topology modes for ridged: lower
+  // mid → larger fraction of field above threshold → thicker-looking solid.
   let mid,halfR;
   if(normOverride){
     // v0.5.0-rc14: use preview's fieldMin/Max — zero drift, zero pre-scan cost.
+    // v0.5.0-rc27: cached fieldMin/Max are now already +5% padded at bake time
+    // (see worker post-message in this file), matching the canonical noise tool's
+    // prepass convention. No additional padding needed here.
     mid=(normOverride.fieldMin+normOverride.fieldMax)*0.5;
     halfR=Math.max((normOverride.fieldMax-normOverride.fieldMin)*0.5,.001);
   } else {
     // Fallback pre-scan when preview hasn't cached a range yet (first export
     // without a preview bake, or after setStale). Samples over world [-5,5]
-    // — the actual runtime query domain — at 16³ resolution, no padding.
-    // Matches what the preview bake worker does when it builds fieldMin/Max.
+    // — the actual runtime query domain — at 16³ resolution.
+    // v0.5.0-rc27: +5% padding restored (matching canonical F13LD.noise and
+    // F13LD.sweep). The rc14 comment about "no padding" was correct given
+    // the SCALE2 bug that was present then; with that bug fixed, padding is
+    // needed again to match canonical bounds convention.
     const PP=16;let mn=Infinity,mx=-Infinity;
     for(let zi=0;zi<PP;zi++)for(let yi=0;yi<PP;yi++)for(let xi=0;xi<PP;xi++){
       const px=(xi/(PP-1))*10-5, py=(yi/(PP-1))*10-5, pz=(zi/(PP-1))*10-5;
-      const raw=evalNoiseRaw(surf,px*SCALE2*freq*sx,py*SCALE2*freq*sy,pz*SCALE2*freq*sz);
+      const raw=evalNoiseRaw(surf,px*freq*sx,py*freq*sy,pz*freq*sz);
       if(raw<mn)mn=raw;if(raw>mx)mx=raw;
     }
-    mid=(mn+mx)*.5;
-    halfR=Math.max((mx-mn)*.5,.001);
+    const range=mx-mn;
+    const padMin=mn-range*0.05, padMax=mx+range*0.05;
+    mid=(padMin+padMax)*.5;
+    halfR=Math.max((padMax-padMin)*.5,.001);
   }
   const center=surf.center??0,halfW=surf.half_width??.15,mode=geom.mode||'shell';
   return p=>{
-    // World space is [-5,5]; noise tool uses [-pi,pi]*SCALE — match exactly
-    const raw=evalNoiseRaw(surf,p[0]*SCALE2*freq*sx,p[1]*SCALE2*freq*sy,p[2]*SCALE2*freq*sz);
+    // v0.5.0-rc27: noise input = world * freq * scale (was world * SCALE2 * freq * scale;
+    // SCALE2 = 5/π was incorrectly applied to world coords without the world→solver
+    // step. See buildNoiseSDF header comment for full rationale.)
+    const raw=evalNoiseRaw(surf,p[0]*freq*sx,p[1]*freq*sy,p[2]*freq*sz);
     const norm=(raw-mid)/halfR;
     // Canonical SDF: negative-inside, matches design-tool shader at index_-_Noise.html:1053.
     // half_invert=false → inside where norm > center (SDF = center-norm).
@@ -2410,6 +2434,41 @@ function buildTPMSSDF(json){
   // Shell-only by spec; sweep doesn't generate it on pi-tpms or solid.
   const nw=g.normal_weights||null;
   const TP=2*Math.PI;
+  // v0.5.0-rc22: TPMS normalize flags from F13LD.sweep v0.15.0+.
+  // - shell_normalize: divides shell deviation by |∇φ| to produce true
+  //   Euclidean wall thickness, independent of how steeply the TPMS field
+  //   varies locally. Applies only in mode==='shell'.
+  // - pi_normalize: angle-corrected distance to {φ_A=0 ∩ φ_B=0} curve set
+  //   (the pipe network on the intersection of two phase-shifted level
+  //   sets). Applies only in mode==='pi-tpms'.
+  // Math copied verbatim from sweep's applyModeRaw (F13LD.tpms ground truth).
+  //
+  // v0.5.0-rc24: defaults updated to match sweep's renderer convention.
+  // Sweep v0.15.0 omits these fields from emitted recipes (the field-thread
+  // ships but the recipe writer is incomplete), yet sweep's renderer always
+  // applies normalization for pi-tpms and shell modes. To match what sweep
+  // shows the user (and presumably what sweep's solver characterized):
+  //   - Absent (undefined) → default to true when mode is the matching topology
+  //   - Explicit true/false → respect the flag verbatim
+  // Legacy recipes that intentionally relied on the un-normalized envelope
+  // can set the flag to false explicitly to restore prior behavior.
+  const shellNorm=(g.shell_normalize!==undefined)?!!g.shell_normalize:(mode==='shell');
+  const piNorm=(g.pi_normalize!==undefined)?!!g.pi_normalize:(mode==='pi-tpms');
+  // Normalize constants — must match sweep's piField/shell-normalize exactly
+  // or the preview will not agree with sweep's solver characterization.
+  const NORM_E=0.012, NORM_EPS=0.08, NORM_COSCLAMP=0.95;
+  const NORM_INV_2E=1/(2*NORM_E);
+  // v0.5.0-rc22: off-surface SDF clip for preview-bake R8 quantization.
+  // The normalize formulas amplify |φ| by 1/|∇φ| (up to ~12.5× at the EPS
+  // clamp) at gradient degeneracies, which blows up the SDF range and
+  // ruins R8 texture resolution near the iso surface. Clipping the
+  // distance value at 5× the wall/pipe thickness keeps the iso surface
+  // position exact (clip threshold >> wt or pipe_radius) while bounding
+  // the off-surface SDF magnitude. Both export (Manifold.levelSet via
+  // Float64) and the raymarcher (maxStep clamp) tolerate the clip-boundary
+  // kink without artifacts. Five is conservative; tune downward if R8
+  // resolution near the surface still feels coarse.
+  const NORM_CLIP_MULT=5;
 
   // Gradient — matches TPMS shader: gF=mix(lo,hi,t01) where t01=(p+H)/(2H)
   // In world [-5,5]: t01=clamp(p/10+0.5,0,1); for PI mode gradient scales phase offset.
@@ -2455,6 +2514,36 @@ function buildTPMSSDF(json){
     return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
   }
 
+  // v0.5.0-rc22: Field-coord central-difference gradient of phi.
+  // Returns {gx, gy, gz, mag}. Step e=0.012 in field-coord radians matches
+  // sweep's piField / shell-normalize implementation. Used by the normalize
+  // branches below — kept separate from shellNormalAbs (which uses a different
+  // eps and applies world-coord scaling for the anisotropic shell-wall path).
+  function gradPhiFieldCoord(aX,aY,aZ){
+    const gx=(evalPhi(aX+NORM_E,aY,aZ)-evalPhi(aX-NORM_E,aY,aZ))*NORM_INV_2E;
+    const gy=(evalPhi(aX,aY+NORM_E,aZ)-evalPhi(aX,aY-NORM_E,aZ))*NORM_INV_2E;
+    const gz=(evalPhi(aX,aY,aZ+NORM_E)-evalPhi(aX,aY,aZ-NORM_E))*NORM_INV_2E;
+    const mag=Math.sqrt(gx*gx+gy*gy+gz*gz);
+    return {gx,gy,gz,mag};
+  }
+  // v0.5.0-rc22: PI-normalize core. Angle-corrected distance to the curve
+  // {φ_A=0 ∩ φ_B=0} in field-coord units. dA = φ_A/|∇φ_A|, dB = φ_B/|∇φ_B|
+  // (signed distances to each level set). cos(θ) between gradients tells
+  // us how the two surfaces intersect; clamped because parallel surfaces
+  // (cos→±1, sin→0) would blow the formula up. num is floored at 0 to
+  // guard against numerical artifacts near degenerate intersections.
+  function piDistance(phiA_,phiB_,grA,grB){
+    const magA=Math.max(grA.mag,NORM_EPS);
+    const magB=Math.max(grB.mag,NORM_EPS);
+    const dA=phiA_/magA, dB=phiB_/magB;
+    let cosA=(grA.gx*grB.gx+grA.gy*grB.gy+grA.gz*grB.gz)/(magA*magB);
+    if(cosA>NORM_COSCLAMP) cosA=NORM_COSCLAMP;
+    if(cosA<-NORM_COSCLAMP) cosA=-NORM_COSCLAMP;
+    const sin2=1-cosA*cosA;
+    const num=dA*dA-2*cosA*dA*dB+dB*dB;
+    return Math.sqrt(Math.max(num,0)/sin2);
+  }
+
   // v0.5.0-rc21: unit world-space surface normal magnitudes via central
   // differences. Returns null at degenerate points (∇φ ≈ 0). Branches on
   // gradOn so the gradient is computed against whichever phi expression
@@ -2495,24 +2584,59 @@ function buildTPMSSDF(json){
       const gyF=gyLo+(gyHi-gyLo)*t01y;
       const gzF=gzLo+(gzHi-gzLo)*t01z;
       if(mode==='pi-tpms'){
+        const bx=tx+(ps.x||0)*TP*gxF;
+        const by=ty+(ps.y||0)*TP*gyF;
+        const bz=tz+(ps.z||0)*TP*gzF;
         const phiA=evalPhi(tx,ty,tz);
-        const phiB=evalPhi(tx+(ps.x||0)*TP*gxF,ty+(ps.y||0)*TP*gyF,tz+(ps.z||0)*TP*gzF);
+        const phiB=evalPhi(bx,by,bz);
+        if(piNorm){
+          const grA=gradPhiFieldCoord(tx,ty,tz);
+          const grB=gradPhiFieldCoord(bx,by,bz);
+          const pipeR=(g.pipe_radius||.18);
+          const d=piDistance(phiA,phiB,grA,grB);
+          const dClipped=d<NORM_CLIP_MULT*pipeR?d:NORM_CLIP_MULT*pipeR;
+          return dClipped-pipeR;
+        }
         return Math.max(Math.abs(phiA),Math.abs(phiB))-(g.pipe_radius||.18);
       }
-      const phiA=evalPhi(tx*gxF,ty*gyF,tz*gzF);
+      const aX=tx*gxF, aY=ty*gyF, aZ=tz*gzF;
+      const phiA=evalPhi(aX,aY,aZ);
       if(mode==='solid') return phiA-(g.offset||0);
       {let wt=g.wall_thickness||0.3;
        if(nw){const nrm=shellNormalAbs(p);if(nrm)wt*=(nw.wx*nrm[0]+nw.wy*nrm[1]+nw.wz*nrm[2]);}
+       if(shellNorm){
+         const gr=gradPhiFieldCoord(aX,aY,aZ);
+         const gm=Math.max(gr.mag,NORM_EPS);
+         const dist=Math.abs(phiA-(g.offset||0))/gm;
+         const distClipped=dist<NORM_CLIP_MULT*wt?dist:NORM_CLIP_MULT*wt;
+         return distClipped-wt;
+       }
        return Math.abs(phiA-(g.offset||0))-wt;}
     }
     const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
-      const phiB=evalPhi(tx+(ps.x||0)*TP,ty+(ps.y||0)*TP,tz+(ps.z||0)*TP);
+      const bx=tx+(ps.x||0)*TP, by=ty+(ps.y||0)*TP, bz=tz+(ps.z||0)*TP;
+      const phiB=evalPhi(bx,by,bz);
+      if(piNorm){
+        const grA=gradPhiFieldCoord(tx,ty,tz);
+        const grB=gradPhiFieldCoord(bx,by,bz);
+        const pipeR=(g.pipe_radius||.18);
+        const d=piDistance(phiA,phiB,grA,grB);
+        const dClipped=d<NORM_CLIP_MULT*pipeR?d:NORM_CLIP_MULT*pipeR;
+        return dClipped-pipeR;
+      }
       return Math.max(Math.abs(phiA),Math.abs(phiB))-(g.pipe_radius||.18);
     }
     if(mode==='solid') return phiA-(g.offset||0);
     {let wt=g.wall_thickness||0.3;
      if(nw){const nrm=shellNormalAbs(p);if(nrm)wt*=(nw.wx*nrm[0]+nw.wy*nrm[1]+nw.wz*nrm[2]);}
+     if(shellNorm){
+       const gr=gradPhiFieldCoord(tx,ty,tz);
+       const gm=Math.max(gr.mag,NORM_EPS);
+       const dist=Math.abs(phiA-(g.offset||0))/gm;
+       const distClipped=dist<NORM_CLIP_MULT*wt?dist:NORM_CLIP_MULT*wt;
+       return distClipped-wt;
+     }
      return Math.abs(phiA-(g.offset||0))-wt;}
   };
 }
@@ -2581,27 +2705,172 @@ function computeTPMSBakeBounds(recipe){
 // Tiles outside the pre-computed range get zero beams (safe: out-of-bbox
 // regions correspond to outside the shape anyway, where the intersection
 // with -shape will yield void).
+//
+// v0.5.0-rc22: F13LD.sweep v0.15.0+ schema additions, all backward-compatible:
+//   geometry.scale_xyz:[sx,sy,sz] mm — per-axis cell sizes (anisotropic cells)
+//   geometry.radius_x/y/z         mm — per-axis strut radii (anisotropic struts)
+//   geometry.cell                 mm — geometric-mean cell size, ≈ geomean(scale_xyz)
+//   geometry.node_smoothing_k     mm — smin radius at strut junctions (0 = hard min)
+//   geometry.node_ball_radius     mm — sphere radius at unique nodes (0 = no balls)
+//   beams[i][6]                      — sharing factor (parsed implicitly; unused)
+//
+// Conversion from mm-schema to mesh's cell-local convention:
+//   cellScale_i = cell / scale_xyz[i]            (per-axis; geomean=1)
+//   r_local_i   = 2·radius_xyz[i] / scale_xyz[i] (per-axis cell-local radius)
+//   smin_local  = 2·node_smoothing_k / cell      (isotropic; normalized by cell)
+//   ball_local  = 2·node_ball_radius / cell      (isotropic; normalized by cell)
+// Old recipes (no scale_xyz / cell): falls through to scalar radius and cell_scale,
+// identical behavior to v0.5.0-rc21.
+//
+// Per-strut effective radius via direction-weighted RMS in cell-local space:
+//   r_strut[i] = sqrt(r_local_x²·ux² + r_local_y²·uy² + r_local_z²·uz²)
+// where (ux,uy,uz) is the strut's unit direction in cell-local. Pre-computed
+// once at SDF-build time; inner loop reads r_strut[i] instead of legacy scalar r.
+//
+// SDF return scaling: anisotropic cells have per-axis L2W_i. Inner capsule
+// distance is in cell-local-isotropic units; we return d · geomean(L2W_x/y/z).
+// Geomean equals 5 by construction (since geomean(cellScale)=1), so isotropic
+// recipes are bit-identical to v0.5.0-rc21.
 function buildBeamSDF(json, pruneCtx){
   const beams=json.beams||[];
-  const r=(json.geometry&&json.geometry.radius)||0.1;
-  const cellScale=(json.geometry&&json.geometry.cell_scale)||1; // user-controllable in future; default 1
-  const halo=r+0.02;
-  const W2L=cellScale/5; // world → cell-local scale per axis
-  const L2W=5/cellScale; // cell-local → world scale per axis (for SDF return)
+  const geom=json.geometry||{};
 
-  // Pre-extract beam endpoints into typed arrays for tight inner loop
+  // ── Schema detection: scale_xyz OR cell_scale_x/y/z + cell ⇒ new schema.
+  // v0.5.0-rc25: sweep v0.15.0 emits cell_scale_x/y/z (per-axis mm cell sizes
+  // for beam family — distinct from TPMS convention where cell_scale_x is a
+  // unitless frequency multiplier). Same field name, different semantics
+  // across families; the disambiguator is the presence of geom.cell (mm),
+  // which beam recipes have and TPMS recipes never do. We do not enter this
+  // code path for TPMS anyway (buildTPMSSDF handles those), so the
+  // field-name collision is safe to ignore here.
+  let sxyz=null;
+  if(Array.isArray(geom.scale_xyz)&&geom.scale_xyz.length===3
+     &&isFinite(geom.scale_xyz[0])&&isFinite(geom.scale_xyz[1])&&isFinite(geom.scale_xyz[2])
+     &&geom.scale_xyz[0]>0&&geom.scale_xyz[1]>0&&geom.scale_xyz[2]>0){
+    sxyz=geom.scale_xyz;
+  } else if(typeof geom.cell_scale_x==='number'&&geom.cell_scale_x>0
+         && typeof geom.cell_scale_y==='number'&&geom.cell_scale_y>0
+         && typeof geom.cell_scale_z==='number'&&geom.cell_scale_z>0){
+    sxyz=[geom.cell_scale_x, geom.cell_scale_y, geom.cell_scale_z];
+  }
+  const cellMm=geom.cell;
+  const hasScaleXYZ = sxyz!==null;
+  const hasCell=(typeof cellMm==='number')&&isFinite(cellMm)&&cellMm>0;
+  const isNew=hasScaleXYZ&&hasCell;
+
+  // Per-axis cellScale (mesh's convention: cells per world-span [-5,+5]).
+  // New schema: derived from cell/scale_xyz. Old schema: scalar cell_scale.
+  let cellScaleX, cellScaleY, cellScaleZ;
+  if(isNew){
+    cellScaleX = cellMm / sxyz[0];
+    cellScaleY = cellMm / sxyz[1];
+    cellScaleZ = cellMm / sxyz[2];
+  } else {
+    const cs=(typeof geom.cell_scale==='number'&&geom.cell_scale>0)?geom.cell_scale:1;
+    cellScaleX = cellScaleY = cellScaleZ = cs;
+  }
+
+  // Per-axis cell-local radii.
+  // New schema: radius_x/y/z (mm) converted via 2·radius/scale_xyz.
+  // Falls through field-by-field (radius_y/z optional, fall back to radius_x).
+  // Old schema: scalar radius (already cell-local).
+  let rLocX, rLocY, rLocZ;
+  if(isNew && typeof geom.radius_x==='number' && geom.radius_x>=0){
+    const rx=geom.radius_x;
+    const ry=(typeof geom.radius_y==='number'&&geom.radius_y>=0)?geom.radius_y:rx;
+    const rz=(typeof geom.radius_z==='number'&&geom.radius_z>=0)?geom.radius_z:rx;
+    rLocX = 2*rx / sxyz[0];
+    rLocY = 2*ry / sxyz[1];
+    rLocZ = 2*rz / sxyz[2];
+  } else {
+    const r=(typeof geom.radius==='number'&&geom.radius>=0)?geom.radius:0.1;
+    rLocX = rLocY = rLocZ = r;
+  }
+
+  // Node smoothing / ball radii (cell-local, isotropic, normalized by cell).
+  // Both default to 0 when missing or zero → behavior reduces to legacy hard-min
+  // union with no node decorations. Only consulted when isNew (mm-units required).
+  const sminLocal = (isNew && typeof geom.node_smoothing_k==='number' && geom.node_smoothing_k>0)
+    ? (2*geom.node_smoothing_k / cellMm) : 0;
+  const ballLocal = (isNew && typeof geom.node_ball_radius==='number' && geom.node_ball_radius>0)
+    ? (2*geom.node_ball_radius / cellMm) : 0;
+  const useSmin = sminLocal > 0;
+  const useBalls = ballLocal > 0;
+
+  // Per-axis world ↔ cell-local conversions.
+  const W2Lx=cellScaleX/5, W2Ly=cellScaleY/5, W2Lz=cellScaleZ/5;
+  const L2Wx=5/cellScaleX, L2Wy=5/cellScaleY, L2Wz=5/cellScaleZ;
+  // Geometric-mean cell-local→world scale for the SDF return value.
+  // Equals 5 exactly when geomean(cellScale)=1 (always true under new schema
+  // by construction; equals 5/cellScale for legacy isotropic recipes).
+  const L2Wgeo = Math.cbrt(L2Wx*L2Wy*L2Wz);
+
+  // Pre-extract beam endpoints into typed arrays for tight inner loop.
+  // beams[i][6] (sharing factor) is left unread — informational only.
   const N=beams.length;
   const ax=new Float64Array(N), ay=new Float64Array(N), az=new Float64Array(N);
   const bx=new Float64Array(N), by=new Float64Array(N), bz=new Float64Array(N);
+  const rStrut=new Float64Array(N);  // per-strut effective radius (cell-local)
+  let maxR=0;
   for(let i=0;i<N;i++){
     const b=beams[i];
     ax[i]=b[0]; ay[i]=b[1]; az[i]=b[2];
     bx[i]=b[3]; by[i]=b[4]; bz[i]=b[5];
+    // Direction-weighted RMS radius. Unit direction (ux,uy,uz) in cell-local.
+    const ex=b[3]-b[0], ey=b[4]-b[1], ez=b[5]-b[2];
+    const elen=Math.sqrt(ex*ex+ey*ey+ez*ez);
+    if(elen>1e-12){
+      const ux=ex/elen, uy=ey/elen, uz=ez/elen;
+      rStrut[i]=Math.sqrt(rLocX*rLocX*ux*ux + rLocY*rLocY*uy*uy + rLocZ*rLocZ*uz*uz);
+    } else {
+      // Zero-length strut — degenerate; fall back to RMS of axis radii.
+      rStrut[i]=Math.sqrt((rLocX*rLocX + rLocY*rLocY + rLocZ*rLocZ)/3);
+    }
+    if(rStrut[i]>maxR) maxR=rStrut[i];
   }
 
-  // Capsule SDF — returns distance from p to segment(a,b) minus radius.
-  // p,a,b are all in cell-local [-1,+1] units. Vectorized over the
-  // pre-extracted arrays for speed.
+  // Pre-compute unique node positions (deduplicated endpoints) for node-ball
+  // union. Rounded to a small tolerance to handle FP artifacts. Only built
+  // when useBalls so the empty-case has zero memory cost.
+  let nodeX=null, nodeY=null, nodeZ=null;
+  let nodeCount=0;
+  if(useBalls){
+    const TOL=1e-5, INV_TOL=1/TOL;
+    const seen=new Map();
+    const tmpX=[], tmpY=[], tmpZ=[];
+    for(let i=0;i<N;i++){
+      // endpoint A
+      const kxA=Math.round(ax[i]*INV_TOL), kyA=Math.round(ay[i]*INV_TOL), kzA=Math.round(az[i]*INV_TOL);
+      const keyA=kxA+','+kyA+','+kzA;
+      if(!seen.has(keyA)){ seen.set(keyA,true); tmpX.push(ax[i]); tmpY.push(ay[i]); tmpZ.push(az[i]); }
+      // endpoint B
+      const kxB=Math.round(bx[i]*INV_TOL), kyB=Math.round(by[i]*INV_TOL), kzB=Math.round(bz[i]*INV_TOL);
+      const keyB=kxB+','+kyB+','+kzB;
+      if(!seen.has(keyB)){ seen.set(keyB,true); tmpX.push(bx[i]); tmpY.push(by[i]); tmpZ.push(bz[i]); }
+    }
+    nodeX=new Float64Array(tmpX);
+    nodeY=new Float64Array(tmpY);
+    nodeZ=new Float64Array(tmpZ);
+    nodeCount=tmpX.length;
+  }
+
+  // Halo for boundary-tile evaluation. Use the LARGEST per-strut radius
+  // so we never miss a contributing capsule near a face. Smin blend radius
+  // and node ball radius both extend the influence zone — add both.
+  const halo = maxR + sminLocal + ballLocal + 0.02;
+
+  // Polynomial smooth-min (Inigo Quilez). Matches F13LD.bundle's smin_k.
+  // k=0 ⇒ degenerates to hard min (no allocation, no blend).
+  function smin(a, b, k){
+    if(k <= 0) return a < b ? a : b;
+    const diff = a > b ? a-b : b-a;
+    const h = (k - diff) > 0 ? (k - diff)/k : 0;
+    return (a < b ? a : b) - h*h*h*k*(1/6);
+  }
+
+  // Capsule SDF — distance from q to each strut(a,b) minus per-strut radius.
+  // q,a,b are all in cell-local [-1,+1] units. Optional smin between unions
+  // and optional node sphere union (both gated by closure-bound flags).
   function capsuleUnion(qx,qy,qz){
     let d=1e6;
     for(let i=0;i<N;i++){
@@ -2611,18 +2880,25 @@ function buildBeamSDF(json, pruneCtx){
       let h=ll>1e-12?(dx*ex+dy*ey+dz*ez)/ll:0;
       if(h<0)h=0; else if(h>1)h=1;
       const px=dx-ex*h, py=dy-ey*h, pz=dz-ez*h;
-      const di=Math.sqrt(px*px+py*py+pz*pz)-r;
-      if(di<d)d=di;
+      const di=Math.sqrt(px*px+py*py+pz*pz)-rStrut[i];
+      d = useSmin ? smin(d, di, sminLocal) : (di<d ? di : d);
+    }
+    if(useBalls){
+      for(let n=0;n<nodeCount;n++){
+        const dx=qx-nodeX[n], dy=qy-nodeY[n], dz=qz-nodeZ[n];
+        const di=Math.sqrt(dx*dx+dy*dy+dz*dz)-ballLocal;
+        d = useSmin ? smin(d, di, sminLocal) : (di<d ? di : d);
+      }
     }
     return d;
   }
 
-  // Mask-gated capsule union: same as capsuleUnion but skips beams whose
-  // mask byte is 0 for the given tile. tileBase is the precomputed offset
-  // ((tz-tZMin)*NY*NX + (ty-tYMin)*NX + (tx-tXMin)) * N. Returns 1e6 when
-  // tile is out of mask range (treated as "no beams here").
+  // Mask-gated capsule union: same union math as capsuleUnion but skips
+  // struts whose mask byte is 0 for the given tile. Returns 1e6 when tile
+  // is out of mask range (treated as "no struts here"). Node balls are not
+  // masked — they belong to the lattice as designed, not per-trimmed-strut.
   function capsuleUnionMasked(qx,qy,qz,tileBase,mask){
-    if(tileBase<0) return 1e6; // out-of-range tile
+    if(tileBase<0) return 1e6;
     let d=1e6;
     for(let i=0;i<N;i++){
       if(!mask[tileBase+i]) continue;
@@ -2632,8 +2908,15 @@ function buildBeamSDF(json, pruneCtx){
       let h=ll>1e-12?(dx*ex+dy*ey+dz*ez)/ll:0;
       if(h<0)h=0; else if(h>1)h=1;
       const px=dx-ex*h, py=dy-ey*h, pz=dz-ez*h;
-      const di=Math.sqrt(px*px+py*py+pz*pz)-r;
-      if(di<d)d=di;
+      const di=Math.sqrt(px*px+py*py+pz*pz)-rStrut[i];
+      d = useSmin ? smin(d, di, sminLocal) : (di<d ? di : d);
+    }
+    if(useBalls){
+      for(let n=0;n<nodeCount;n++){
+        const dx=qx-nodeX[n], dy=qy-nodeY[n], dz=qz-nodeZ[n];
+        const di=Math.sqrt(dx*dx+dy*dy+dz*dz)-ballLocal;
+        d = useSmin ? smin(d, di, sminLocal) : (di<d ? di : d);
+      }
     }
     return d;
   }
@@ -2641,8 +2924,8 @@ function buildBeamSDF(json, pruneCtx){
   // ── Un-pruned path (preview, cube-mode export, or shape-mode without trim)
   if(!pruneCtx){
     return p=>{
-      // Map world point to cell-local q in [-1,+1]
-      const lx=p[0]*W2L, ly=p[1]*W2L, lz=p[2]*W2L;
+      // Map world point to cell-local q in [-1,+1] (per-axis under new schema)
+      const lx=p[0]*W2Lx, ly=p[1]*W2Ly, lz=p[2]*W2Lz;
       // Wrap to single cell.
       const qx=((lx+1)-2*Math.floor((lx+1)/2))-1;
       const qy=((ly+1)-2*Math.floor((ly+1)/2))-1;
@@ -2683,14 +2966,14 @@ function buildBeamSDF(json, pruneCtx){
         if(px_&&py_&&pz_) d=Math.min(d,capsuleUnion(qx+2,qy+2,qz+2));
       }
 
-      return d*L2W;
+      return d*L2Wgeo;
     };
   }
 
   // ── Pruned path (shape-mode export with trim-to-nodes) ─────────────────
   // Same neighbor-halo logic, but each capsuleUnion call consults the
   // appropriate tile's mask. Tile index for the current p_world matches
-  // the wrap math: tile_x = floor((lx+1)/2) where lx = p_world*cellScale/5.
+  // the wrap math: tile_x = floor((lx+1)/2) where lx = p_world*W2Lx (per axis).
   const {mask, tXMin, tYMin, tZMin, NX, NY, NZ}=pruneCtx;
   const NXY=NX*NY;
   // Compute mask base offset (in bytes) for tile (tx,ty,tz). Returns -1 if
@@ -2701,7 +2984,7 @@ function buildBeamSDF(json, pruneCtx){
     return ((iz*NY+iy)*NX+ix)*N;
   }
   return p=>{
-    const lx=p[0]*W2L, ly=p[1]*W2L, lz=p[2]*W2L;
+    const lx=p[0]*W2Lx, ly=p[1]*W2Ly, lz=p[2]*W2Lz;
     const qx=((lx+1)-2*Math.floor((lx+1)/2))-1;
     const qy=((ly+1)-2*Math.floor((ly+1)/2))-1;
     const qz=((lz+1)-2*Math.floor((lz+1)/2))-1;
@@ -2748,7 +3031,7 @@ function buildBeamSDF(json, pruneCtx){
       if(px_&&py_&&pz_) d=Math.min(d,capsuleUnionMasked(qx+2,qy+2,qz+2,tileBaseOf(tx+1,ty+1,tz+1),mask));
     }
 
-    return d*L2W;
+    return d*L2Wgeo;
   };
 }
 // ── HU domain-spanning helpers (shape mode) ──────────────────────────────────
@@ -3159,7 +3442,10 @@ self.onmessage=async function(e){
       }else if(fam==='noise'){
         const surf=json.surface,geom=json.geometry||{};
         const freq=surf.frequency||.3,ex=surf.scale_x??1,ey=surf.scale_y??1,ez=surf.scale_z??1;
-        evalRaw=p=>evalNoiseRaw(surf,p[0]*SCALE2*freq*ex,p[1]*SCALE2*freq*ey,p[2]*SCALE2*freq*ez);
+        // v0.5.0-rc27: noise input = world * freq * scale (was world * SCALE2 * freq * scale;
+        // SCALE2 = 5/π applied to world coords was double-scaling — see buildNoiseSDF
+        // header comment for full rationale).
+        evalRaw=p=>evalNoiseRaw(surf,p[0]*freq*ex,p[1]*freq*ey,p[2]*freq*ez);
         topology={bakeRaw:true,halfW:surf.half_width??0.15,center:surf.center??0,
           topoMode:geom.mode||'sheet',halfInvert:geom.half_invert||false};
       }
@@ -3180,8 +3466,20 @@ self.onmessage=async function(e){
         }
         const halfR=Math.max((maxV-minV)*0.5,0.001);
         const lip=Math.max(maxG/halfR*1.1,0.05);
+        // v0.5.0-rc27: pad noise family's empirical [minV, maxV] by ±5% to match
+        // the canonical F13LD.noise tool's prepass convention (its _runPrepass
+        // applies the same range×0.05 padding). Grain family computes bounds
+        // from cosine sums via a different convention and is left unpadded.
+        // The padded values are what get cached as recipe._previewFieldMin/Max
+        // on the main thread, used by buildSDF's normOverride path on export.
+        let postMin=minV, postMax=maxV;
+        if(fam==='noise'){
+          const range=maxV-minV;
+          postMin=minV-range*0.05;
+          postMax=maxV+range*0.05;
+        }
         const buf=field.buffer;
-        self.postMessage({type:'baked',field:buf,N,fieldMin:minV,fieldMax:maxV,
+        self.postMessage({type:'baked',field:buf,N,fieldMin:postMin,fieldMax:postMax,
           lipschitz:lip,worldMin:wMin,worldMax:wMax,isPeriodic:false,topology},[buf]);
         return;
       }
@@ -3342,9 +3640,38 @@ self.onmessage=async function(e){
         let activeSdfFn = sdfFn;
         if(d.recipe.family==='beam' && d.pruneToNodes){
           const beamsArr = d.recipe.json.beams || [];
-          const radiusLocal = (d.recipe.json.geometry && d.recipe.json.geometry.radius) || 0.1;
-          const cellScaleP = (d.recipe.json.geometry && d.recipe.json.geometry.cell_scale) || 1;
-          const radiusMm = radiusLocal * d.cellSizeMm / 2;
+          const geomP = d.recipe.json.geometry || {};
+          // v0.5.0-rc22/25: schema-aware radius and pitch resolution.
+          // New schema (sxyzP resolved from scale_xyz OR cell_scale_x/y/z,
+          // plus cell): radii in mm directly, per-axis pitch.
+          // Old schema: scalar radius cell-local, scalar pitch.
+          let sxyzP=null;
+          if(Array.isArray(geomP.scale_xyz)&&geomP.scale_xyz.length===3
+             &&isFinite(geomP.scale_xyz[0])&&isFinite(geomP.scale_xyz[1])&&isFinite(geomP.scale_xyz[2])
+             &&geomP.scale_xyz[0]>0&&geomP.scale_xyz[1]>0&&geomP.scale_xyz[2]>0){
+            sxyzP=geomP.scale_xyz;
+          } else if(typeof geomP.cell_scale_x==='number'&&geomP.cell_scale_x>0
+                 && typeof geomP.cell_scale_y==='number'&&geomP.cell_scale_y>0
+                 && typeof geomP.cell_scale_z==='number'&&geomP.cell_scale_z>0){
+            sxyzP=[geomP.cell_scale_x, geomP.cell_scale_y, geomP.cell_scale_z];
+          }
+          const cellMmP = geomP.cell;
+          const hasScaleXYZP = sxyzP!==null;
+          const hasCellP = (typeof cellMmP==='number')&&isFinite(cellMmP)&&cellMmP>0;
+          const isNewP = hasScaleXYZP && hasCellP;
+          // Effective worst-case radius in mm — used for inset auto-clamping.
+          // New schema: max over per-axis radii (already in mm).
+          // Old schema: scalar radius (cell-local) × cellSizeMm/2.
+          let radiusMm;
+          if(isNewP && typeof geomP.radius_x==='number'){
+            const rxP = geomP.radius_x;
+            const ryP = (typeof geomP.radius_y==='number') ? geomP.radius_y : rxP;
+            const rzP = (typeof geomP.radius_z==='number') ? geomP.radius_z : rxP;
+            radiusMm = Math.max(rxP, ryP, rzP);
+          } else {
+            const radiusLocal = (typeof geomP.radius==='number' && geomP.radius>=0) ? geomP.radius : 0.1;
+            radiusMm = radiusLocal * d.cellSizeMm / 2;
+          }
           // v0.5.0-rc18: auto-clamp the inset so it's never tighter than the
           // shape SDF discretization. Trilinear interpolation can mis-classify
           // endpoints by up to ~½ voxel; using full voxel size as the floor
@@ -3358,10 +3685,19 @@ self.onmessage=async function(e){
           const insetReason = (insetMm===radiusMm) ? 'radius'
                              : ('voxel × '+insetMult.toFixed(1)+' = '+insetCandidate.toFixed(3)+' mm');
           self.postMessage({type:'progress',stage:'trim-to-nodes inset: '+insetMm.toFixed(3)+' mm ('+insetReason+', voxel='+voxelSizeMm.toFixed(3)+' mm)'});
-          // Lattice mm pitch: one cell spans cellSizeMm/cellScaleP mm in
-          // shape-mm space (default cellScaleP=1 → cellSizeMm per cell).
-          const cellPitchMm = d.cellSizeMm / cellScaleP;
-          // Tile centers in lattice-mm sit at integer multiples of cellPitchMm
+          // Lattice mm pitch per axis — must match buildBeamSDF's W2Lx/y/z math.
+          // New schema: pitchMm_i = cellSizeMm × scale_xyz[i] / cell.
+          // Old schema: pitchMm = cellSizeMm / cell_scale (scalar, isotropic).
+          let pitchMmX, pitchMmY, pitchMmZ;
+          if(isNewP){
+            pitchMmX = d.cellSizeMm * sxyzP[0] / cellMmP;
+            pitchMmY = d.cellSizeMm * sxyzP[1] / cellMmP;
+            pitchMmZ = d.cellSizeMm * sxyzP[2] / cellMmP;
+          } else {
+            const cellScaleP = (typeof geomP.cell_scale==='number'&&geomP.cell_scale>0) ? geomP.cell_scale : 1;
+            pitchMmX = pitchMmY = pitchMmZ = d.cellSizeMm / cellScaleP;
+          }
+          // Tile centers in lattice-mm sit at integer multiples of pitchMm
           // (origin-centered, matching the wrap math: tile 0 has center at 0).
           // Tile range covering bbox in lattice-mm. We need to invert the
           // structure transform on the bbox corners to see what lattice-mm
@@ -3388,14 +3724,14 @@ self.onmessage=async function(e){
             if(lmmY<lminY)lminY=lmmY; if(lmmY>lmaxY)lmaxY=lmmY;
             if(lmmZ<lminZ)lminZ=lmmZ; if(lmmZ>lmaxZ)lmaxZ=lmmZ;
           }
-          // Tile_x = round(lattice_mm_x / cellPitchMm). Range floor/ceil
+          // Tile_x = round(lattice_mm_x / pitchMmX). Range floor/ceil
           // with one-tile padding so neighbor halo lookups don't miss edges.
-          const tXMin=Math.floor(lminX/cellPitchMm-0.5)-1;
-          const tXMax=Math.floor(lmaxX/cellPitchMm+0.5)+1;
-          const tYMin=Math.floor(lminY/cellPitchMm-0.5)-1;
-          const tYMax=Math.floor(lmaxY/cellPitchMm+0.5)+1;
-          const tZMin=Math.floor(lminZ/cellPitchMm-0.5)-1;
-          const tZMax=Math.floor(lmaxZ/cellPitchMm+0.5)+1;
+          const tXMin=Math.floor(lminX/pitchMmX-0.5)-1;
+          const tXMax=Math.floor(lmaxX/pitchMmX+0.5)+1;
+          const tYMin=Math.floor(lminY/pitchMmY-0.5)-1;
+          const tYMax=Math.floor(lmaxY/pitchMmY+0.5)+1;
+          const tZMin=Math.floor(lminZ/pitchMmZ-0.5)-1;
+          const tZMax=Math.floor(lmaxZ/pitchMmZ+0.5)+1;
           const NX=tXMax-tXMin+1, NY=tYMax-tYMin+1, NZ=tZMax-tZMin+1;
           const BC=beamsArr.length;
           const totalTiles=NX*NY*NZ;
@@ -3419,28 +3755,28 @@ self.onmessage=async function(e){
               const sz=xfRot[6]*lx+xfRot[7]*ly+xfRot[8]*lz;
               return [sx+xfPivotMmX+xfOffMmX, sy+xfPivotMmY+xfOffMmY, sz+xfPivotMmZ+xfOffMmZ];
             };
-            const halfPitch=cellPitchMm*0.5;
+            const halfPitchX=pitchMmX*0.5, halfPitchY=pitchMmY*0.5, halfPitchZ=pitchMmZ*0.5;
             let kept=0;
             for(let iz=0;iz<NZ;iz++){
               const tz=iz+tZMin;
-              const cz_lattice=tz*cellPitchMm; // tile center in lattice-mm
+              const cz_lattice=tz*pitchMmZ; // tile center in lattice-mm
               for(let iy=0;iy<NY;iy++){
                 const ty=iy+tYMin;
-                const cy_lattice=ty*cellPitchMm;
+                const cy_lattice=ty*pitchMmY;
                 for(let ix=0;ix<NX;ix++){
                   const tx=ix+tXMin;
-                  const cx_lattice=tx*cellPitchMm;
+                  const cx_lattice=tx*pitchMmX;
                   const tileBase=((iz*NY+iy)*NX+ix)*BC;
                   for(let bi=0;bi<BC;bi++){
                     const b=beamsArr[bi];
-                    // Endpoint A in lattice-mm (cell-local [-1,+1] → mm)
-                    const amx=cx_lattice+b[0]*halfPitch;
-                    const amy=cy_lattice+b[1]*halfPitch;
-                    const amz=cz_lattice+b[2]*halfPitch;
+                    // Endpoint A in lattice-mm (cell-local [-1,+1] → mm), per-axis pitch
+                    const amx=cx_lattice+b[0]*halfPitchX;
+                    const amy=cy_lattice+b[1]*halfPitchY;
+                    const amz=cz_lattice+b[2]*halfPitchZ;
                     // Endpoint B in lattice-mm
-                    const bmx=cx_lattice+b[3]*halfPitch;
-                    const bmy=cy_lattice+b[4]*halfPitch;
-                    const bmz=cz_lattice+b[5]*halfPitch;
+                    const bmx=cx_lattice+b[3]*halfPitchX;
+                    const bmy=cy_lattice+b[4]*halfPitchY;
+                    const bmz=cz_lattice+b[5]*halfPitchZ;
                     // Forward-transform to shape-mm
                     const aShape=fwd(amx,amy,amz);
                     const bShape=fwd(bmx,bmy,bmz);
@@ -3845,6 +4181,59 @@ function computeTPMSBakeBounds(recipe){
   return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
 }
 
+// v0.5.0-rc26: Beam analog of computeTPMSBakeBounds.
+//
+// Anisotropic beam cells (scale_xyz != isotropic) need per-axis bake spans
+// matching the cell period in world units, or GL_REPEAT introduces seams
+// at the cube faces in shape mode. Cube mode is unaffected (camera stays
+// inside [-5,+5]) and export is unaffected (Manifold.levelSet calls the
+// SDF closure directly with no texture wrap involved).
+//
+// The cellScale used here must mirror buildBeamSDF's schema resolution:
+//   New schema (sxyz + cell present): cellScale_i = cell / sxyz[i]
+//   Legacy schema: cellScale_i = cell_scale (scalar, isotropic)
+// where sxyz comes from either geometry.scale_xyz (canonical) or
+// geometry.cell_scale_x/y/z (sweep's actual emission — same names as TPMS
+// but with mm semantics; the disambiguator is the presence of geometry.cell).
+//
+// Note: TPMS's cell_scale_x is a unitless frequency multiplier (already a
+// cellScale), but beam's cell_scale_x is a per-axis mm size (needs
+// cell/cell_scale_x to derive cellScale). That's why this can't reuse
+// computeTPMSBakeBounds directly.
+function computeBeamBakeBounds(recipe){
+  const g=recipe?.json?.geometry||{};
+  // Schema-resolved sxyz (per-axis mm cell size).
+  let sxyz=null;
+  if(Array.isArray(g.scale_xyz)&&g.scale_xyz.length===3
+     &&isFinite(g.scale_xyz[0])&&isFinite(g.scale_xyz[1])&&isFinite(g.scale_xyz[2])
+     &&g.scale_xyz[0]>0&&g.scale_xyz[1]>0&&g.scale_xyz[2]>0){
+    sxyz=g.scale_xyz;
+  } else if(typeof g.cell_scale_x==='number'&&g.cell_scale_x>0
+         && typeof g.cell_scale_y==='number'&&g.cell_scale_y>0
+         && typeof g.cell_scale_z==='number'&&g.cell_scale_z>0){
+    sxyz=[g.cell_scale_x, g.cell_scale_y, g.cell_scale_z];
+  }
+  const cellMm=g.cell;
+  const hasCell=(typeof cellMm==='number')&&isFinite(cellMm)&&cellMm>0;
+  // Derive per-axis cellScale (cells per world half-span).
+  let csX, csY, csZ;
+  if(sxyz!==null && hasCell){
+    csX = cellMm / sxyz[0];
+    csY = cellMm / sxyz[1];
+    csZ = cellMm / sxyz[2];
+  } else {
+    const cs = (typeof g.cell_scale==='number'&&g.cell_scale>0) ? g.cell_scale : 1;
+    csX = csY = csZ = cs;
+  }
+  if(!(csX>0)||!(csY>0)||!(csZ>0))
+    return {wMin:[-5,-5,-5],wMax:[5,5,5]};
+  const Kx=Math.max(1,Math.round(csX));
+  const Ky=Math.max(1,Math.round(csY));
+  const Kz=Math.max(1,Math.round(csZ));
+  const halfX=5*Kx/csX, halfY=5*Ky/csY, halfZ=5*Kz/csZ;
+  return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
+}
+
 async function triggerPreview(quality){
   if(!currentRecipe||!rm)return;
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
@@ -3922,14 +4311,18 @@ async function triggerPreview(quality){
     return;
   }
   // Periodic or no shape: bake one cell with tiling
-  // For TPMS: use integer-period bake bounds per axis when cell_scale_x/y/z
-  // is non-integer (anisotropic-tiling spec v1.0). Eliminates GL_REPEAT seam
-  // artifacts that appear in the preview when bake span isn't an integer
-  // multiple of the field period. Other families (noise, grain, beam) keep
-  // [-5,5]³ — they don't have the same period-vs-bake-span constraint.
+  // For TPMS and beam: use integer-period bake bounds per axis when the
+  // cell is anisotropic. Eliminates GL_REPEAT seam artifacts that appear in
+  // shape-mode preview when bake span isn't an integer multiple of the cell
+  // period along an axis. Noise and grain don't have a periodic cell with a
+  // well-defined period, so they keep [-5,5]³.
   let pMin=[-5,-5,-5], pMax=[5,5,5];
   if(currentRecipe.family==='tpms'){
     const b=computeTPMSBakeBounds(currentRecipe);
+    pMin=b.wMin; pMax=b.wMax;
+    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+  } else if(currentRecipe.family==='beam'){
+    const b=computeBeamBakeBounds(currentRecipe);
     pMin=b.wMin; pMax=b.wMax;
     bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
   }
@@ -4078,21 +4471,81 @@ Object.defineProperty(window,'currentOversample',{get:()=>currentOversample});
 
 // ── Recipe router ─────────────────────────────────────────────────────────
 function routeRecipe(json){
-  // v0.5.0-rc16: beam family. Detected by meta.tool ('beam' for presets,
-  // 'beam-builder' for custom cells). Both export shapes carry beams[]
-  // (beam tool ≥ v0.2.1) and geometry.{radius,cell}; presets also have
-  // topology.{name,beam_count}, custom cells have cell.{name,beam_count}.
+  // v0.5.0-rc23: F13LD.sweep emits a unified meta.tool='f13ld.sweep' across
+  // ALL families (tpms, beam, grain, noise), so meta.tool cannot be used as
+  // a family discriminator for sweep recipes. Sweep does emit a top-level
+  // `family` field, which we now check first. Falls through to the legacy
+  // structural detection (surface.type / field.type / meta.tool='beam') for
+  // recipes from older tools that don't set the family field.
+  //
+  // Order of detection:
+  //   1. json.family set → trust it (sweep & future modern emitters)
+  //   2. meta.tool === 'beam' or 'beam-builder' → legacy F13LD.beam
+  //   3. field.type / surface.type → legacy TPMS / grain / noise
+  //   4. structural fallback → beams[]+geometry → beam (last resort)
+  const verStr = (json.meta&&(json.meta.tool_version||json.meta.version))||'(unknown)';
+  const toolStr = (json.meta&&json.meta.tool)||'?';
+
+  // ── 1. Explicit family field ─────────────────────────────────────────
+  if(typeof json.family === 'string'){
+    const fam=json.family;
+    if(fam==='beam'){
+      if(!Array.isArray(json.beams)||json.beams.length===0){
+        throw new Error('Beam recipe is missing beams[] array (meta.tool='+toolStr+', v'+verStr+'). Re-export with the beam endpoint list included.');
+      }
+      const sub=(json.topology&&json.topology.name)||(json.cell&&json.cell.name)||'custom';
+      return{family:'beam',subtype:sub,json};
+    }
+    if(fam==='tpms'){
+      const sub=(json.surface&&json.surface.preset)||(json.geometry&&json.geometry.mode)||'custom';
+      return{family:'tpms',subtype:sub,json};
+    }
+    if(fam==='grain'){
+      const ft=(json.field&&json.field.type)||'unknown';
+      return{family:'grain',subtype:ft,json};
+    }
+    if(fam==='noise'){
+      const nt=(json.surface&&json.surface.noise_type)||'simplex';
+      return{family:'noise',subtype:nt,json};
+    }
+    // Unknown family value — fall through to legacy detection rather than
+    // hard-erroring, so an unfamiliar family doesn't lock out otherwise
+    // valid recipes.
+  }
+
+  // ── 2. Legacy F13LD.beam tool (predates sweep) ────────────────────────
   if(json.meta&&(json.meta.tool==='beam'||json.meta.tool==='beam-builder')){
     if(!Array.isArray(json.beams)||json.beams.length===0){
-      const v=json.meta.version||'(unknown)';
-      throw new Error('Beam recipe is missing beams[] array (was exported from F13LD.beam v'+v+'). Re-export from F13LD.beam v0.2.1 or newer — preset exports now include the beam endpoint list.');
+      throw new Error('Beam recipe is missing beams[] array (meta.tool='+toolStr+', v'+verStr+'). Re-export from F13LD.beam v0.2.1 or newer — preset exports now include the beam endpoint list.');
     }
     const sub=(json.topology&&json.topology.name)||(json.cell&&json.cell.name)||'custom';
     return{family:'beam',subtype:sub,json};
   }
+
+  // ── 3. Legacy structural detection ───────────────────────────────────
   if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform','reactiondiffusion'].includes(ft))return{family:'grain',subtype:ft,json};}
   if(json.surface&&json.surface.type){const st=json.surface.type;if(st==='noise')return{family:'noise',subtype:json.surface.noise_type||'simplex',json};if(st==='terms'||st==='raw_preset')return{family:'tpms',subtype:json.surface.preset||json.geometry?.mode||'custom',json};}
-  throw new Error('Unrecognized recipe format — expected surface.type ("noise"/"terms"), field.type ("spinodoid"/"gaussian"/"hyperuniform"), or meta.tool ("beam"/"beam-builder").');
+
+  // ── 4. Structural beam fallback — last resort ────────────────────────
+  // Only reached when no family field, no known meta.tool, no field.type,
+  // no surface.type. If beams[] is well-formed AND geometry looks lattice-y,
+  // accept as beam. This future-proofs against any tool that emits beams
+  // without setting family or a known meta.tool.
+  if(Array.isArray(json.beams) && json.beams.length>0){
+    const b0=json.beams[0];
+    if(Array.isArray(b0) && b0.length>=6 && typeof b0[0]==='number' && typeof b0[5]==='number'){
+      const g=json.geometry||{};
+      const hasLatticeGeom = (Array.isArray(g.scale_xyz)&&g.scale_xyz.length===3)
+        || (typeof g.cell==='number'&&g.cell>0)
+        || (typeof g.radius==='number'&&g.radius>0);
+      if(hasLatticeGeom){
+        const sub=(json.topology&&json.topology.name)||(json.cell&&json.cell.name)||'custom';
+        return{family:'beam',subtype:sub,json};
+      }
+    }
+  }
+
+  throw new Error('Unrecognized recipe format — expected top-level "family" field, surface.type ("noise"/"terms"), field.type ("spinodoid"/"gaussian"/"hyperuniform"), or meta.tool ("beam"/"beam-builder").');
 }
 
 // ── Summary renderers ─────────────────────────────────────────────────────
@@ -4128,7 +4581,7 @@ function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.js
   const hasPerAxis=(cx!=null||cy!=null||cz!=null);
   const aniso=hasPerAxis&&!(cx===cy&&cy===cz);
   const cellLbl=aniso?`${cx??g.cell_scale}·${cy??g.cell_scale}·${cz??g.cell_scale}`:g.cell_scale;
-  return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',cellLbl)}${card('wall thickness',g.wall_thickness)}${card('pipe radius',g.pipe_radius)}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
+  return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',cellLbl)}${card('wall thickness',g.wall_thickness)}${g.shell_normalize?card('shell-normalize','on'):''}${card('pipe radius',g.pipe_radius)}${g.pi_normalize?card('pi-normalize','on'):''}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
 function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
   if(f.type==='reactiondiffusion'){
     // v0.5.0-rc15: system-aware labels. Wire fields rd_F / rd_k mean F/k for
@@ -4166,6 +4619,38 @@ function buildBeamSummary(r){
   const beamCount=(j.topology&&j.topology.beam_count)||(j.cell&&j.cell.beam_count)||(j.beams?j.beams.length:'?');
   const isCustom=j.meta&&j.meta.tool==='beam-builder';
   const toGPa=v=>v!=null?(v/1000).toFixed(2):null;
+  // v0.5.0-rc22: anisotropic schema display.
+  // - scale_xyz [sx,sy,sz] mm shows per-axis cell dims when present;
+  //   omits the scalar "cell" line in that case to avoid redundancy.
+  // - radius_x/y/z (mm) shows per-axis radii when distinct; otherwise scalar.
+  // - node_smoothing_k and node_ball_radius shown only when > 0.
+  // v0.5.0-rc25: accept cell_scale_x/y/z as scale_xyz fallback (sweep beam
+  // recipes use this field name; see schema notes in buildBeamSDF).
+  let sxyz=null;
+  if(Array.isArray(g.scale_xyz)&&g.scale_xyz.length===3&&isFinite(g.scale_xyz[0])){
+    sxyz=g.scale_xyz;
+  } else if(typeof g.cell_scale_x==='number'&&typeof g.cell_scale_y==='number'&&typeof g.cell_scale_z==='number'){
+    sxyz=[g.cell_scale_x, g.cell_scale_y, g.cell_scale_z];
+  }
+  const hasScaleXYZ=sxyz!==null;
+  const aniso=hasScaleXYZ&&!(Math.abs(sxyz[0]-sxyz[1])<1e-9&&Math.abs(sxyz[1]-sxyz[2])<1e-9);
+  const cellRow=hasScaleXYZ
+    ? (aniso
+        ? card('cell',`${sxyz[0].toFixed(3)}·${sxyz[1].toFixed(3)}·${sxyz[2].toFixed(3)}`,'mm')
+        : card('cell',sxyz[0].toFixed(3),'mm'))
+    : (g.cell!=null?card('cell',g.cell,'mm'):'');
+  const hasRadXYZ=(typeof g.radius_x==='number');
+  const radAniso=hasRadXYZ&&(g.radius_y!=null||g.radius_z!=null)&&
+    !(Math.abs((g.radius_y??g.radius_x)-g.radius_x)<1e-9&&Math.abs((g.radius_z??g.radius_x)-g.radius_x)<1e-9);
+  const radRow=hasRadXYZ
+    ? (radAniso
+        ? card('beam radius',`${g.radius_x.toFixed(4)}·${(g.radius_y??g.radius_x).toFixed(4)}·${(g.radius_z??g.radius_x).toFixed(4)}`,'mm')
+        : card('beam radius',g.radius_x.toFixed(4),'mm'))
+    : card('beam radius',g.radius);
+  const sminRow=(typeof g.node_smoothing_k==='number'&&g.node_smoothing_k>0)
+    ? card('node smoothing',g.node_smoothing_k.toFixed(4),'mm') : '';
+  const ballRow=(typeof g.node_ball_radius==='number'&&g.node_ball_radius>0)
+    ? card('node ball',g.node_ball_radius.toFixed(4),'mm') : '';
   const homoBlock=(ec.Ex!=null||an.zener_A!=null)?
     `<hr class="div"><div class="sec-lbl">homogenization &middot; DSM-PBC frame</div>
      <div class="homo-row">${hchip('VF',m.relative_density_pct!=null?m.relative_density_pct.toFixed(1):null,'%')}${hchip('Ex',toGPa(ec.Ex),'GPa')}${hchip('Ey',toGPa(ec.Ey),'GPa')}${hchip('Ez',toGPa(ec.Ez),'GPa')}${hchip('Gxy',toGPa(ec.Gxy),'GPa')}${hchip('A',an.zener_A!=null?an.zener_A.toFixed(2):null,'')}${hchip('νxy',nu.nuxy!=null?nu.nuxy.toFixed(3):null,'')}</div>`
@@ -4174,8 +4659,10 @@ function buildBeamSummary(r){
     <div class="meta-grid">
     ${card('topology',topoName.toUpperCase())}
     ${card('beam count',beamCount)}
-    ${card('beam radius',g.radius)}
-    ${card('cell',g.cell,'mm')}
+    ${radRow}
+    ${cellRow}
+    ${sminRow}
+    ${ballRow}
     ${card('relative density',m.relative_density_pct!=null?m.relative_density_pct.toFixed(2):'—','%')}
     ${an.zener_label?card('anisotropy',an.zener_label):''}
     </div>${homoBlock}${exportPanel()}`;
@@ -4230,7 +4717,16 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
   // so beam half-thickness in mm is radius*cellSizeMm/2. This is twice as
   // dense (per cell-local unit) as the wall_thickness/half_width fields,
   // which use the [-π,+π] convention via w2mm = cellSizeMm/10.
-  if(recipe.family==='beam' && g.radius != null && g.radius > 0) return g.radius * cellSizeMm / 2;
+  // v0.5.0-rc22: new schema (radius_xyz in mm directly) takes the per-axis
+  // minimum as the thinnest feature — already in mm, no conversion needed.
+  if(recipe.family==='beam'){
+    if(typeof g.radius_x==='number' && g.radius_x > 0){
+      const ry = (typeof g.radius_y==='number' && g.radius_y>0) ? g.radius_y : g.radius_x;
+      const rz = (typeof g.radius_z==='number' && g.radius_z>0) ? g.radius_z : g.radius_x;
+      return Math.min(g.radius_x, ry, rz);
+    }
+    if(g.radius != null && g.radius > 0) return g.radius * cellSizeMm / 2;
+  }
   // TPMS shell (wall_thickness is half-thickness: SDF = wall_thickness - |φ|)
   if(g.wall_thickness != null && g.wall_thickness > 0) return g.wall_thickness * w2mm;
   // PI-TPMS pipe filaments (pipe_radius is the filament half-thickness)
@@ -4261,8 +4757,17 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   // of half-cell). Empirically a 0.10 radius octet ≈ 13% density, similar
   // to a 0.30 wall TPMS, so we treat radius·2 as comparable to half_width·2
   // in the existing heuristic.
-  const wallFrac=recipe?.family==='beam' && g.radius!=null
-                ?Math.min(1,(g.radius*2)/0.30)
+  // v0.5.0-rc22: beam family supports either new schema (radius_x in mm)
+  // or old schema (radius cell-local). For wallFrac we use the max radius
+  // as the "wall fraction" proxy — old behavior keeps the *2 scaling because
+  // cell-local 1.0 spans half a cell; new behavior is already mm-scaled.
+  let beamWallRad = null;
+  if(recipe?.family==='beam'){
+    if(typeof g.radius_x==='number') beamWallRad = Math.max(g.radius_x, g.radius_y??g.radius_x, g.radius_z??g.radius_x);
+    else if(g.radius!=null) beamWallRad = g.radius * 2;
+  }
+  const wallFrac=beamWallRad!=null
+                ?Math.min(1, beamWallRad/0.30)
                 :g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
                 :g.half_width!=null?Math.min(1,(g.half_width*2)/0.30)
                 :g.pipe_radius!=null?Math.min(1,g.pipe_radius/0.18):0.5;
@@ -4741,6 +5246,21 @@ async function showRecipe(recipe){
   if(!_qualUserSet) currentExportQual='low';
   // Same pattern for preview render quality.
   const initialPreviewQ=_previewQualUserSet ? (rm&&rm._quality||'low') : 'low';
+  // v0.5.0-rc22: auto-default UI cellSizeMm to recipe.geometry.cell for
+  // new-schema beam recipes. The recipe's `cell` is sweep's characterized
+  // (geometric mean) cell size in mm; matching the UI to it on load shows
+  // the lattice at the absolute scale sweep designed it for. User can
+  // still adjust cellSizeMm after load to rescale; we only set on ingest.
+  if(recipe.family==='beam'){
+    const cellMm=recipe.json&&recipe.json.geometry&&recipe.json.geometry.cell;
+    if(typeof cellMm==='number'&&isFinite(cellMm)&&cellMm>0){
+      const cellInp=document.getElementById('shapeCellSizeMm');
+      if(cellInp){
+        // Format to a sensible precision for the input field. 4 sig figs.
+        cellInp.value=parseFloat(cellMm.toPrecision(4));
+      }
+    }
+  }
   dropzone.style.display='none';recipeView.style.display='flex';
   document.getElementById('shapeStrip').style.display='block';
   typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();

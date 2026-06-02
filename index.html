@@ -95,6 +95,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .exp-report{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
 .exp-chip{background:#0e0e1a;border:.5px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .exp-chip b{color:var(--text);font-weight:500}
+.exp-chip-warn{background:#2a1f0a;border-color:#7a5a14;color:#f0c674;flex-basis:100%}
+.exp-chip-warn b{color:#f0c674}
 .exp-err{font-size:11px;color:#ffb4b4;margin-top:6px;line-height:1.5}
 
 /* ── Shape import strip ─────────────────────────────────────────────────── */
@@ -118,6 +120,79 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 #shapeInput{display:none}
 /* loaded card */
 #shapeCard{display:none;padding:7px 12px;border:.5px solid var(--border);border-top:none;background:var(--panel);border-radius:0}
+/* rc2: card row container (replaces #shapeCard as the host for body cards) */
+#shapeCardRow{display:none;gap:6px;padding:6px 6px;border:.5px solid var(--border);border-top:none;background:var(--panel);overflow-x:auto;align-items:stretch}
+/* Individual body card · shrink-then-scroll via flex 1 1 0 with min-width floor */
+.shapeCard{flex:1 1 0;min-width:140px;max-width:260px;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;background:#0e0e1a;cursor:pointer;transition:border-color .12s,background .12s;display:flex;flex-direction:column;gap:4px;position:relative}
+.shapeCard:hover{border-color:#3a4a5a}
+.shapeCard.active{border-color:var(--cyan);background:rgba(34,211,238,.04)}
+.shapeCard.active::after{content:'';position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--cyan)}
+.shapeCard.loading{border-color:var(--amber);opacity:.85}
+.shapeCard.err{border-color:var(--fail)}
+.shapeCard .sc-name{font-size:13px;line-height:1.2;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}
+.shapeCard .sc-chips{display:flex;gap:3px;flex-wrap:wrap}
+.shapeCard .sc-chip{font-size:10px;padding:1px 5px}
+.shapeCard .sc-status{font-size:10px;margin-top:2px;line-height:1.2}
+.shapeCard .sc-x{position:absolute;top:4px;right:6px;font-size:11px;color:var(--muted);background:transparent;border:none;cursor:pointer;padding:0 3px;line-height:1;font-family:inherit;opacity:0;transition:opacity .12s,color .1s}
+.shapeCard:hover .sc-x{opacity:1}
+.shapeCard .sc-x:hover{color:#ffb4b4}
+/* rc3.6: per-card control strip (visibility + palette) */
+.shapeCard .sc-card-controls{display:flex;gap:4px;align-items:center;margin-top:1px}
+.shapeCard .sc-vis-btn,.shapeCard .sc-palette-btn{background:transparent;border:0.5px solid var(--border);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:inherit;font-size:11px;line-height:1.1;color:var(--muted);transition:border-color .12s,color .12s,background .12s;display:inline-flex;align-items:center;gap:4px}
+.shapeCard .sc-vis-btn:hover,.shapeCard .sc-palette-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.shapeCard .sc-icon-muted{opacity:0.4}
+.shapeCard .sc-icon-muted:hover{opacity:1}
+.shapeCard .sc-palette-swatch{display:inline-block;width:10px;height:10px;border-radius:50%;border:0.5px solid rgba(255,255,255,0.15)}
+/* rc3.6: palette popover */
+.palettePopover{min-width:auto;padding:6px}
+.palettePopover .pp-grid{display:grid;grid-template-columns:repeat(4,24px);gap:5px}
+.palettePopover .pp-swatch{width:24px;height:24px;border-radius:4px;border:0.5px solid;cursor:pointer;font-family:inherit;font-size:13px;line-height:1;color:var(--muted);padding:0;display:flex;align-items:center;justify-content:center;transition:transform .08s,border-color .12s}
+.palettePopover .pp-swatch:hover{transform:scale(1.1);border-color:var(--cyan)}
+.palettePopover .pp-swatch.current{border-width:1px;box-shadow:0 0 0 1px rgba(34,211,238,0.4)}
+/* "Add another body" tile · shown when bodies.size < 8 */
+.shapeCard-add{flex:0 0 110px;min-width:110px;padding:7px 10px;border:.5px dashed var(--border);border-radius:6px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:border-color .12s,color .12s;color:var(--muted)}
+.shapeCard-add:hover{border-color:var(--cyan);color:var(--cyan)}
+.shapeCard-add.disabled{opacity:.4;cursor:not-allowed;border-style:dotted}
+.shapeCard-add.disabled:hover{border-color:var(--border);color:var(--muted)}
+.shapeCard-add .sca-icon{font-size:18px;line-height:1;opacity:.6}
+.shapeCard-add .sca-lbl{font-size:10px;letter-spacing:.06em}
+.shapeCard-add .sca-cap{font-size:9px;color:var(--muted);opacity:.7}
+/* Cap toast — transient message when drop rejected at 8-body cap */
+#capToast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(245,158,11,.15);border:.5px solid var(--amber);border-radius:6px;padding:8px 14px;font-size:12px;color:var(--amber);z-index:1000;pointer-events:none;opacity:0;transition:opacity .25s}
+#capToast.show{opacity:1}
+/* rc2.5: Recipe library row — sits below #shapeCardRow. Horizontal chip strip. */
+#recipeLibraryRow{display:none;gap:6px;padding:6px 6px;border:.5px solid var(--border);border-top:none;background:var(--panel);overflow-x:auto;align-items:stretch}
+.libraryChip{flex:0 0 auto;min-width:120px;max-width:200px;padding:5px 8px;border:.5px solid var(--border);border-radius:6px;background:#0e0e1a;cursor:pointer;transition:border-color .12s,background .12s;display:flex;flex-direction:column;gap:2px;position:relative}
+.libraryChip:hover{border-color:#3a4a5a}
+.libraryChip .lc-row{display:flex;align-items:center;gap:6px}
+.libraryChip .lc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.libraryChip .lc-name{font-size:11px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;padding-right:12px}
+.libraryChip .lc-usage{font-size:9px;color:var(--muted);margin-left:13px}
+.libraryChip .lc-x{position:absolute;top:3px;right:5px;font-size:10px;color:var(--muted);background:transparent;border:none;cursor:pointer;padding:0 3px;line-height:1;font-family:inherit;opacity:0;transition:opacity .12s,color .1s}
+.libraryChip:hover .lc-x{opacity:1}
+.libraryChip .lc-x:hover{color:#ffb4b4}
+.libraryChip-add{flex:0 0 80px;min-width:80px;padding:5px 8px;border:.5px dashed var(--border);border-radius:6px;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;transition:border-color .12s,color .12s;color:var(--muted)}
+.libraryChip-add:hover{border-color:var(--cyan);color:var(--cyan)}
+.libraryChip-add.disabled{opacity:.4;cursor:not-allowed;border-style:dotted}
+.libraryChip-add .lca-icon{font-size:14px;line-height:1;opacity:.6}
+.libraryChip-add .lca-lbl{font-size:9px;letter-spacing:.04em}
+/* rc2.5: Recipe chip on body card — doubles as dropdown trigger */
+.shapeCard-recipe{display:flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;border:.5px solid;cursor:pointer;font-size:10px;background:transparent;transition:background .1s;position:relative}
+.shapeCard-recipe:hover{filter:brightness(1.2)}
+.shapeCard-recipe .scr-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.shapeCard-recipe .scr-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.shapeCard-recipe .scr-caret{opacity:0.5;font-size:8px;margin-left:2px}
+.shapeCard-recipe.unassigned{color:var(--muted);border-color:var(--border);font-style:italic}
+/* Dropdown menu (popover anchored to recipe chip) */
+.recipeDropdown{position:absolute;z-index:200;background:#0a0a12;border:.5px solid var(--border);border-radius:6px;padding:4px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px}
+.recipeDropdown .rd-item{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--text);background:transparent;transition:background .1s}
+.recipeDropdown .rd-item:hover{background:rgba(255,255,255,0.04)}
+.recipeDropdown .rd-item.current{background:rgba(34,211,238,0.08)}
+.recipeDropdown .rd-item .rd-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.recipeDropdown .rd-item .rd-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recipeDropdown .rd-divider{height:0.5px;background:var(--border);margin:3px 6px;opacity:0.6}
+.recipeDropdown .rd-solid .rd-dot{box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.15)}
+.recipeDropdown .rd-empty{padding:8px;color:var(--muted);font-size:11px;font-style:italic;text-align:center}
 .sc-row{display:flex;align-items:center;gap:8px}
 .sc-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 .sc-dot.ok{background:var(--green)}
@@ -226,7 +301,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.5.0-rc27</span>
+      <span class="fh-version">v0.6.0</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -336,10 +411,6 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
     <div id="shapeStrip" style="display:none">
-      <div class="shapeStrip-hdr">
-        <div class="ssh-title">Bound to a shape <span class="ssh-optional">(optional)</span></div>
-        <div class="ssh-sub">Drop a CAD or mesh file below to fill it with this lattice instead of exporting a periodic cube.</div>
-      </div>
       <div id="shapeDZ">
         <span class="sdz-icon">⬡</span>
         <span class="sdz-label">Bounding Shape</span>
@@ -355,9 +426,12 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
         <input type="file" id="shapeInput" accept=".stl,.obj,.3mf,.step,.stp,.iges,.igs">
       </div>
       <div id="shapeCard"></div>
+      <div id="shapeCardRow"></div>
+      <div id="recipeLibraryRow"></div>
     </div>
     </div><!-- end previewArea+shapeStrip column -->
     <div id="panel"><div id="summaryContent"></div></div>
+    <div id="capToast"></div>
   </div>
 </div>
 
@@ -428,6 +502,621 @@ setMS('ready','ready');
 let importedShape = null;
 // importedShape = { posArr, idxArr, bbox, sdfGrid, importCenter, meta }
 let occtModule = null;
+
+// ── Mode A state (rc1 · dual-write with legacy singletons) ───────────────
+// Promotes importedShape and currentRecipe to Map-keyed collections in
+// preparation for multi-body / multi-recipe support (Mode A · Assembly).
+//
+// rc1 contract: bodies.size ≤ 1 and recipes.size ≤ 1 at all times.
+// rc2 contract: bodies.size ≤ MAX_BODIES, recipes still ≤ 1 (recipe library
+// arrives in rc2.5). setActiveBody now APPENDS a body rather than replacing
+// the prior one; the rc1 single-active invariant is removed.
+// The legacy singletons (importedShape, currentRecipe) are kept in sync via
+// the set/clear helpers below — all existing read sites are untouched.
+// rc2 will begin migrating read sites and remove the singleton-only invariant.
+const MAX_BODIES = 8;            // hard cap; drops rejected with toast at cap
+const bodies      = new Map();   // bodyId   → BodyRecord
+const recipes     = new Map();   // recipeId → RecipeRecord (rc2: ≤1 entry)
+const assignments = new Map();   // bodyId   → recipeId | null
+const bodyOrder   = [];          // display order, separate from Map iteration
+const recipeOrder = [];
+let activeBodyId   = null;       // null when no shape is loaded
+let activeRecipeId = null;       // null when no recipe is loaded
+
+// rc3.5: Scene-origin coordinate fix for multi-body assemblies.
+// The first body imported in a session captures its CAD-space bbox center
+// as sceneCenter. Every subsequent body is translated by THIS same offset,
+// preserving the spatial relationship between bodies as they sat in CAD.
+// Previously each body was self-centered, which caused all bodies to stack
+// at the world origin regardless of where they lived in CAD space.
+// Reset behavior: cleared by clearAllBodies() and resetToDropzone().
+let sceneCenter = null;          // {x,y,z} in mm; null = unset
+
+// 8-char IDs; uuid would be overkill for ≤8 bodies/recipes per session.
+function _newId(prefix){
+  const u = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID().replace(/-/g,'').slice(0,8)
+    : Math.random().toString(36).slice(2,10);
+  return prefix + '_' + u;
+}
+
+// Promote a freshly-imported shape into the bodies Map and set as active.
+// rc2: appends rather than replaces. Caller is responsible for capacity check
+// via canAddBody() before invoking. Returns the same record reference so the
+// caller can also assign it to the legacy importedShape singleton.
+function setActiveBody(record){
+  // rc3.7: only switch the active body when the scene is empty. Once an active
+  // body exists, importing a new one keeps the previous active selected — the
+  // user has framed and tuned that body, and a new import shouldn't yank focus
+  // off of it. The new body appears in the strip and renders as a non-active
+  // body (per its visibility state, default inactive-solid).
+  const wasEmpty = (activeBodyId === null);
+  // rc2: snapshot the prior active body's DOM-bound state into its record
+  // before switching active, so we don't lose its cell/xform values.
+  if(activeBodyId !== null) snapshotActiveBodyState();
+  const id = _newId('body');
+  record._id = id;  // stable handle for UI to reference
+  // rc3.6: initialize visibility and color override. Visibility default is
+  // 'inactive-solid' so non-active bodies render as opaque surfaces (less
+  // visually busy than ghost mode). colorHex is null = use family default.
+  if(record.visibility === undefined) record.visibility = VIS_DEFAULT;
+  if(record.colorHex === undefined) record.colorHex = null;
+  bodies.set(id, record);
+  bodyOrder.push(id);
+  // rc3.7: only the first body becomes active. Subsequent imports leave
+  // activeBodyId untouched.
+  if(wasEmpty){
+    activeBodyId = id;
+  }
+  // rc3.5: new bodies default to SOLID. User explicitly picks a recipe from
+  // the dropdown to convert a body to lattice. Previously bodies auto-assigned
+  // to the most-recently-loaded recipe; that workflow is now reversed since
+  // real assemblies are mostly solid with selective lattice regions, and an
+  // accidental import shouldn't materialize a scaffold the user didn't ask for.
+  assignments.set(id, SOLID_SENTINEL);
+  return record;
+}
+
+// rc2: returns true if a new body can be added (under the cap).
+function canAddBody(){ return bodies.size < MAX_BODIES; }
+
+// rc2: switch the active body to an already-imported one. Snapshots the
+// outgoing body's DOM state into its record, then restores the incoming
+// body's state to the DOM and re-binds the raymarcher.
+function switchActiveBody(newBodyId){
+  if(newBodyId === activeBodyId) return;
+  if(!bodies.has(newBodyId)) return;
+  // Snapshot outgoing body's DOM state.
+  if(activeBodyId !== null) snapshotActiveBodyState();
+  activeBodyId = newBodyId;
+  // Sync legacy singleton to the new active body for unchanged read sites.
+  importedShape = bodies.get(newBodyId);
+  // rc2.5: Pull the new body's assigned recipe into currentRecipe. This may
+  // change which recipe family is showing — if so, the preview pipeline needs
+  // a full re-init (handled by reloadActiveRecipeIntoPreview below).
+  const priorRecipeId = activeRecipeId;
+  syncCurrentRecipeFromActiveBody();
+  const recipeChanged = (activeRecipeId !== priorRecipeId);
+  // Restore new body's state to the DOM (cell size, structure transform).
+  restoreActiveBodyState();
+  // Re-bind raymarcher to new body's SDF + cell size + transform.
+  if(rm){
+    const b = bodies.get(newBodyId);
+    const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+    // rc3.5: pass assembly bbox so viewH spans all bodies, not just active.
+    const asmBbox = computeAssemblyBbox();
+    rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox);
+    if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
+    rm._dirty = true;
+  }
+  // Re-render cards + library to update active-state border + usage counts.
+  renderBodyCards();
+  renderRecipeLibrary();
+  // rc2.5: if recipe changed, do a full recipe re-init (re-bakes lattice
+  // field for the new family). Otherwise just nudge preview.
+  if(recipeChanged && currentRecipe){
+    reloadActiveRecipeIntoPreview();
+  } else if(currentRecipe){
+    triggerPreview(rm && rm._quality || 'low');
+  }
+  // rc3: refresh ghost list — the body that was active before is now a ghost,
+  // and the new active body's ghost slot needs to be freed.
+  syncGhostsToRaymarcher();
+  _assertModeAInvariants('after-switchActiveBody');
+}
+
+// rc2: snapshot the current DOM-bound state (cell size, structure transform,
+// trim settings) into the active body's record. Called before swapping active
+// and from input change listeners.
+function snapshotActiveBodyState(){
+  if(activeBodyId === null) return;
+  const b = bodies.get(activeBodyId);
+  if(!b) return;
+  const cellInp = document.getElementById('shapeCellSizeMm');
+  if(cellInp) b.cellSizeMm = parseFloat(cellInp.value) || 3;
+  // Deep copy of structureTransform so each body has independent state.
+  b.structureTransform = {
+    rotXDeg: structureTransform.rotXDeg,
+    rotYDeg: structureTransform.rotYDeg,
+    rotZDeg: structureTransform.rotZDeg,
+    spatialOffsetMmX: structureTransform.spatialOffsetMmX,
+    spatialOffsetMmY: structureTransform.spatialOffsetMmY,
+    spatialOffsetMmZ: structureTransform.spatialOffsetMmZ,
+    isoOffsetMm: structureTransform.isoOffsetMm,
+    rotMat: structureTransform.rotMat.slice()
+  };
+  const trimTg = document.getElementById('trimToNodes');
+  if(trimTg) b.trimToNodes = trimTg.checked;
+  const trimMul = document.getElementById('trimInsetMult');
+  if(trimMul) b.trimInsetMult = parseFloat(trimMul.value) || 1.0;
+}
+
+// rc2: restore the active body's saved state to the DOM inputs. Inverse of
+// snapshotActiveBodyState. Called when active body changes.
+function restoreActiveBodyState(){
+  if(activeBodyId === null) return;
+  const b = bodies.get(activeBodyId);
+  if(!b) return;
+  const cellInp = document.getElementById('shapeCellSizeMm');
+  if(cellInp && b.cellSizeMm !== undefined) cellInp.value = b.cellSizeMm;
+  if(b.structureTransform){
+    structureTransform.rotXDeg = b.structureTransform.rotXDeg;
+    structureTransform.rotYDeg = b.structureTransform.rotYDeg;
+    structureTransform.rotZDeg = b.structureTransform.rotZDeg;
+    structureTransform.spatialOffsetMmX = b.structureTransform.spatialOffsetMmX;
+    structureTransform.spatialOffsetMmY = b.structureTransform.spatialOffsetMmY;
+    structureTransform.spatialOffsetMmZ = b.structureTransform.spatialOffsetMmZ;
+    structureTransform.isoOffsetMm = b.structureTransform.isoOffsetMm;
+    structureTransform.rotMat = b.structureTransform.rotMat.slice();
+    if(typeof refreshStructureTransformUI === 'function') refreshStructureTransformUI();
+  }
+  const trimTg = document.getElementById('trimToNodes');
+  if(trimTg && b.trimToNodes !== undefined) trimTg.checked = b.trimToNodes;
+  const trimMul = document.getElementById('trimInsetMult');
+  if(trimMul && b.trimInsetMult !== undefined) trimMul.value = b.trimInsetMult;
+}
+
+// rc2: cap toast — transient warning when drop rejected at MAX_BODIES.
+let _capToastTimer = null;
+function showCapToast(msg){
+  const t = document.getElementById('capToast');
+  if(!t) return;
+  t.textContent = msg || ('Body limit reached ('+MAX_BODIES+'). Remove a body before adding another.');
+  t.classList.add('show');
+  if(_capToastTimer) clearTimeout(_capToastTimer);
+  _capToastTimer = setTimeout(()=>{ t.classList.remove('show'); }, 2800);
+}
+
+// rc2: Remove a body. If called with no argument, removes the active body.
+// If called with a bodyId, removes that specific body. If the removed body
+// was active, picks a new active (last remaining body, or null if none).
+function clearActiveBody(bodyId){
+  const targetId = (bodyId !== undefined) ? bodyId : activeBodyId;
+  if(targetId === null || targetId === undefined) return;
+  if(!bodies.has(targetId)) return;
+  const wasActive = (targetId === activeBodyId);
+  bodies.delete(targetId);
+  assignments.delete(targetId);
+  const i = bodyOrder.indexOf(targetId);
+  if(i >= 0) bodyOrder.splice(i, 1);
+  if(wasActive){
+    // Promote the last remaining body to active (most recently added),
+    // or null out if no bodies remain.
+    if(bodyOrder.length > 0){
+      activeBodyId = bodyOrder[bodyOrder.length - 1];
+      importedShape = bodies.get(activeBodyId);
+      restoreActiveBodyState();
+      // Re-bind raymarcher to new active body.
+      if(rm){
+        const b = bodies.get(activeBodyId);
+        const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+        // rc3.5: pass assembly bbox so viewH spans remaining bodies.
+        const asmBbox = computeAssemblyBbox();
+        rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox);
+        if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
+        rm._dirty = true;
+      }
+    } else {
+      activeBodyId = null;
+      importedShape = null;
+    }
+  }
+  // rc3: refresh ghost list after any removal.
+  if(typeof syncGhostsToRaymarcher === 'function') syncGhostsToRaymarcher();
+}
+
+// rc2: Clear every body — used by error recovery paths. NOT called from
+// resetToDropzone (bodies persist across recipe changes per Mode A spec).
+function clearAllBodies(){
+  bodies.clear();
+  assignments.clear();
+  bodyOrder.length = 0;
+  activeBodyId = null;
+  importedShape = null;
+  // rc3.5: clearing all bodies releases the scene-origin anchor, so the
+  // next imported body becomes the new scene origin.
+  sceneCenter = null;
+}
+
+// rc3.5: setActiveRecipe appends to the library only — no auto-assignment.
+// Previously (rc2.5) dropping a recipe assigned it to the active body and
+// back-filled unassigned bodies. With the new "bodies default to solid"
+// behavior, that auto-assign overrides the user's solid default in a way
+// they probably didn't ask for. Users now explicitly pick recipes per body
+// via the dropdown — the recipe library is just a palette of choices.
+// Caller is responsible for capacity check via canAddRecipe() before invoking.
+function setActiveRecipe(recipe){
+  // rc2.5: enforce MAX_RECIPES cap. If at cap, show toast and reject.
+  if(!canAddRecipe()){
+    showCapToast('Recipe limit reached ('+MAX_RECIPES+'). Remove a recipe before adding another.');
+    return null;
+  }
+  const id = _newId('recipe');
+  recipe._id = id;
+  recipes.set(id, recipe);
+  recipeOrder.push(id);
+  activeRecipeId = id;
+  // No auto-assignment in rc3.5 — bodies stay solid until user picks a recipe.
+  // currentRecipe is still tracked for the cube-mode preview when no body is
+  // active, and for the assignment-rebuild path when a body's recipe changes.
+  syncCurrentRecipeFromActiveBody();
+  // rc3: recipe color changes may have affected ghost color.
+  if(typeof syncGhostsToRaymarcher === 'function') syncGhostsToRaymarcher();
+  return recipe;
+}
+
+// rc2.5: returns true if another recipe can be added.
+const MAX_RECIPES = 8;
+function canAddRecipe(){ return recipes.size < MAX_RECIPES; }
+
+// rc2.5: recompute currentRecipe from activeBody → assignment → recipe lookup.
+// This is the dual-write maintained for the 68 read sites that still reference
+// the legacy currentRecipe singleton. Call after any change to activeBodyId,
+// assignments, or recipes.
+function syncCurrentRecipeFromActiveBody(){
+  if(activeBodyId === null){
+    // No active body — keep the most recently loaded recipe as currentRecipe
+    // so the preview can still render a cube even with no shape.
+    if(activeRecipeId !== null && recipes.has(activeRecipeId)){
+      currentRecipe = recipes.get(activeRecipeId);
+    } else if(recipeOrder.length > 0){
+      activeRecipeId = recipeOrder[recipeOrder.length-1];
+      currentRecipe = recipes.get(activeRecipeId);
+    } else {
+      activeRecipeId = null;
+      currentRecipe = null;
+    }
+    // Push solid-mode off when no active body.
+    if(rm && rm.setSolidMode) rm.setSolidMode(false);
+    // rc3.7: clear lattice color override in cube mode.
+    if(rm && rm.setBaseColor) rm.setBaseColor(null);
+    return;
+  }
+  const rid = assignments.get(activeBodyId);
+  // rc3.5: solid sentinel — body has no recipe, render as opaque solid.
+  if(isSolidAssignment(rid)){
+    // currentRecipe stays at whatever was last loaded (so the preview's
+    // cube-mode visualization remains valid if user switches to a non-solid
+    // body later), but the active body should render solid regardless.
+    if(rm && rm.setSolidMode){
+      // rc3.6: use the body's resolved color (respects per-body palette override).
+      rm.setSolidMode(true, _hexToRGB(resolveBodyColor(activeBodyId)));
+    }
+    activeRecipeId = null;  // no active recipe for a solid body
+    return;
+  }
+  // Normal recipe lookup.
+  if(rid && recipes.has(rid)){
+    activeRecipeId = rid;
+    currentRecipe = recipes.get(rid);
+  } else {
+    // Active body has no valid assignment — fall back to most recent recipe
+    // and assign it to this body (decision 2: "most-recently-loaded recipe").
+    if(recipeOrder.length > 0){
+      const fallbackId = recipeOrder[recipeOrder.length-1];
+      assignments.set(activeBodyId, fallbackId);
+      activeRecipeId = fallbackId;
+      currentRecipe = recipes.get(fallbackId);
+    } else {
+      activeRecipeId = null;
+      currentRecipe = null;
+    }
+  }
+  // rc3.5: push solid-mode OFF for non-solid bodies. (Set ON above for solid.)
+  if(rm && rm.setSolidMode) rm.setSolidMode(false);
+  // rc3.7: push the active body's color override into the lattice base-color
+  // uniform. If the user has picked a palette color, the lattice tints toward
+  // it while keeping iridescent shimmer. If no override (colorHex is null),
+  // pass null which sets the no-op sentinel and shader falls back to default.
+  if(rm && rm.setBaseColor){
+    const b = bodies.get(activeBodyId);
+    if(b && b.colorHex){
+      rm.setBaseColor(_hexToRGB(b.colorHex));
+    } else {
+      rm.setBaseColor(null);
+    }
+  }
+}
+
+// ── rc3 · Ghost sync ──────────────────────────────────────────────────────
+// Build the ghost list from the current Mode A state and push it to the
+// raymarcher. Ghost = any body that (a) isn't the active body, (b) has a
+// baked sdfGhost (which all bodies do after rc3), (c) has an assigned recipe
+// (so we know its family color). Call after any mutation that changes which
+// bodies are ghosts or what color they should be.
+function syncGhostsToRaymarcher(){
+  if(!rm) return;
+  if(!importedShape || !importedShape.shapeData && !(importedShape.sdfGrid)){
+    // No active body — no scene to render ghosts against.
+    rm.clearGhosts();
+    return;
+  }
+  // Use active body's cell size for world-mm scaling. All bodies share world
+  // coordinates because each body's bbox is in absolute CAD mm and the
+  // raymarcher converts via cellSizeMm uniformly.
+  const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+  const ghosts = [];
+  for(const bodyId of bodyOrder){
+    if(bodyId === activeBodyId) continue;
+    const b = bodies.get(bodyId);
+    if(!b || !b.sdfGhost) continue;
+    // rc3.6: respect per-body visibility state.
+    //   'hidden'         → skip entirely
+    //   'ghost'          → translucent envelope (today's rc3 behavior)
+    //   'inactive-solid' → opaque rendering with body's resolved color
+    const vis = b.visibility || VIS_DEFAULT;
+    if(vis === VIS_HIDDEN) continue;
+    // rc3.6: resolve color via priority chain (user override > family > solid).
+    const hex = resolveBodyColor(bodyId);
+    const color = _hexToRGB(hex);
+    ghosts.push({
+      bodyId, sdfGhost: b.sdfGhost, bbox: b.bbox, color,
+      // rc3.6: 'solid' here means render the ghost opaquely (no transparency).
+      // Distinct from the SOLID_SENTINEL assignment — this is a render-mode
+      // flag, not a "this body has no lattice" flag. A ghost-mode body can
+      // have a solid assignment, and an inactive-solid render mode is the
+      // body-card visibility choice independent of its assignment.
+      kind: (vis === VIS_INACTIVE_SOLID) ? 'solid' : 'ghost'
+    });
+    if(ghosts.length >= (rm.GHOST_MAX||7)) break;
+  }
+  if(ghosts.length === 0) rm.clearGhosts();
+  else rm.setGhosts(ghosts, cellMm);
+}
+
+// Tiny hex → [r,g,b] in 0..1 helper for shader uniforms.
+function _hexToRGB(hex){
+  if(!hex || hex.charAt(0) !== '#') return [0.6,0.6,0.6];
+  const h = hex.slice(1);
+  if(h.length !== 6) return [0.6,0.6,0.6];
+  return [
+    parseInt(h.slice(0,2),16)/255,
+    parseInt(h.slice(2,4),16)/255,
+    parseInt(h.slice(4,6),16)/255
+  ];
+}
+
+// rc3.5: Compute the bbox that wraps every loaded body in scene-space.
+// Used to size the raymarcher's viewH so the world cube encompasses the
+// whole assembly, not just the active body. Returns the active body's own
+// bbox if only one body is loaded (no expansion needed).
+function computeAssemblyBbox(){
+  if(bodies.size === 0) return null;
+  let mnx=Infinity, mny=Infinity, mnz=Infinity;
+  let mxx=-Infinity, mxy=-Infinity, mxz=-Infinity;
+  for(const bodyId of bodyOrder){
+    const b = bodies.get(bodyId);
+    if(!b || !b.bbox) continue;
+    if(b.bbox.mnx < mnx) mnx = b.bbox.mnx;
+    if(b.bbox.mny < mny) mny = b.bbox.mny;
+    if(b.bbox.mnz < mnz) mnz = b.bbox.mnz;
+    if(b.bbox.mxx > mxx) mxx = b.bbox.mxx;
+    if(b.bbox.mxy > mxy) mxy = b.bbox.mxy;
+    if(b.bbox.mxz > mxz) mxz = b.bbox.mxz;
+  }
+  return {mnx,mny,mnz,mxx,mxy,mxz};
+}
+
+// rc2.5: assign a specific recipe to a specific body, switch active to that
+// body (per decision 3), and refresh preview + UI.
+function assignRecipeToBody(bodyId, recipeId){
+  if(!bodies.has(bodyId) || !recipes.has(recipeId)) return;
+  assignments.set(bodyId, recipeId);
+  // Auto-switch active to this body so user sees the result.
+  if(bodyId !== activeBodyId){
+    switchActiveBody(bodyId);  // handles currentRecipe sync internally
+  } else {
+    // Already active — just sync currentRecipe and rebuild preview.
+    syncCurrentRecipeFromActiveBody();
+    if(rm){
+      // Recipe change requires preview rebuild. Use the showRecipe pipeline
+      // since it does the right initialization across families.
+      reloadActiveRecipeIntoPreview();
+    }
+    renderBodyCards();
+    renderRecipeLibrary();
+  }
+  // rc3: another body's color may have changed; refresh ghost list.
+  syncGhostsToRaymarcher();
+}
+
+// rc2.5: re-run the preview pipeline for the currently-active recipe WITHOUT
+// re-appending it to the library. Used when switching active body or changing
+// a body's recipe assignment — we want the full preview-init pipeline minus
+// the "add this recipe to the Map" step. Mirrors the UI-update tail of
+// showRecipe (typeBadge, summary, trim visibility, triggerPreview).
+function reloadActiveRecipeIntoPreview(){
+  if(!currentRecipe) return;
+  const recipe = currentRecipe;
+  // Auto-default cell-size for beam recipes (same as showRecipe).
+  if(recipe.family==='beam'){
+    const cellMm=recipe.json&&recipe.json.geometry&&recipe.json.geometry.cell;
+    if(typeof cellMm==='number'&&isFinite(cellMm)&&cellMm>0){
+      const cellInp=document.getElementById('shapeCellSizeMm');
+      if(cellInp) cellInp.value=parseFloat(cellMm.toPrecision(4));
+    }
+  }
+  // Update the type badge above the canvas.
+  if(typeof typeBadge !== 'undefined' && typeBadge){
+    typeBadge.className=recipe.family;
+    typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+String(recipe.subtype).toUpperCase();
+  }
+  // Update the summary panel.
+  if(typeof summaryEl !== 'undefined' && summaryEl && typeof renderSummary === 'function'){
+    summaryEl.innerHTML=renderSummary(recipe);
+  }
+  // Refresh trim-toggle visibility for the new family (beam-only).
+  const trimWrap=document.getElementById('trimNodesWrap');
+  if(trimWrap){
+    const cellOv=document.getElementById('cellOverlay');
+    const shapeLoaded=cellOv&&cellOv.style.display!=='none';
+    trimWrap.style.display=(shapeLoaded&&recipe.family==='beam')?'inline':'none';
+    const trimMul=document.getElementById('trimInsetWrap');
+    const trimTg=document.getElementById('trimToNodes');
+    if(trimMul) trimMul.style.display=(shapeLoaded&&recipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+  }
+  // Trigger preview at current quality.
+  if(typeof triggerPreview === 'function'){
+    triggerPreview(rm && rm._quality || 'low');
+  }
+  if(typeof updateExportEstimate === 'function') setTimeout(updateExportEstimate,0);
+}
+
+// rc2.5: remove a recipe from the library. Bodies assigned to it fall back
+// to the most-recently-loaded remaining recipe (decision 2). If this was the
+// last recipe, the bodies become unassigned (but stay in the bodies Map).
+function removeRecipe(recipeId){
+  if(!recipes.has(recipeId)) return;
+  recipes.delete(recipeId);
+  const i = recipeOrder.indexOf(recipeId);
+  if(i >= 0) recipeOrder.splice(i, 1);
+  // rc3.5: bodies whose recipe was removed fall back to SOLID — not silently
+  // switched to another recipe. The user removed THIS recipe; assuming they
+  // want the body re-flavored with an unrelated one is intrusive.
+  for(const [bid, rid] of assignments){
+    if(rid === recipeId){
+      assignments.set(bid, SOLID_SENTINEL);
+    }
+  }
+  // Sync currentRecipe based on the (possibly changed) active body assignment.
+  syncCurrentRecipeFromActiveBody();
+  // If library is now empty, send back to dropzone (no preview possible).
+  if(recipes.size === 0){
+    if(typeof resetToDropzone === 'function') resetToDropzone();
+    return;
+  }
+  // Otherwise refresh UI and rebuild preview for new active recipe.
+  renderRecipeLibrary();
+  renderBodyCards();
+  reloadActiveRecipeIntoPreview();
+  // rc3: ghost colors may have changed.
+  syncGhostsToRaymarcher();
+}
+
+// rc2.5: count how many bodies have this recipe assigned.
+function getRecipeUsageCount(recipeId){
+  let n = 0;
+  for(const rid of assignments.values()) if(rid === recipeId) n++;
+  return n;
+}
+
+// rc3.6: set the visibility state of a body (inactive-solid / ghost / hidden).
+// No effect on the active body's rendering — the active body always renders
+// fully. Triggers a ghost-list refresh.
+function setBodyVisibility(bodyId, vis){
+  const b = bodies.get(bodyId);
+  if(!b) return;
+  if(vis !== VIS_INACTIVE_SOLID && vis !== VIS_GHOST && vis !== VIS_HIDDEN) return;
+  b.visibility = vis;
+  renderBodyCards();
+  syncGhostsToRaymarcher();
+}
+
+// rc3.6: set a per-body color override. colorHex = null restores the family
+// default (recipe family color, or SOLID_COLOR_HEX for solid bodies). Affects
+// both active rendering (lattice tint or solid material) and ghost rendering
+// (translucent envelope tint or inactive-solid surface color).
+function setBodyColor(bodyId, colorHex){
+  const b = bodies.get(bodyId);
+  if(!b) return;
+  b.colorHex = colorHex || null;
+  // If this is the active body, the shader's solid color uniform needs to
+  // refresh too. syncCurrentRecipeFromActiveBody handles that.
+  if(bodyId === activeBodyId){
+    syncCurrentRecipeFromActiveBody();
+  }
+  renderBodyCards();
+  syncGhostsToRaymarcher();
+}
+
+// rc3.6: resolve the effective color for a body. Priority:
+//   1. user-picked override (b.colorHex)
+//   2. family color from assigned recipe
+//   3. SOLID_COLOR_HEX for solid bodies
+//   4. neutral gray fallback for unassigned bodies
+function resolveBodyColor(bodyId){
+  const b = bodies.get(bodyId);
+  if(!b) return '#888888';
+  if(b.colorHex) return b.colorHex;
+  const rid = assignments.get(bodyId);
+  if(isSolidAssignment(rid)) return SOLID_COLOR_HEX;
+  if(rid && recipes.has(rid)){
+    const r = recipes.get(rid);
+    return familyColor(r.family);
+  }
+  return '#888888';
+}
+
+// rc1 verification — assertions gated by ?debug=mode-a URL flag. Cheap when
+// the flag is off (one comparison, then return). Strip in rc4 when migration
+// is complete and the singletons are gone.
+const _modeADebug = (typeof location !== 'undefined' &&
+  location.search.indexOf('debug=mode-a') >= 0);
+
+function _assertModeAInvariants(label){
+  if(!_modeADebug) return;
+  // rc2.5 invariants:
+  //   activeBodyId === null  ⇔  importedShape === null
+  //   activeBodyId !== null  ⇒  bodies.get(activeBodyId) === importedShape
+  //   bodies.size ≤ MAX_BODIES
+  //   recipes.size ≤ MAX_RECIPES
+  //   currentRecipe === recipes.get(activeRecipeId) (when activeRecipeId set)
+  //   if both active: assignments.get(activeBodyId) → recipe matches currentRecipe
+  console.assert(
+    (activeBodyId === null) === (importedShape === null),
+    '['+label+'] activeBodyId/importedShape null-state out of sync',
+    { activeBodyId, hasImported: !!importedShape }
+  );
+  console.assert(
+    activeBodyId === null || bodies.get(activeBodyId) === importedShape,
+    '['+label+'] activeBodyId does not point to importedShape',
+    { activeBodyId, bodiesSize: bodies.size }
+  );
+  console.assert(
+    bodies.size <= MAX_BODIES,
+    '['+label+'] bodies.size exceeded MAX_BODIES',
+    { bodiesSize: bodies.size, max: MAX_BODIES }
+  );
+  console.assert(
+    recipes.size <= MAX_RECIPES,
+    '['+label+'] recipes.size exceeded MAX_RECIPES',
+    { recipesSize: recipes.size, max: MAX_RECIPES }
+  );
+  console.assert(
+    activeRecipeId === null || (typeof currentRecipe !== 'undefined' && recipes.get(activeRecipeId) === currentRecipe),
+    '['+label+'] activeRecipeId points to a different object than currentRecipe'
+  );
+}
+
+// Devtools hook — inspect new state during rc1 verification.
+// Strip in rc4 when migration is complete.
+if(typeof window !== 'undefined'){
+  window.__f13ld_modeA = { bodies, recipes, assignments,
+    bodyOrder, recipeOrder,
+    get activeBodyId(){ return activeBodyId; },
+    get activeRecipeId(){ return activeRecipeId; },
+    assertInvariants: _assertModeAInvariants };
+}
 
 // ── Structure SDF transform (v0.5.0 Phase B) ─────────────────────────────
 // User-applied modifier on the periodic structure SDF, evaluated in shape
@@ -1180,6 +1869,7 @@ function MeshRaymarcher(canvas){
   this._pendingProg=null; this._compiling=false;
   this.prog=null; this.quadBuf=null;
   this.camZoom=16; this._dirty=false;
+  this.panX=0; this.panY=0; // view-plane pan offset (Ctrl+right-drag)
   this.rotMat=this._mat3Mul(this._rotAA(0,1,0,0.7),this._rotAA(1,0,0,0.5));
   this.fieldTex=null; this.shapeTex=null;
   this.fieldMin=0; this.fieldMax=1; this.lipschitz=1.0; this.bakeN=64;
@@ -1241,17 +1931,48 @@ MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lips
   this.lipschitz=lipschitz; this.bakeN=N;
   this.topology=topology||null;
 };
-MeshRaymarcher.prototype.setShapeSDF=function(sdfGrid,bbox,cellSizeMm){
+MeshRaymarcher.prototype.setShapeSDF=function(sdfGrid,bbox,cellSizeMm,assemblyBbox,preserveCamera){
   var d=sdfGrid;
   this._uploadTexture3D(d.data,d.N,d.sdfMin,d.sdfMax,'shape');
-  // viewH: shape max half-extent in world units so full shape fills view box
-  var maxDim=Math.max(bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz);
-  this.viewH=Math.ceil(maxDim/2*(10/cellSizeMm)*1.05); // 5% padding
-  this.camZoom=this.viewH*3.2;
+  // rc3.5: viewH sizes from the assembly union bbox if provided, otherwise
+  // from the single-body bbox (legacy single-body / single-active behavior).
+  // The cube the raymarcher renders into must encompass every body in the
+  // scene, not just the active one — otherwise ghosts outside the active
+  // body's extent get clipped.
+  var sizeBbox = assemblyBbox || bbox;
+  var maxDim=Math.max(sizeBbox.mxx-sizeBbox.mnx,sizeBbox.mxy-sizeBbox.mny,sizeBbox.mxz-sizeBbox.mnz);
+  var newViewH = Math.ceil(maxDim/2*(10/cellSizeMm)*1.05); // 5% padding
+  // rc3.7: preserveCamera = true means "user is already framed at a comfortable
+  // zoom; don't reset to fit-the-new-shape." Used when importing a second+
+  // body in a multi-body assembly — the user has tuned the view and we
+  // shouldn't yank it. The viewH itself still updates (the world cube must
+  // still encompass everything), but camZoom is left at the user's current
+  // value, scaled proportionally if viewH grew so the framing stays valid.
+  if(preserveCamera && this.hasShape){
+    if(this.viewH > 0 && newViewH > 0){
+      var oldViewH = this.viewH;
+      // Scale current zoom so framing stays relative — if viewH grew 20%,
+      // zoom also grows 20% so the user keeps the same view at the same
+      // visual scale.
+      this.camZoom = this.camZoom * (newViewH / oldViewH);
+      // Pan offset lives in the same view-plane scale as zoom, so scale it
+      // proportionally too — otherwise a tuned multi-body view drifts on import.
+      this.panX = (this.panX||0) * (newViewH / oldViewH);
+      this.panY = (this.panY||0) * (newViewH / oldViewH);
+    }
+    this.viewH = newViewH;
+  } else {
+    this.viewH = newViewH;
+    this.camZoom = this.viewH * 3.2;
+    this.panX = 0; this.panY = 0; // fresh fit — recenter
+  }
   this.shapeData={
     N:d.N, sdfMin:d.sdfMin, sdfMax:d.sdfMax,
     bboxMin:[bbox.mnx,bbox.mny,bbox.mnz],
     bboxSize:[bbox.mxx-bbox.mnx,bbox.mxy-bbox.mny,bbox.mxz-bbox.mnz],
+    // rc3.5: cache the assembly maxDim so setCellSize can rescale viewH
+    // without needing the caller to re-supply the assembly bbox.
+    assemblyMaxDim: maxDim,
     cellSizeMm:cellSizeMm
   };
   this.hasShape=true;
@@ -1266,11 +1987,16 @@ MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
   var sd=this.shapeData;
   if(!(cellSizeMm>0)||cellSizeMm===sd.cellSizeMm)return;
   sd.cellSizeMm=cellSizeMm;
-  var maxDim=Math.max(sd.bboxSize[0],sd.bboxSize[1],sd.bboxSize[2]);
+  // rc3.5: use cached assembly maxDim if present (multi-body case); otherwise
+  // fall back to active body's own bbox (single-body case).
+  var maxDim = (sd.assemblyMaxDim != null)
+    ? sd.assemblyMaxDim
+    : Math.max(sd.bboxSize[0],sd.bboxSize[1],sd.bboxSize[2]);
   var oldViewH=this.viewH;
   this.viewH=Math.ceil(maxDim/2*(10/cellSizeMm)*1.05);
   var zoomLo=this.viewH*0.3,zoomHi=Math.max(80,this.viewH*8);
   this.camZoom=Math.min(zoomHi,Math.max(zoomLo,this.camZoom*(this.viewH/oldViewH)));
+  if(oldViewH>0){ var _pr=this.viewH/oldViewH; this.panX=(this.panX||0)*_pr; this.panY=(this.panY||0)*_pr; }
   // If a structure transform is active, recompute world-unit values since
   // mmToWorld depends on cellSizeMm.
   if(this._structXform && typeof window!=='undefined' && window.structureTransform){
@@ -1278,7 +2004,106 @@ MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
   }
   this._dirty=true;
 };
-MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._dirty=true;};
+MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.panX=0;this.panY=0;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._dirty=true;};
+
+// rc3.5: Set whether the active body renders as solid (no lattice). When
+// solid is true, color is a Float32Array(3) of [r,g,b] in 0..1. Defaults
+// to off (lattice rendering) until explicitly enabled.
+MeshRaymarcher.prototype.setSolidMode=function(isSolid, color){
+  this._solidMode = isSolid ? 1.0 : 0.0;
+  this._solidColor = color || [0.8, 0.8, 0.8];
+  this._dirty = true;
+};
+
+// rc3.7: Set per-body color override for the active lattice render. Pass
+// null/undefined to clear the override (shader falls back to default
+// green-accented iridescent palette). Color is [r,g,b] in 0..1.
+MeshRaymarcher.prototype.setBaseColor=function(color){
+  if(color === null || color === undefined){
+    // Sentinel value with negative red — shader detects this as "no override"
+    // and uses the default palette behavior.
+    this._baseColor = [-1.0, 0.0, 0.0];
+  } else {
+    this._baseColor = color;
+  }
+  this._dirty = true;
+};
+
+// rc3 ─ Ghost envelope rendering ────────────────────────────────────────────
+// Ghosts are translucent silhouettes of non-active bodies. Each ghost holds
+// its own 3D texture, world-mm bbox, and family color. Up to GHOST_MAX active
+// ghosts at once (one less than MAX_BODIES, since the active body uses the
+// regular shape SDF slot). Texture slots are reused — when the ghost set
+// changes (active body swap, body added/removed), we re-upload only the
+// slots that are now different.
+MeshRaymarcher.prototype.GHOST_MAX = 7;
+MeshRaymarcher.prototype._initGhostState = function(){
+  if(this._ghostTex) return; // already initialized
+  this._ghostTex = new Array(this.GHOST_MAX).fill(null);
+  this._ghostMeta = new Array(this.GHOST_MAX).fill(null);
+  // _ghostMeta[i] = { bodyId, bboxMin:[3], bboxSize:[3], cellSizeMm, color:[3], N }
+  this._ghostCount = 0;
+};
+
+// Upload a single ghost SDF into slot i. Mirrors _uploadTexture3D for 'shape'
+// (R16F format for mm-precision) but lives in our own slot array.
+MeshRaymarcher.prototype._uploadGhostTex = function(slot, sdfGrid){
+  var gl = this.gl;
+  if(!this._ghostTex[slot]) this._ghostTex[slot] = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, this._ghostTex[slot]);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R16F, sdfGrid.N, sdfGrid.N, sdfGrid.N, 0, gl.RED, gl.FLOAT, sdfGrid.data);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_3D, null);
+};
+
+// Set the active ghost list. Called from main thread on any change to the
+// non-active body set (add, remove, swap active). ghosts is an array of
+// { bodyId, sdfGhost, bbox, color:[r,g,b] (0..1) }.
+// cellSizeMm is the active body's cell size — ghosts share world coords with
+// the active body, so this is consistent across the scene.
+MeshRaymarcher.prototype.setGhosts = function(ghosts, cellSizeMm){
+  this._initGhostState();
+  var n = Math.min(ghosts.length, this.GHOST_MAX);
+  for(var i = 0; i < n; i++){
+    var g = ghosts[i];
+    var prev = this._ghostMeta[i];
+    // Only re-upload texture if the body changed in this slot.
+    if(!prev || prev.bodyId !== g.bodyId){
+      this._uploadGhostTex(i, g.sdfGhost);
+    }
+    this._ghostMeta[i] = {
+      bodyId: g.bodyId,
+      bboxMin: [g.bbox.mnx, g.bbox.mny, g.bbox.mnz],
+      bboxSize: [g.bbox.mxx-g.bbox.mnx, g.bbox.mxy-g.bbox.mny, g.bbox.mxz-g.bbox.mnz],
+      cellSizeMm: cellSizeMm,
+      color: g.color,
+      // rc3.6: 'ghost' (translucent) or 'solid' (opaque inactive body).
+      kind: g.kind || 'ghost',
+      N: g.sdfGhost.N
+    };
+  }
+  // Clear unused slots.
+  for(var j = n; j < this.GHOST_MAX; j++){
+    this._ghostMeta[j] = null;
+  }
+  this._ghostCount = n;
+  this._dirty = true;
+};
+
+// Drop all ghosts (e.g., when last body removed or going to dropzone).
+MeshRaymarcher.prototype.clearGhosts = function(){
+  this._initGhostState();
+  for(var i = 0; i < this.GHOST_MAX; i++){
+    this._ghostMeta[i] = null;
+  }
+  this._ghostCount = 0;
+  this._dirty = true;
+};
 MeshRaymarcher.prototype.setWorldBounds=function(wMin,wMax,isPeriodic){this.worldMin=wMin;this.worldMax=wMax;this.isPeriodic=isPeriodic!==false;this._dirty=true;};
 // ── Structure SDF transform setter (v0.5.0 Phase B) ──────────────────────
 // Accepts the main-thread structureTransform object (mm units, raw user iso
@@ -1320,11 +2145,13 @@ MeshRaymarcher.prototype.setQuality=function(q){
 };
 MeshRaymarcher.prototype._buildShader=function(){
   var steps={draft:'128',low:'256',med:'512',high:'1024',ultra:'2048'}[this._quality]||'256';
+  var GHOST_MAX = this.GHOST_MAX;
   return [
     '#version 300 es',
     'precision highp float;precision highp sampler3D;',
+    '#define GHOST_MAX ' + GHOST_MAX,
     'out vec4 fragColor;',
-    'uniform vec2 res;uniform mat3 rot;uniform float zoom;',
+    'uniform vec2 res;uniform mat3 rot;uniform float zoom;uniform vec2 pan;',
     'uniform highp sampler3D uField;uniform float uFieldMin;uniform float uFieldMax;uniform float uLipschitz;',
     'uniform highp sampler3D uShapeSDF;',
     'uniform vec3 uBboxMin;uniform vec3 uBboxSize;',
@@ -1336,41 +2163,177 @@ MeshRaymarcher.prototype._buildShader=function(){
     'uniform float uBakeRaw;uniform float uFieldMid;uniform float uFieldHalfR;',
     'uniform float uCenter;uniform float uHalfW;uniform float uTopoMode;uniform float uHalfInvert;',
     // ── Structure SDF transform uniforms (v0.5.0 Phase B) ─────────────────
-    // uStructRotInv: inverse-rotation matrix (R^T) applied to the query
-    //   point in shape-mm space, then converted back to world.
-    // uStructPivotWorld: shape center in world coords. Rotation/spatial
-    //   offset are anchored at this point so the lattice stays "centered"
-    //   visually as the user rotates.
-    // uStructOffsetWorld: spatial offset already converted from mm to world.
-    // uStructIsoWorld: iso offset in world units (sign already negated so
-    //   positive UI value → thicker walls).
     'uniform mat3 uStructRotInv;',
     'uniform vec3 uStructPivotWorld;',
     'uniform vec3 uStructOffsetWorld;',
     'uniform float uStructIsoWorld;',
-    // Apply structure transform to a query point (world coords). Pivot is
-    // the shape center; spatial offset shifts the lattice in shape space;
-    // rotation rotates the lattice around the pivot. Defaults to identity
-    // (rot = I, offset = 0, pivot = 0) in cube mode for back-compat.
+    // ── rc3.5 · Solid mode ────────────────────────────────────────────────
+    // When uSolidMode > 0.5, the scaffold SDF returns a deeply-negative
+    // constant (always-inside). implicit(p) = max(scaffold, shape) reduces
+    // to just sampleShape(p), producing an opaque rendering of the body's
+    // surface in a flat material color. uSolidColor is the base color used
+    // by the lighting tail (replaces the iridescent palette when solid).
+    'uniform float uSolidMode;',
+    'uniform vec3 uSolidColor;',
+    // ── rc3.7 · Lattice base color override ───────────────────────────────
+    // When the user picks a per-body color via the palette, that color is
+    // pushed here for the active lattice render. The shader mixes it with
+    // the iridescent palette so the lattice keeps its iridescent shimmer
+    // while reading as the chosen color overall. A negative-R sentinel
+    // (-1,0,0) means "no override, use default green-accented palette."
+    'uniform vec3 uBaseColor;',
+    // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
+    // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
+    // Each has its own world-mm bbox and family color. uGhostCount controls
+    // the active loop bound (0..GHOST_MAX). cellSizeMm is shared with the
+    // active shape since ghosts live in the same world space.
+    'uniform highp sampler3D uGhostSDF0;',
+    'uniform highp sampler3D uGhostSDF1;',
+    'uniform highp sampler3D uGhostSDF2;',
+    'uniform highp sampler3D uGhostSDF3;',
+    'uniform highp sampler3D uGhostSDF4;',
+    'uniform highp sampler3D uGhostSDF5;',
+    'uniform highp sampler3D uGhostSDF6;',
+    'uniform vec3 uGhostBboxMin[GHOST_MAX];',
+    'uniform vec3 uGhostBboxSize[GHOST_MAX];',
+    'uniform vec3 uGhostColor[GHOST_MAX];',
+    // rc3.6: per-slot render kind. 0.0 = translucent ghost (today's behavior),
+    // 1.0 = opaque inactive-solid (renders the body's surface as if it were
+    // an active solid body, no transparency). Carried as float because GLSL
+    // ES 3.00 uniform arrays of int are awkward to bind.
+    'uniform float uGhostKind[GHOST_MAX];',
+    'uniform float uGhostCount;',
     'vec3 xformStructure(vec3 p){vec3 q=p-uStructPivotWorld-uStructOffsetWorld;return uStructRotInv*q+uStructPivotWorld;}',
     'float sampleRaw(vec3 p){vec3 uvw;if(uIsPeriodic>0.5)uvw=(p-uWorldMin)/uWorldSize;else uvw=clamp((p-uWorldMin)/uWorldSize,0.0,1.0);float t=texture(uField,uvw).r;return t*(uFieldMax-uFieldMin)+uFieldMin;}',
     'float rawToSDF(float raw){float val;if(uBakeRaw>0.5){float norm=(raw-uFieldMid)/uFieldHalfR;float adj=norm-uCenter;if(uTopoMode<0.5)val=abs(adj)-uHalfW;else if(uTopoMode<1.5)val=uHalfInvert>0.5?adj:-adj;else val=uHalfW-abs(adj);}else val=raw;return val;}',
-    // Convenience: transformed scaffold SDF — apply xformStructure to query
-    // coord, sample, convert raw→SDF, apply iso offset. Use this everywhere
-    // the unmodified scaffold SDF was previously used.
     'float sampleScaffoldSDF(vec3 p){return rawToSDF(sampleRaw(xformStructure(p)))+uStructIsoWorld;}',
     'float sampleShape(vec3 p){vec3 pm=p*(uCellSizeMm/10.0);vec3 uvw=(pm-uBboxMin)/uBboxSize;if(any(lessThan(uvw,vec3(0.0)))||any(greaterThan(uvw,vec3(1.0)))){vec3 bmax=uBboxMin+uBboxSize;vec3 q=max(uBboxMin-pm,pm-bmax);return length(max(q,vec3(0.0)))*(10.0/uCellSizeMm);}float d_mm=texture(uShapeSDF,uvw).r;return d_mm*(10.0/uCellSizeMm);}',
-    'float implicit(vec3 p){float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    // rc3.5: implicit() short-circuits when uSolidMode is on. Returns the
+    // shape SDF directly so the raymarch hits the body surface as if it were
+    // a filled solid. uHasShape must still be 1.0 for solid mode to render —
+    // a solid body without geometry isn't meaningful.
+    'float implicit(vec3 p){if(uSolidMode>0.5){return uHasShape>0.5?sampleShape(p):1.0;}float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    // ── rc3 · Ghost SDF sampler ────────────────────────────────────────────
+    // Returns world-units SDF for ghost in slot i; positive outside, negative
+    // inside. Uses an AABB fast-reject: outside the world-mm bbox we synthesize
+    // distance to bbox edge directly (no texture sample). The slot index is
+    // handled by an explicit switch because GLSL ES 3.00 cannot index sampler
+    // arrays with a non-constant expression.
+    'float sampleGhostSlot(int slot, vec3 p){',
+    '  vec3 bmin = uGhostBboxMin[slot]; vec3 bsize = uGhostBboxSize[slot];',
+    '  vec3 pm = p * (uCellSizeMm/10.0);',
+    '  vec3 uvw = (pm - bmin) / bsize;',
+    '  if(any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))){',
+    '    vec3 bmax = bmin + bsize; vec3 q = max(bmin - pm, pm - bmax);',
+    '    return length(max(q, vec3(0.0))) * (10.0/uCellSizeMm);',
+    '  }',
+    '  float d_mm = 0.0;',
+    '  if(slot == 0) d_mm = texture(uGhostSDF0, uvw).r;',
+    '  else if(slot == 1) d_mm = texture(uGhostSDF1, uvw).r;',
+    '  else if(slot == 2) d_mm = texture(uGhostSDF2, uvw).r;',
+    '  else if(slot == 3) d_mm = texture(uGhostSDF3, uvw).r;',
+    '  else if(slot == 4) d_mm = texture(uGhostSDF4, uvw).r;',
+    '  else if(slot == 5) d_mm = texture(uGhostSDF5, uvw).r;',
+    '  else if(slot == 6) d_mm = texture(uGhostSDF6, uvw).r;',
+    '  return d_mm * (10.0/uCellSizeMm);',
+    '}',
     'vec3 boxNormal(vec3 pos){vec3 ap=abs(pos)/uViewH;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
-    // Separated normals: scaffold gradient when scaffold surface, shape gradient when shape surface.
-    // This prevents the sphere-boundary SDF transition from corrupting scaffold normals at silhouettes.
     'vec3 nrmScaffold(vec3 p){float e=uNrmStep;return normalize(vec3(sampleScaffoldSDF(p+vec3(e,0,0))-sampleScaffoldSDF(p-vec3(e,0,0)),sampleScaffoldSDF(p+vec3(0,e,0))-sampleScaffoldSDF(p-vec3(0,e,0)),sampleScaffoldSDF(p+vec3(0,0,e))-sampleScaffoldSDF(p-vec3(0,0,e))));}',
     'vec3 nrmShape(vec3 p){float e=uNrmStep;return normalize(vec3(sampleShape(p+vec3(e,0,0))-sampleShape(p-vec3(e,0,0)),sampleShape(p+vec3(0,e,0))-sampleShape(p-vec3(0,e,0)),sampleShape(p+vec3(0,0,e))-sampleShape(p-vec3(0,0,e))));}',
-    'vec3 nrmField(vec3 p){if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
+    // rc3.5: In solid mode the surface IS the shape's surface, so the normal
+    // must come from the shape SDF. Without this branch the lighting normal
+    // could come from the scaffold field gradient and "paint" lattice texture
+    // onto an otherwise-correct solid surface.
+    'vec3 nrmField(vec3 p){if(uSolidMode>0.5)return nrmShape(p);if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
     'vec3 palette(float t){vec3 a=vec3(0.55,0.57,0.42),b=vec3(0.43,0.42,0.30),c=vec3(1.0,1.0,1.0),d=vec3(0.02,0.0,0.05);return clamp(a+b*cos(6.28318*(c*t+d)),0.0,1.0);}',
+    // ── rc3 · Ghost accumulation pass ─────────────────────────────────────
+    // rc3.6: ghost normal via central differences on the ghost SDF. Used to
+    // shade inactive-solid ghosts so they read as real opaque bodies, not
+    // flat painted blobs. ~6 extra texture samples per surface hit per slot;
+    // only invoked when kind == solid AND ray actually hits the surface.
+    'vec3 ghostNormal(int slot, vec3 p, float eps){',
+    '  float dx = sampleGhostSlot(slot, p + vec3(eps,0,0)) - sampleGhostSlot(slot, p - vec3(eps,0,0));',
+    '  float dy = sampleGhostSlot(slot, p + vec3(0,eps,0)) - sampleGhostSlot(slot, p - vec3(0,eps,0));',
+    '  float dz = sampleGhostSlot(slot, p + vec3(0,0,eps)) - sampleGhostSlot(slot, p - vec3(0,0,eps));',
+    '  return normalize(vec3(dx, dy, dz));',
+    '}',
+    // rc3.6: pseudo-random scalar in [0,1] for jitter. Hash from frag coord
+    // + slot index. Breaks regular step alignment that produced visible
+    // horizontal bands on tangent-facing surfaces in rc3/rc3.5.
+    'float hashJ(vec2 p){return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);}',
+    // ── rc3 · Ghost accumulation pass ─────────────────────────────────────
+    // March the original ray from tEn → effectiveExit, sampling each active
+    // ghost at coarse steps. Per slot:
+    //   kind == 'ghost'  (uGhostKind < 0.5) → translucent envelope (rc3)
+    //   kind == 'solid'  (uGhostKind >= 0.5) → opaque body surface (rc3.6)
+    // rc3.6: step start is jittered per-fragment to break voxel banding.
+    'vec4 accumulateGhosts(vec3 ro, vec3 rd, float tEn, float tExit){',
+    '  if(uGhostCount < 0.5) return vec4(0.0);',
+    '  vec3 col = vec3(0.0); float alpha = 0.0;',
+    '  const int GHOST_STEPS = 40;',
+    '  float dtBase = (tExit - tEn) / float(GHOST_STEPS);',
+    '  if(dtBase <= 0.0) return vec4(0.0);',
+    '  int nGhosts = int(uGhostCount + 0.5);',
+    // Jitter offset in [0, 1): shifts every ray\'s step phase independently
+    // so the step pattern decorrelates from the voxel grid. Without this,
+    // tangent-facing surfaces show visible stripes from voxel-aligned steps.
+    '  float jit = hashJ(gl_FragCoord.xy);',
+    // Surface lighting setup for solid ghosts (shared with main scaffold path).
+    '  vec3 l1 = normalize(vec3(1.0,1.8,2.0));',
+    '  vec3 l2 = normalize(vec3(-0.8,-0.3,0.6));',
+    '  for(int i = 0; i < GHOST_STEPS; i++){',
+    '    float t = tEn + (float(i) + jit) * dtBase;',
+    '    vec3 p = ro + rd * t;',
+    '    for(int g = 0; g < GHOST_MAX; g++){',
+    '      if(g >= nGhosts) break;',
+    '      float d = sampleGhostSlot(g, p);',
+    '      if(d < 0.0){',
+    '        vec3 c = uGhostColor[g];',
+    '        if(uGhostKind[g] >= 0.5){',
+    // ── Inactive-solid path: refine hit via linear interp, then shade ─────
+    // rc3.7: re-sample at the previous step position to find where the
+    // surface crossed between t_prev (outside, d > 0) and t (inside, d < 0).
+    // Linear interp gives sub-step precision so the visible surface lands
+    // on the actual geometry rather than the coarse step grid. Also washes
+    // out per-fragment jitter on the surface position — jitter still helps
+    // translucent ghosts but stops creating dithered edges on solids.
+    '          float tPrev = max(t - dtBase, tEn);',
+    '          vec3 pPrev = ro + rd * tPrev;',
+    '          float dPrev = sampleGhostSlot(g, pPrev);',
+    '          float tHit = t;',
+    '          if(dPrev > 0.0){',
+    // dPrev > 0, d < 0 → valid bracket; linear interp.
+    '            float frac = dPrev / (dPrev - d);',
+    '            tHit = tPrev + (t - tPrev) * frac;',
+    '          }',
+    '          vec3 pHit = ro + rd * tHit;',
+    '          vec3 n = ghostNormal(g, pHit, uViewH * 0.008);',
+    '          if(dot(n, -rd) < 0.0) n = -n;',
+    '          float diff = 0.4 + max(dot(n, l1), 0.0) * 0.55 + max(dot(n, l2), 0.0) * 0.2;',
+    '          float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.5) * 0.4;',
+    '          vec3 surf = c * diff + vec3(1.0) * rim;',
+    '          col += surf * (1.0 - alpha);',
+    '          alpha = 1.0;',
+    '          break;',
+    '        } else {',
+    // ── Translucent ghost path: tiny per-step alpha, rc3 behavior ─────────
+    // Jitter is fine here — temporal noise reads as atmosphere.
+    '          float surface = 1.0 - smoothstep(0.0, 0.15 * uViewH, abs(d));',
+    '          float ai = 0.012 + surface * 0.06;',
+    '          col += c * ai * (1.0 - alpha);',
+    '          alpha += ai * (1.0 - alpha);',
+    '          if(alpha > 0.94) break;',
+    '        }',
+    '      }',
+    '    }',
+    '    if(alpha > 0.94) break;',
+    '  }',
+    '  return vec4(col, alpha);',
+    '}',
     'void main(){',
     '  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
-    '  vec3 ro=rot*vec3(0.0,0.0,zoom);vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));',
+    '  vec3 panW=rot*vec3(pan.x,pan.y,0.0);',
+    '  vec3 ro=rot*vec3(0.0,0.0,zoom)+panW;vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));',
     '  float r=clamp(length(uv)*1.1,0.0,1.0);',
     '  vec3 bgCol=mix(vec3(0.07,0.07,0.07),vec3(0.03,0.03,0.03),r*r);',
     '  vec3 H3=vec3(uViewH);',
@@ -1382,12 +2345,39 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  float thresh=-0.004;float maxStep=uViewH/10.0;',
     '  if(implicit(ro+rd*t)<thresh)nearCap=true;',
     '  if(!nearCap){for(int i=0;i<'+steps+';i++){if(t>tEx)break;vec3 p=ro+rd*t;float d=implicit(p);if(d<thresh){hit=true;break;}t+=clamp(d/uLipschitz*0.85,0.001,maxStep);}}',
-    '  vec3 pos;vec3 n;',
+    '  vec3 pos;vec3 n; vec3 finalCol;',
     '  if(nearCap){pos=ro+rd*tEn;n=boxNormal(pos);if(dot(n,-rd)<0.0)n=-n;t=tEn;}',
     '  else if(hit){pos=ro+rd*t;n=nrmField(pos);if(dot(n,-rd)<0.0)n=-n;}',
-    '  else{if(implicit(ro+rd*tEx)<thresh){pos=ro+rd*tEx;n=boxNormal(pos);if(dot(n,-rd)<0.0)n=-n;t=tEx;}else{fragColor=vec4(bgCol,1.0);return;}}',
+    '  else{if(implicit(ro+rd*tEx)<thresh){pos=ro+rd*tEx;n=boxNormal(pos);if(dot(n,-rd)<0.0)n=-n;t=tEx;}',
+    '    else{',
+    // Scaffold ray fully missed — render ghosts in front of bg, then return.
+    '      vec4 gh = accumulateGhosts(ro, rd, max(tEn,0.0), tEx);',
+    '      finalCol = mix(bgCol, gh.rgb / max(gh.a, 1e-4), gh.a);',
+    '      fragColor=vec4(clamp(finalCol,0.0,1.0),1.0); return;',
+    '    }',
+    '  }',
     '  float dy=dot(n,vec3(0.0,1.0,0.0)),dz=dot(n,vec3(0.0,0.0,1.0));float hue=dy*dy*0.33+dz*dz*0.67;',
     '  vec3 iridBase=palette(hue);vec3 iridShift=palette(hue+0.5);',
+    // rc3.7: detect whether uBaseColor is a real override or the no-op
+    // sentinel (-1, 0, 0). A negative red channel can't occur in a real
+    // color so it's a safe sentinel.
+    '  bool hasBaseOverride = (uBaseColor.r >= 0.0);',
+    // rc3.5: In solid mode, replace iridescent palette with the flat solid
+    // color. Lighting math stays the same so the body still has shading
+    // direction; just the base hue is a flat material instead of palette.
+    // rc3.7: For lattice mode (not solid) with a color override, mix the
+    // iridescent palette toward the body color so the lattice reads as the
+    // chosen color but keeps its iridescent shimmer.
+    '  vec3 baseCol;',
+    '  if(uSolidMode > 0.5){',
+    '    baseCol = uSolidColor;',
+    '  } else if(hasBaseOverride){',
+    // 0.6 blend toward chosen color, 0.4 iridescent → enough chroma to read
+    // as the picked color but the shimmer survives across surface normals.
+    '    baseCol = mix(iridBase, uBaseColor, 0.6);',
+    '  } else {',
+    '    baseCol = iridBase;',
+    '  }',
     '  vec3 l1=normalize(vec3(1.0,1.8,2.0)),l2=normalize(vec3(-0.8,-0.3,0.6));',
     '  float l3=max(dot(n,normalize(vec3(-0.5,-1.0,-1.5))),0.0)*0.3;',
     '  float diff=0.35+max(dot(n,l1),0.0)*0.7+max(dot(n,l2),0.0)*0.25+l3;',
@@ -1395,9 +2385,25 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  float spec2=pow(max(dot(reflect(-l1,n),-rd),0.0),20.0)*0.2;',
     '  float rim=pow(1.0-max(dot(n,-rd),0.0),2.5)*0.8;',
     '  vec3 green=vec3(0.784,0.961,0.259);',
-    '  vec3 col=iridBase*diff+vec3(1.0)*spec1+green*spec2*0.6+green*rim*0.45;',
+    // rc3.5: When solid, accent color is neutral white instead of scaffold green.
+    // rc3.7: When lattice has a color override, accent matches the override.
+    '  vec3 accent;',
+    '  if(uSolidMode > 0.5){',
+    '    accent = vec3(1.0);',
+    '  } else if(hasBaseOverride){',
+    '    accent = uBaseColor;',
+    '  } else {',
+    '    accent = green;',
+    '  }',
+    '  vec3 col=baseCol*diff+vec3(1.0)*spec1+accent*spec2*0.6+accent*rim*0.45;',
     '  col=mix(bgCol,col,exp(-(t-tEn)*(0.075/uViewH)));',
-    '  fragColor=vec4(clamp(col,0.0,1.0),1.0);}',
+    // rc3: After scaffold rendered, accumulate ghost tint for the portion of
+    // the ray BEFORE the scaffold hit. Ghosts behind opaque scaffold are
+    // correctly occluded by this (we march tEn → t, not tEn → tEx).
+    '  vec4 gh = accumulateGhosts(ro, rd, max(tEn,0.0), t);',
+    '  vec3 ghCol = gh.rgb / max(gh.a, 1e-4);',
+    '  finalCol = mix(col, ghCol, gh.a);',
+    '  fragColor=vec4(clamp(finalCol,0.0,1.0),1.0);}',
   ].join('\n');
 };
 MeshRaymarcher.prototype._mkShader=function(type,src){
@@ -1426,6 +2432,7 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uRes=gl.getUniformLocation(p,'res');
   this._uRot=gl.getUniformLocation(p,'rot');
   this._uZoom=gl.getUniformLocation(p,'zoom');
+  this._uPan=gl.getUniformLocation(p,'pan');
   this._uField=gl.getUniformLocation(p,'uField');
   this._uFieldMin=gl.getUniformLocation(p,'uFieldMin');
   this._uFieldMax=gl.getUniformLocation(p,'uFieldMax');
@@ -1453,6 +2460,22 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uStructPivotWorld=gl.getUniformLocation(p,'uStructPivotWorld');
   this._uStructOffsetWorld=gl.getUniformLocation(p,'uStructOffsetWorld');
   this._uStructIsoWorld=gl.getUniformLocation(p,'uStructIsoWorld');
+  // rc3.5 · Solid-body uniforms
+  this._uSolidMode = gl.getUniformLocation(p, 'uSolidMode');
+  this._uSolidColor = gl.getUniformLocation(p, 'uSolidColor');
+  // rc3.7 · Lattice base-color override
+  this._uBaseColor = gl.getUniformLocation(p, 'uBaseColor');
+  // rc3 · Ghost envelope uniforms
+  this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);
+  for(var i = 0; i < this.GHOST_MAX; i++){
+    this._uGhostSDF[i] = gl.getUniformLocation(p, 'uGhostSDF' + i);
+  }
+  this._uGhostBboxMin = gl.getUniformLocation(p, 'uGhostBboxMin');
+  this._uGhostBboxSize = gl.getUniformLocation(p, 'uGhostBboxSize');
+  this._uGhostColor = gl.getUniformLocation(p, 'uGhostColor');
+  // rc3.6: per-slot render kind uniform (translucent vs opaque inactive-solid).
+  this._uGhostKind = gl.getUniformLocation(p, 'uGhostKind');
+  this._uGhostCount = gl.getUniformLocation(p, 'uGhostCount');
   this._pLoc=gl.getAttribLocation(p,'p');
   this._dirty=true;
 };
@@ -1484,6 +2507,7 @@ MeshRaymarcher.prototype.render=function(){
   gl.uniformMatrix3fv(this._uRot,false,new Float32Array(this.rotMat));
   if(this._updateGimbal) this._updateGimbal();
   gl.uniform1f(this._uZoom,this.camZoom);
+  gl.uniform2f(this._uPan,this.panX||0,this.panY||0);
   gl.uniform1f(this._uFieldMin,this.fieldMin);
   gl.uniform1f(this._uFieldMax,this.fieldMax);
   var wn=this.worldMin,wx=this.worldMax;
@@ -1523,6 +2547,19 @@ MeshRaymarcher.prototype.render=function(){
     gl.uniform3f(this._uStructOffsetWorld,0.0,0.0,0.0);
     gl.uniform1f(this._uStructIsoWorld,0.0);
   }
+  // rc3.5: solid-mode uniforms. Default to off if never set.
+  if(this._uSolidMode) gl.uniform1f(this._uSolidMode, this._solidMode || 0.0);
+  if(this._uSolidColor){
+    var sc = this._solidColor || [0.8, 0.8, 0.8];
+    gl.uniform3f(this._uSolidColor, sc[0], sc[1], sc[2]);
+  }
+  // rc3.7: lattice base-color override. Defaults to the no-op sentinel
+  // (-1,0,0) if never set, which makes the shader use the green-accented
+  // default palette for lattice rendering.
+  if(this._uBaseColor){
+    var bc = this._baseColor || [-1.0, 0.0, 0.0];
+    gl.uniform3f(this._uBaseColor, bc[0], bc[1], bc[2]);
+  }
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
   gl.uniform1f(this._uHasShape,this.hasShape&&this.shapeTex?1.0:0.0);
   if(this.hasShape&&this.shapeTex&&this.shapeData){
@@ -1532,6 +2569,39 @@ MeshRaymarcher.prototype.render=function(){
     gl.uniform3f(this._uBboxSize,sd.bboxSize[0],sd.bboxSize[1],sd.bboxSize[2]);
     gl.uniform1f(this._uCellSizeMm,sd.cellSizeMm);
   }
+  // ── rc3 · Ghost texture binding ────────────────────────────────────────
+  // Bind each active ghost to texture unit 2..(2+GHOST_MAX-1). Inactive
+  // slots still need to bind something — use the field texture as a stand-in
+  // since the shader gates ghost sampling on uGhostCount.
+  this._initGhostState();
+  var ghostCount = Math.max(0, Math.min(this._ghostCount || 0, this.GHOST_MAX));
+  var bboxMinFlat = new Float32Array(this.GHOST_MAX * 3);
+  var bboxSizeFlat = new Float32Array(this.GHOST_MAX * 3);
+  var colorFlat = new Float32Array(this.GHOST_MAX * 3);
+  // rc3.6: per-slot render kind. 0.0 = translucent ghost, 1.0 = opaque inactive-solid.
+  var kindFlat = new Float32Array(this.GHOST_MAX);
+  for(var gi = 0; gi < this.GHOST_MAX; gi++){
+    var unit = 2 + gi;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    var meta = this._ghostMeta[gi];
+    if(meta && this._ghostTex[gi]){
+      gl.bindTexture(gl.TEXTURE_3D, this._ghostTex[gi]);
+      bboxMinFlat[gi*3+0] = meta.bboxMin[0]; bboxMinFlat[gi*3+1] = meta.bboxMin[1]; bboxMinFlat[gi*3+2] = meta.bboxMin[2];
+      bboxSizeFlat[gi*3+0] = meta.bboxSize[0]; bboxSizeFlat[gi*3+1] = meta.bboxSize[1]; bboxSizeFlat[gi*3+2] = meta.bboxSize[2];
+      colorFlat[gi*3+0] = meta.color[0]; colorFlat[gi*3+1] = meta.color[1]; colorFlat[gi*3+2] = meta.color[2];
+      kindFlat[gi] = (meta.kind === 'solid') ? 1.0 : 0.0;
+    } else {
+      // Bind a stand-in (the field tex) to keep the sampler valid.
+      gl.bindTexture(gl.TEXTURE_3D, this.fieldTex);
+      bboxSizeFlat[gi*3+0] = 1.0; bboxSizeFlat[gi*3+1] = 1.0; bboxSizeFlat[gi*3+2] = 1.0;
+    }
+    if(this._uGhostSDF && this._uGhostSDF[gi]) gl.uniform1i(this._uGhostSDF[gi], unit);
+  }
+  if(this._uGhostBboxMin)  gl.uniform3fv(this._uGhostBboxMin,  bboxMinFlat);
+  if(this._uGhostBboxSize) gl.uniform3fv(this._uGhostBboxSize, bboxSizeFlat);
+  if(this._uGhostColor)    gl.uniform3fv(this._uGhostColor,    colorFlat);
+  if(this._uGhostKind)     gl.uniform1fv(this._uGhostKind,     kindFlat);
+  if(this._uGhostCount)    gl.uniform1f(this._uGhostCount, ghostCount);
   gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
   gl.enableVertexAttribArray(this._pLoc);
   gl.vertexAttribPointer(this._pLoc,2,gl.FLOAT,false,0,0);
@@ -1624,13 +2694,57 @@ MeshRaymarcher.prototype._updateGimbal=function(){
   }
 };
 MeshRaymarcher.prototype._setupInteraction=function(){
-  var self=this,drag=false,lx=0,ly=0;
-  this.canvas.onmousedown=function(e){drag=true;lx=e.clientX;ly=e.clientY;self.autoRot=false;};
-  window.addEventListener('mouseup',function(){drag=false;});
-  window.addEventListener('mousemove',function(e){if(drag){self._applyDelta(e.clientX-lx,e.clientY-ly);lx=e.clientX;ly=e.clientY;}});
-  this.canvas.addEventListener('touchstart',function(e){drag=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;self.autoRot=false;e.preventDefault();},{passive:false});
-  window.addEventListener('touchend',function(){drag=false;});
-  window.addEventListener('touchmove',function(e){if(drag){self._applyDelta(e.touches[0].clientX-lx,e.touches[0].clientY-ly);lx=e.touches[0].clientX;ly=e.touches[0].clientY;e.preventDefault();}},{passive:false});
+  var self=this,drag=false,panning=false,lx=0,ly=0;
+  // Pan: Ctrl+right-drag, plain right-drag, or middle-drag. Rotate: left-drag.
+  // Pan sensitivity scales with zoom so the model tracks the cursor at any
+  // distance (panX/panY are in the camera's view-plane units, same scale the
+  // shader applies via rot*vec3(pan,0)).
+  function panScale(){ return self.camZoom * 0.0016; }
+  this.canvas.onmousedown=function(e){
+    // Ctrl/Cmd + click (left or right) = pan. Otherwise any button
+    // (left/right/middle) = rotate — matches CAD apps where right- or
+    // middle-drag orbits. Context menu is suppressed below so right-drag
+    // rotate doesn't pop a menu.
+    var isPan = (e.ctrlKey||e.metaKey) && (e.button===0 || e.button===2);
+    if(isPan){ panning=true; drag=false; e.preventDefault(); }
+    else if(e.button===0 || e.button===1 || e.button===2){ drag=true; panning=false; self.autoRot=false; if(e.button!==0) e.preventDefault(); }
+    lx=e.clientX; ly=e.clientY;
+  };
+  // Suppress the browser context menu over the canvas so right-drag (rotate)
+  // and Ctrl+right-drag (pan) don't pop a menu mid-gesture.
+  this.canvas.addEventListener('contextmenu',function(e){e.preventDefault();});
+  window.addEventListener('mouseup',function(){drag=false;panning=false;});
+  window.addEventListener('mousemove',function(e){
+    if(panning){
+      var k=panScale();
+      self.panX -= (e.clientX-lx)*k;   // drag right → model follows cursor
+      self.panY += (e.clientY-ly)*k;   // screen y-down → view-plane y-up
+      lx=e.clientX; ly=e.clientY; self._dirty=true;
+    } else if(drag){
+      self._applyDelta(e.clientX-lx,e.clientY-ly); lx=e.clientX; ly=e.clientY;
+    }
+  });
+  this.canvas.addEventListener('touchstart',function(e){
+    if(e.touches.length===2){ panning=true; drag=false;
+      lx=(e.touches[0].clientX+e.touches[1].clientX)*0.5;
+      ly=(e.touches[0].clientY+e.touches[1].clientY)*0.5;
+    } else { drag=true; panning=false; self.autoRot=false;
+      lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+    e.preventDefault();
+  },{passive:false});
+  window.addEventListener('touchend',function(){drag=false;panning=false;});
+  window.addEventListener('touchmove',function(e){
+    if(panning && e.touches.length===2){
+      var cx=(e.touches[0].clientX+e.touches[1].clientX)*0.5;
+      var cy=(e.touches[0].clientY+e.touches[1].clientY)*0.5;
+      var k=panScale();
+      self.panX -= (cx-lx)*k; self.panY += (cy-ly)*k;
+      lx=cx; ly=cy; self._dirty=true; e.preventDefault();
+    } else if(drag && e.touches.length===1){
+      self._applyDelta(e.touches[0].clientX-lx,e.touches[0].clientY-ly);
+      lx=e.touches[0].clientX; ly=e.touches[0].clientY; e.preventDefault();
+    }
+  },{passive:false});
   this.canvas.addEventListener('wheel',function(e){var maxZ=Math.max(80,self.viewH*8);self.camZoom=Math.max(self.viewH*0.3,Math.min(maxZ,self.camZoom+e.deltaY*0.04));self._dirty=true;e.preventDefault();},{passive:false});
 };
 // Instantiate global raymarcher
@@ -1712,9 +2826,15 @@ function computeShapeBbox(pos){
 // ── Main shape file dispatcher ────────────────────────────────────────────
 async function handleShapeFile(file){
   const name=file.name, ext=name.split('.').pop().toLowerCase();
+  // rc2: enforce MAX_BODIES cap at entry. Reject with toast, no UI change.
+  if(!canAddBody()){
+    showCapToast();
+    return;
+  }
   setShapeUI('loading', name);
   clearShapeWire();
-  if(importedShape) importedShape=null;
+  // rc2: no longer clear prior body — bodies accumulate. Raymarcher rebind
+  // happens on switchActiveBody / after setActiveBody in the success path.
   if(rm) rm.clearShape();
   showComputing('loading shape…','parsing file');
   try{
@@ -1756,23 +2876,32 @@ async function handleShapeFile(file){
     const posArr = new Float32Array(pos);
     const idxArr = new Uint32Array(idx);
     const tris=Math.floor(idxArr.length/3);
-    // Center the shape on world origin. STEP/IGES files preserve the CAD
-    // assembly position (could be far from origin); STL/OBJ files vary by
-    // authoring tool. The preview camera is origin-centered with a view box
-    // sized from bbox.maxDim, so any offset leaves the shape partially or
-    // fully out of view. Translate once here → Manifold, BVH, SDF bake,
-    // shader, and aperiodic world bounds all operate in one consistent
-    // coordinate system with no special-casing anywhere downstream.
-    // importCenter is restored to exported mesh vertices so the 3MF lands
-    // at the user's original CAD coordinates (lines up when reimported).
+    // rc3.5: Multi-body coordinate handling. The first imported body captures
+    // its CAD bbox center as sceneCenter — this becomes the world origin for
+    // the whole assembly. All subsequent bodies translate by THIS same offset,
+    // preserving the spatial relationship between bodies as they sat in CAD.
+    //
+    // Why not per-body centering: with multi-body, every body self-centered
+    // would stack them all at origin, even when they should be touching but
+    // separate in CAD space.
+    //
+    // importCenter still stores the offset for this body so the export path
+    // can restore CAD-space vertex coordinates when writing 3MF. With shared
+    // sceneCenter, importCenter is the same value across all bodies in a
+    // session — they all unshift by the same amount on export, landing back
+    // at their original CAD positions.
     const preBbox = computeShapeBbox(posArr);
-    const importCenter = {x: preBbox.cx, y: preBbox.cy, z: preBbox.cz};
+    // First body of the session: anchor the scene origin to its bbox center.
+    if(sceneCenter === null){
+      sceneCenter = {x: preBbox.cx, y: preBbox.cy, z: preBbox.cz};
+    }
+    const importCenter = {x: sceneCenter.x, y: sceneCenter.y, z: sceneCenter.z};
     for(let i=0; i<posArr.length; i+=3){
       posArr[i]   -= importCenter.x;
       posArr[i+1] -= importCenter.y;
       posArr[i+2] -= importCenter.z;
     }
-    const bbox=computeShapeBbox(posArr); // now centered on origin
+    const bbox=computeShapeBbox(posArr); // now in scene-space (relative to sceneCenter)
     setShapeUI('loading', name, null, 'building shape SDF…');
     showComputing('loading shape…','building shape SDF…');
     // v0.5.0-rc19: import bake at N=64 for snappy preview. The export path
@@ -1785,18 +2914,77 @@ async function handleShapeFile(file){
     console.time('[F13LD.mesh] preview SDF bake');
     const sdfGrid = await computeShapeSDF(posArr, idxArr, bbox, 64);
     console.timeEnd('[F13LD.mesh] preview SDF bake');
+    // rc3: bake a low-resolution silhouette SDF for ghost rendering.
+    // 48³ provides a smooth boundary while remaining cheap to bake and upload.
+    // rc3.6: bumped from 32³ to 48³ to reduce visible voxel banding in the
+    // accumulation pass — at 32³ the ~1.5mm voxels were aliasing against the
+    // 40-step ray-march, producing horizontal stripe artifacts on tangent-
+    // facing surfaces. 48³ × 3.4× the voxel count → still tiny in absolute
+    // memory (~220 KB per ghost vs ~65 KB) but bands drop below visibility.
+    console.time('[F13LD.mesh] ghost SDF bake');
+    const sdfGhost = await computeShapeSDF(posArr, idxArr, bbox, 48);
+    console.timeEnd('[F13LD.mesh] ghost SDF bake');
     const suggestedCell=Math.max(0.5, parseFloat((bbox.maxDim/5).toFixed(1)));
-    importedShape={posArr, idxArr, bbox, sdfGrid, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}};
-    // Reset structure transform on every new shape (user spec: don't persist).
-    resetStructureTransform();
-    refreshStructureTransformUI();
+    // rc3.7: capture whether this is the first body of the session BEFORE
+    // setActiveBody runs. setActiveBody now only auto-activates the first
+    // body — subsequent imports leave activeBodyId pointing at whatever the
+    // user already had selected.
+    const wasFirstBody = (activeBodyId === null);
+    // rc3.7.1: setActiveBody returns the NEW body's record, but in rc3.7 it
+    // only sets that record as active when wasFirstBody is true. The legacy
+    // `importedShape` singleton must continue to point at the ACTIVE body
+    // — not the just-imported one. Otherwise downstream code (the scaffold
+    // field bake especially) reads `importedShape.bbox` and bakes over the
+    // wrong body's region, producing extrusion artifacts where rays inside
+    // the active body sample outside the field's bake region.
+    const newBodyRecord = setActiveBody({posArr, idxArr, bbox, sdfGrid, sdfGhost, importCenter, meta:{name,format,tris,bbox:bbox.bboxStr}});
+    if(wasFirstBody){
+      importedShape = newBodyRecord;
+    }
+    // else: importedShape stays pointing at the still-active body. Don't touch it.
+    _assertModeAInvariants('after-shape-import');
+    // rc3.5.2: newly-imported bodies default to SOLID. syncCurrentRecipeFromActiveBody
+    // is the only path that translates that into rm.setSolidMode(true) on the GPU.
+    // Without this call the card chip reads "solid" but the shader still has
+    // uSolidMode = 0 from before, so the scaffold renders through. Manually
+    // re-picking "solid" from the dropdown worked because assignSolidToBody()
+    // calls this same function — we just weren't calling it on import.
+    // rc3.7: only sync on first-body imports — subsequent imports don't change
+    // which body is active, so the GPU state is already correct for whoever's
+    // active. The new body just appears as a ghost.
+    if(wasFirstBody){
+      syncCurrentRecipeFromActiveBody();
+      // Reset structure transform on every new shape (user spec: don't persist).
+      resetStructureTransform();
+      refreshStructureTransformUI();
+    }
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     if(rm){
-      rm.setShapeSDF(sdfGrid, bbox, cellSizeMm);
+      // rc3.5: pass assembly bbox so viewH spans all bodies, not just the
+      // newly-imported one. Without this, importing a second body that lives
+      // outside the first's extent would clip into the world cube boundary.
+      // rc3.7: on first-body import, bind the new body's SDF as the active
+      // shape and reset camera. On subsequent imports, rebind to the STILL-
+      // ACTIVE body's SDF (not the new one) and preserve camera framing.
+      const asmBbox = computeAssemblyBbox();
+      if(wasFirstBody){
+        rm.setShapeSDF(sdfGrid, bbox, cellSizeMm, asmBbox, /*preserveCamera=*/false);
+      } else {
+        // Active body unchanged — its SDF is already bound. Re-call setShapeSDF
+        // with the active body's data just to refresh assembly bounds (viewH),
+        // and pass preserveCamera so the user's current zoom is kept.
+        const activeBody = bodies.get(activeBodyId);
+        if(activeBody){
+          rm.setShapeSDF(activeBody.sdfGrid, activeBody.bbox, cellSizeMm, asmBbox, /*preserveCamera=*/true);
+        }
+      }
       // Push (identity) transform so uniforms are initialized correctly.
       if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
       rm._dirty=true;
     }
+    // rc3: refresh ghosts — the new body needs to appear as a ghost (or
+    // inactive-solid per default visibility) since active didn't move to it.
+    syncGhostsToRaymarcher();
     // suggestedCell is computed but NOT passed to setShapeUI — user's current
     // cell size is preserved across shape loads. Same for render quality:
     // use rm._quality (last quality the user selected) instead of hardcoded
@@ -1805,10 +2993,22 @@ async function handleShapeFile(file){
     void suggestedCell;
     setShapeUI('ok', name, {format,tris,bbox:bbox.bboxStr}, null);
     updateExportEstimate();
+    // rc3.7.2: trigger preview rebake on EVERY import, not just the first.
+    // The rc3.7 optimization (only on first-body imports) caused the scaffold
+    // field on GPU to go stale relative to updated shape/world uniforms after
+    // subsequent imports — visible as directional banding artifacts on the
+    // active body's lattice (which cleared the moment the user nudged cell
+    // size and forced a re-bake). The active body's lattice geometry, density,
+    // and orientation must remain identical across imports; re-baking the
+    // field is the only reliable way to guarantee that.
     if(currentRecipe) triggerPreview(rm&&rm._quality||'draft');
     else hideComputing();
   } catch(e){
-    importedShape=null;
+    // rc2: no clearActiveBody here. The failing import was never added to
+    // bodies Map (setActiveBody is only called on success), so there is
+    // nothing to clear. A defensive clear would now incorrectly delete a
+    // valid prior body. The error UI is the only signal needed.
+    _assertModeAInvariants('after-shape-import-fail');
     setShapeUI('err', name, null, e.message||String(e));
     hideComputing();
     console.error(e);
@@ -1839,74 +3039,485 @@ async function loadCADFormat(file, type){
 }
 
 // ── Shape strip UI state renderer ─────────────────────────────────────────
+// rc2: setShapeUI is now a thin wrapper. The real renderer is renderBodyCards,
+// which draws all cards from the bodies Map plus an optional "in progress"
+// card from _pendingImport (loading/error state that has no body record yet).
+//
+// The old single-card #shapeCard div is hidden in rc2 — it stays in the DOM
+// for backwards compatibility with any code path I might have missed, but
+// nothing renders into it. All visible cards live in #shapeCardRow.
+
+let _pendingImport = null;  // { name, state:'loading'|'err', errMsg? }
+
 function setShapeUI(state, name, meta, errMsg, suggestedCell){
   const dz=document.getElementById('shapeDZ');
-  const card=document.getElementById('shapeCard');
+  if(dz) dz.querySelector('.sdz-sub').textContent =
+    (state==='loading') ? 'loading…' : 'drop a shape · or click to browse';
+
+  // Track transient import state — gets cleared on 'ok' (body now in Map)
+  // and on 'idle' (no import in flight).
   if(state==='loading'){
-    dz.querySelector('.sdz-sub').textContent='loading…';
-    card.style.display='none';
-    return;
+    _pendingImport = { name, state:'loading' };
+  } else if(state==='err'){
+    _pendingImport = { name, state:'err', errMsg: errMsg||'import failed' };
+  } else {
+    _pendingImport = null;
   }
-  if(state==='idle'){
-    dz.querySelector('.sdz-sub').textContent='drop a shape · or click to browse';
-    card.style.display='none';
-    return;
-  }
-  dz.querySelector('.sdz-sub').textContent='drop a shape · or click to browse';
-  // show/hide cell size overlay
+
+  // Show/hide cell size + structure transform overlays based on whether
+  // any body is loaded (was: based on the single-shape state).
   const cellOv=document.getElementById('cellOverlay');
   const xfOv=document.getElementById('structXformOverlay');
-  if(state==='ok'&&cellOv){
-    cellOv.style.display='flex';
+  const anyBody = bodies.size > 0;
+  if(anyBody && state!=='err'){
+    if(cellOv) cellOv.style.display='flex';
     if(xfOv) xfOv.style.display='flex';
-    const inp=document.getElementById('shapeCellSizeMm');
-    if(inp&&suggestedCell) inp.value=suggestedCell;
-    // v0.5.0-rc17: trim-to-nodes toggle is beam-family-only (other families
-    // have continuous fields with no node concept). Show only when current
-    // recipe is a beam recipe AND a shape is loaded.
-    // v0.5.0-rc18: multiplier visibility tracks the toggle state.
-    const trimWrap=document.getElementById('trimNodesWrap');
-    if(trimWrap) trimWrap.style.display=(currentRecipe&&currentRecipe.family==='beam')?'inline':'none';
-    const trimMul=document.getElementById('trimInsetWrap');
-    const trimTg=document.getElementById('trimToNodes');
-    if(trimMul) trimMul.style.display=(currentRecipe&&currentRecipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
-  } else if(cellOv && (state==='err'||state==='idle')){
-    cellOv.style.display='none';
+    if(state==='ok'){
+      const inp=document.getElementById('shapeCellSizeMm');
+      if(inp&&suggestedCell) inp.value=suggestedCell;
+      // Beam-family-only trim toggle visibility (unchanged from rc1).
+      const trimWrap=document.getElementById('trimNodesWrap');
+      if(trimWrap) trimWrap.style.display=(currentRecipe&&currentRecipe.family==='beam')?'inline':'none';
+      const trimMul=document.getElementById('trimInsetWrap');
+      const trimTg=document.getElementById('trimToNodes');
+      if(trimMul) trimMul.style.display=(currentRecipe&&currentRecipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+    }
+  } else if(!anyBody){
+    if(cellOv) cellOv.style.display='none';
     if(xfOv) xfOv.style.display='none';
   }
-  const dotCls = state==='ok' ? 'ok' : 'err';
-  const statusText = state==='ok'
-    ? '✓ manifold valid — Boolean intersection ready'
-    : '⚠ '+errMsg+' — using cube boundary';
-  const chips = meta ? `
-    <span class="sc-chip">${meta.format}</span>
-    <span class="sc-chip">tris <b>${meta.tris.toLocaleString()}</b></span>
-    <span class="sc-chip">bbox <b>${meta.bbox}</b></span>` : '';
-  // cell size lives in previewArea overlay
-  card.innerHTML=`
-    <div class="sc-row">
-      <span class="sc-dot ${dotCls}"></span>
-      <span class="sc-name">${name}</span>
-      <div class="sc-chips">${chips}</div>
-      <button class="sc-clear" onclick="window.clearImportedShape()">&#10005; clear</button>
-    </div>
-    <div class="sc-status ${dotCls}">${statusText}</div>`;
-    card.style.display='block';
+  // Always re-render the card row (handles all card display now).
+  renderBodyCards();
+  // rc2.5: also refresh library row (usage counts may have changed).
+  renderRecipeLibrary();
 }
 
-window.clearImportedShape=function(){
-  if(importedShape) importedShape=null;
+// rc2: The real card renderer. Reads from bodies Map + bodyOrder + activeBodyId
+// + _pendingImport and rebuilds #shapeCardRow. Called from setShapeUI, from
+// switchActiveBody, and from clearActiveBody when the active body changes.
+// rc2.5: now also renders the recipe-chip dropdown trigger on each card.
+function renderBodyCards(){
+  const row = document.getElementById('shapeCardRow');
+  if(!row) return;
+  // Close any open dropdown (will be re-attached fresh on next click).
+  _closeRecipeDropdown();
+  const cards = [];
+  // One card per body in bodyOrder (left-to-right = oldest-to-newest).
+  for(const bodyId of bodyOrder){
+    const b = bodies.get(bodyId);
+    if(!b) continue;
+    const isActive = (bodyId === activeBodyId);
+    const meta = b.meta || {};
+    const tris = (meta.tris != null) ? meta.tris.toLocaleString() : '?';
+    const chips = `
+      <span class="sc-chip">${meta.format||''}</span>
+      <span class="sc-chip">tris <b>${tris}</b></span>`;
+    const safeName = String(meta.name||'shape').replace(/</g,'&lt;');
+    // rc2.5: recipe chip showing assigned recipe (or "unassigned").
+    // rc3.5: also handles the solid sentinel — shows "solid" with neutral gray.
+    // rc3.6: chip color now uses per-body resolveBodyColor (palette override).
+    const rid = assignments.get(bodyId);
+    const r = (rid && rid !== SOLID_SENTINEL && recipes.has(rid)) ? recipes.get(rid) : null;
+    const bodyCol = resolveBodyColor(bodyId);
+    let recipeChipHtml;
+    if(isSolidAssignment(rid)){
+      recipeChipHtml = `
+        <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
+          <span class="scr-dot" style="background:${bodyCol}"></span>
+          <span class="scr-name">solid</span>
+          <span class="scr-caret">▾</span>
+        </span>`;
+    } else if(r){
+      const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
+      recipeChipHtml = `
+        <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
+          <span class="scr-dot" style="background:${bodyCol}"></span>
+          <span class="scr-name">${label}</span>
+          <span class="scr-caret">▾</span>
+        </span>`;
+    } else {
+      recipeChipHtml = `
+        <span class="shapeCard-recipe unassigned" data-body-id="${bodyId}">
+          <span class="scr-name">unassigned</span>
+          <span class="scr-caret">▾</span>
+        </span>`;
+    }
+    // rc3.6: visibility cycle button + color palette swatch. Only meaningful
+    // for non-active bodies (the active body's visibility is implicitly "full").
+    // Show them on all cards for layout consistency; the active card's icons
+    // are visible but visually muted (lower opacity).
+    const vis = b.visibility || VIS_DEFAULT;
+    const visIcon = vis === VIS_HIDDEN ? '◯' : vis === VIS_GHOST ? '◌' : '◉';
+    const visTitle = vis === VIS_HIDDEN
+      ? 'Hidden · click to cycle to inactive-solid'
+      : vis === VIS_GHOST
+      ? 'Ghost (translucent) · click to cycle to hidden'
+      : 'Inactive-solid (opaque) · click to cycle to ghost';
+    const visExtraClass = isActive ? ' sc-icon-muted' : '';
+    const paletteBtnHtml = `
+      <button class="sc-palette-btn${visExtraClass}" data-body-id="${bodyId}" title="Pick body color" style="color:${bodyCol}">
+        <span class="sc-palette-swatch" style="background:${bodyCol}"></span>
+      </button>`;
+    const visBtnHtml = `
+      <button class="sc-vis-btn${visExtraClass}" data-body-id="${bodyId}" title="${visTitle}">
+        ${visIcon}
+      </button>`;
+    cards.push(`
+      <div class="shapeCard${isActive?' active':''}" data-body-id="${bodyId}">
+        <button class="sc-x" data-body-id="${bodyId}" title="remove">&#10005;</button>
+        <span class="sc-name">${safeName}</span>
+        <div class="sc-chips">${chips}</div>
+        ${recipeChipHtml}
+        <div class="sc-card-controls">
+          ${visBtnHtml}
+          ${paletteBtnHtml}
+        </div>
+      </div>`);
+  }
+  // Optional "in progress" card for an import that's loading or errored.
+  if(_pendingImport){
+    const cls = _pendingImport.state === 'loading' ? 'loading' : 'err';
+    const safeName = String(_pendingImport.name||'').replace(/</g,'&lt;');
+    const msg = _pendingImport.state === 'loading'
+      ? '<div class="sc-status">loading…</div>'
+      : `<div class="sc-status err">⚠ ${_pendingImport.errMsg||'failed'}</div>`;
+    cards.push(`
+      <div class="shapeCard ${cls}">
+        <span class="sc-name">${safeName}</span>
+        ${msg}
+      </div>`);
+  }
+  // "Add another" tile — enabled if under cap, disabled otherwise.
+  const atCap = !canAddBody();
+  cards.push(`
+    <div class="shapeCard-add${atCap?' disabled':''}" id="addBodyTile" title="${atCap?'Body limit reached':'Drop a body file or click to browse'}">
+      <span class="sca-icon">⬡</span>
+      <span class="sca-lbl">${atCap?'cap reached':'add body'}</span>
+      <span class="sca-cap">${bodies.size} / ${MAX_BODIES}</span>
+    </div>`);
+  row.innerHTML = cards.join('');
+  row.style.display = (bodies.size > 0 || _pendingImport) ? 'flex' : 'none';
+
+  // Attach click handlers — card click → switchActiveBody, × → clearImportedShape,
+  // recipe chip → open dropdown, add-tile → opens the existing shape file input.
+  for(const card of row.querySelectorAll('.shapeCard')){
+    const bid = card.getAttribute('data-body-id');
+    if(!bid) continue;  // pending/error cards have no bodyId
+    card.addEventListener('click', e => {
+      // Ignore clicks on × button or recipe chip (each handled separately).
+      if(e.target && e.target.closest && (e.target.closest('.sc-x') || e.target.closest('.shapeCard-recipe'))) return;
+      switchActiveBody(bid);
+    });
+  }
+  for(const xbtn of row.querySelectorAll('.sc-x')){
+    const bid = xbtn.getAttribute('data-body-id');
+    xbtn.addEventListener('click', e => {
+      e.stopPropagation();
+      window.clearImportedShape(bid);
+    });
+  }
+  // rc2.5: recipe chip click → open dropdown menu.
+  for(const chip of row.querySelectorAll('.shapeCard-recipe')){
+    const bid = chip.getAttribute('data-body-id');
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      _openRecipeDropdown(chip, bid);
+    });
+  }
+  // rc3.6: visibility cycle button. Cycles inactive-solid → ghost → hidden → inactive-solid.
+  for(const vbtn of row.querySelectorAll('.sc-vis-btn')){
+    const bid = vbtn.getAttribute('data-body-id');
+    vbtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const b = bodies.get(bid);
+      if(!b) return;
+      const cur = b.visibility || VIS_DEFAULT;
+      const next = cur === VIS_INACTIVE_SOLID ? VIS_GHOST
+                 : cur === VIS_GHOST ? VIS_HIDDEN
+                 : VIS_INACTIVE_SOLID;
+      setBodyVisibility(bid, next);
+    });
+  }
+  // rc3.6: palette popover.
+  for(const pbtn of row.querySelectorAll('.sc-palette-btn')){
+    const bid = pbtn.getAttribute('data-body-id');
+    pbtn.addEventListener('click', e => {
+      e.stopPropagation();
+      _openPalettePopover(pbtn, bid);
+    });
+  }
+  const addTile = document.getElementById('addBodyTile');
+  if(addTile && !atCap){
+    addTile.addEventListener('click', ()=>{
+      const inp = document.getElementById('shapeInput');
+      if(inp) inp.click();
+    });
+  } else if(addTile && atCap){
+    addTile.addEventListener('click', ()=> showCapToast());
+  }
+}
+
+// rc2.5: Recipe library row renderer. Reads from recipes Map + recipeOrder.
+// Each chip shows family-colored dot, name, and usage count. × removes recipe.
+// "+" tile triggers the main file input for JSON drops.
+function renderRecipeLibrary(){
+  const row = document.getElementById('recipeLibraryRow');
+  if(!row) return;
+  const chips = [];
+  for(const recipeId of recipeOrder){
+    const r = recipes.get(recipeId);
+    if(!r) continue;
+    const col = familyColor(r.family);
+    const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
+    const safeName = String(r.filename||label).replace(/</g,'&lt;');
+    const usage = getRecipeUsageCount(recipeId);
+    chips.push(`
+      <div class="libraryChip" data-recipe-id="${recipeId}" style="border-color:${col}">
+        <button class="lc-x" data-recipe-id="${recipeId}" title="remove">&#10005;</button>
+        <div class="lc-row">
+          <span class="lc-dot" style="background:${col}"></span>
+          <span class="lc-name">${label}</span>
+        </div>
+        <div class="lc-usage" style="color:${col}">used ${usage}×</div>
+      </div>`);
+  }
+  // "+" drop tile — clicking opens the main JSON file input.
+  const atCap = !canAddRecipe();
+  chips.push(`
+    <div class="libraryChip-add${atCap?' disabled':''}" id="addRecipeTile" title="${atCap?'Recipe limit reached':'Drop a JSON recipe or click to browse'}">
+      <span class="lca-icon">+</span>
+      <span class="lca-lbl">${atCap?'cap':'add recipe'}</span>
+    </div>`);
+  row.innerHTML = chips.join('');
+  row.style.display = (recipes.size > 0) ? 'flex' : 'none';
+
+  // Library chip click → open dropdown that ALSO lets you preview/assign to active body.
+  // For now, simple behavior: click the chip body to assign to active body.
+  for(const chip of row.querySelectorAll('.libraryChip')){
+    const rid = chip.getAttribute('data-recipe-id');
+    chip.addEventListener('click', e => {
+      if(e.target && e.target.closest && e.target.closest('.lc-x')) return;
+      // Assigning to active body switches the preview to that body's recipe.
+      if(activeBodyId !== null){
+        assignRecipeToBody(activeBodyId, rid);
+      }
+    });
+  }
+  for(const xbtn of row.querySelectorAll('.lc-x')){
+    const rid = xbtn.getAttribute('data-recipe-id');
+    xbtn.addEventListener('click', e => {
+      e.stopPropagation();
+      removeRecipe(rid);
+    });
+  }
+  const addTile = document.getElementById('addRecipeTile');
+  if(addTile && !atCap){
+    addTile.addEventListener('click', ()=>{
+      const inp = document.getElementById('fileInput');
+      if(inp) inp.click();
+    });
+  }
+}
+
+// rc2.5: Open the recipe-selector dropdown anchored to a card's recipe chip.
+let _activeDropdownEl = null;
+function _closeRecipeDropdown(){
+  if(_activeDropdownEl && _activeDropdownEl.parentNode){
+    _activeDropdownEl.parentNode.removeChild(_activeDropdownEl);
+  }
+  _activeDropdownEl = null;
+  document.removeEventListener('mousedown', _onDropdownOutsideClick, true);
+}
+function _onDropdownOutsideClick(e){
+  if(_activeDropdownEl && !_activeDropdownEl.contains(e.target)){
+    _closeRecipeDropdown();
+  }
+}
+// rc3.5: Reserved assignment value meaning "this body is solid, no lattice."
+// Stored in the assignments Map as a string sentinel — code that consumes
+// assignments must distinguish it from valid recipeIds. The literal string
+// 'solid' is safer than null/undefined because it survives JSON round-trips
+// and is unambiguous in logging.
+const SOLID_SENTINEL = 'solid';
+function isSolidAssignment(rid){ return rid === SOLID_SENTINEL; }
+// Color used for solid bodies in both active and ghost rendering. Mid-gray
+// reads as "solid material, no scaffold" without being too bright against
+// the dark canvas. Was #cccccc in initial rc3.5 — toned down for legibility.
+const SOLID_COLOR_HEX = '#a0a0a0';
+
+// rc3.6: Per-body visibility state for inactive bodies. The active body
+// always renders fully; non-active bodies render according to this state.
+//   'inactive-solid' — opaque rendering (body surface + color, no lattice)
+//   'ghost'          — translucent envelope (today's rc3 behavior)
+//   'hidden'         — does not render in the canvas at all
+// Default for new bodies is 'inactive-solid' (per user decision rc3.6).
+const VIS_INACTIVE_SOLID = 'inactive-solid';
+const VIS_GHOST          = 'ghost';
+const VIS_HIDDEN         = 'hidden';
+const VIS_DEFAULT        = VIS_INACTIVE_SOLID;
+
+// rc3.6: 16-swatch palette for per-body color override. Chosen to span hue
+// while staying within the brand palette feel — mostly muted, no neons.
+// The first swatch (null) is the "reset to family default" option.
+const COLOR_PALETTE = [
+  null,        // reset → use family / solid color
+  '#5ecaa5',   // tpms green (family default)
+  '#ea7050',   // noise terracotta (family default)
+  '#a8a59a',   // grain warm gray (family default)
+  '#b8cf50',   // beam olive (family default)
+  '#22d3ee',   // cyan
+  '#7c6ff7',   // purple
+  '#f59e0b',   // amber
+  '#ef4444',   // red
+  '#ec4899',   // pink
+  '#84cc16',   // lime
+  '#06b6d4',   // teal
+  '#3b82f6',   // blue
+  '#f97316',   // orange
+  '#a855f7',   // violet
+  '#ffffff'    // white (high contrast)
+];
+
+function _openRecipeDropdown(anchor, bodyId){
+  _closeRecipeDropdown();
+  const dd = document.createElement('div');
+  dd.className = 'recipeDropdown';
+  const currentRid = assignments.get(bodyId);
+  const items = [];
+  // rc3.5: "solid" entry at the top of every dropdown. Always available,
+  // never depends on the library having recipes. Separated from real recipes
+  // by a thin divider when recipes are present.
+  const isSolidCurrent = isSolidAssignment(currentRid);
+  items.push(`
+    <div class="rd-item rd-solid${isSolidCurrent?' current':''}" data-recipe-id="${SOLID_SENTINEL}">
+      <span class="rd-dot" style="background:${SOLID_COLOR_HEX}"></span>
+      <span class="rd-name" style="color:${SOLID_COLOR_HEX}">solid (no lattice)</span>
+    </div>`);
+  if(recipes.size > 0){
+    items.push('<div class="rd-divider"></div>');
+    for(const rid of recipeOrder){
+      const r = recipes.get(rid);
+      if(!r) continue;
+      const col = familyColor(r.family);
+      const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
+      const isCurrent = (rid === currentRid);
+      items.push(`
+        <div class="rd-item${isCurrent?' current':''}" data-recipe-id="${rid}">
+          <span class="rd-dot" style="background:${col}"></span>
+          <span class="rd-name" style="color:${col}">${label}</span>
+        </div>`);
+    }
+  }
+  dd.innerHTML = items.join('');
+  document.body.appendChild(dd);
+  // Position the dropdown just below the anchor chip.
+  const rect = anchor.getBoundingClientRect();
+  dd.style.left = rect.left + 'px';
+  dd.style.top  = (rect.bottom + 4) + 'px';
+  // Wire clicks. rc3.5: solid entry → assignSolidToBody, recipe → assignRecipeToBody.
+  for(const item of dd.querySelectorAll('.rd-item')){
+    const rid = item.getAttribute('data-recipe-id');
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      _closeRecipeDropdown();
+      if(rid === SOLID_SENTINEL){
+        assignSolidToBody(bodyId);
+      } else {
+        assignRecipeToBody(bodyId, rid);
+      }
+    });
+  }
+  _activeDropdownEl = dd;
+  // Close on outside click (next tick so the opening click doesn't fire it).
+  setTimeout(()=>{
+    document.addEventListener('mousedown', _onDropdownOutsideClick, true);
+  }, 0);
+}
+
+// rc3.6: 4×4 palette popover anchored to a card's palette button. Clicking
+// a swatch sets the body's colorHex override. The first swatch (null) resets
+// to family / solid default. Uses the same outside-click close mechanic as
+// the recipe dropdown.
+function _openPalettePopover(anchor, bodyId){
+  _closeRecipeDropdown();
+  const dd = document.createElement('div');
+  dd.className = 'recipeDropdown palettePopover';
+  const b = bodies.get(bodyId);
+  const currentHex = b && b.colorHex;
+  const swatchesHtml = COLOR_PALETTE.map((hex, idx) => {
+    const isReset = (hex === null);
+    const isCurrent = (isReset && !currentHex) || (hex && hex.toLowerCase() === (currentHex||'').toLowerCase());
+    const bg = isReset ? 'transparent' : hex;
+    const border = isCurrent ? '#22d3ee' : (isReset ? 'var(--border)' : 'rgba(255,255,255,0.1)');
+    const label = isReset ? '↺' : '';
+    return `
+      <button class="pp-swatch${isCurrent?' current':''}"
+              data-hex="${hex||''}"
+              title="${isReset?'Reset to default':hex}"
+              style="background:${bg};border-color:${border}">
+        ${label}
+      </button>`;
+  }).join('');
+  dd.innerHTML = `<div class="pp-grid">${swatchesHtml}</div>`;
+  document.body.appendChild(dd);
+  const rect = anchor.getBoundingClientRect();
+  dd.style.left = rect.left + 'px';
+  dd.style.top  = (rect.bottom + 4) + 'px';
+  for(const swatch of dd.querySelectorAll('.pp-swatch')){
+    const hex = swatch.getAttribute('data-hex') || null;
+    swatch.addEventListener('click', e => {
+      e.stopPropagation();
+      _closeRecipeDropdown();
+      setBodyColor(bodyId, hex);
+    });
+  }
+  _activeDropdownEl = dd;
+  setTimeout(()=>{
+    document.addEventListener('mousedown', _onDropdownOutsideClick, true);
+  }, 0);
+}
+
+// rc3.5: Assign the solid sentinel to a body. Same flow as assignRecipeToBody
+// but routes through the solid rendering path instead of a recipe lookup.
+function assignSolidToBody(bodyId){
+  if(!bodies.has(bodyId)) return;
+  assignments.set(bodyId, SOLID_SENTINEL);
+  // Auto-switch active to this body so user sees the result (per decision 3).
+  if(bodyId !== activeBodyId){
+    switchActiveBody(bodyId);
+  } else {
+    // Already active — rebuild preview directly.
+    syncCurrentRecipeFromActiveBody();
+    if(rm) reloadActiveRecipeIntoPreview();
+    renderBodyCards();
+    renderRecipeLibrary();
+  }
+  // Refresh ghost colors (this body's ghost color may have changed).
+  syncGhostsToRaymarcher();
+}
+
+window.clearImportedShape=function(bodyId){
+  // rc2: bodyId is passed from the card × button. If absent (legacy callers),
+  // falls back to the active body (matches rc1 behavior).
+  clearActiveBody(bodyId);
+  _assertModeAInvariants('after-clearImportedShape');
   clearShapeWire();
-  const cellOv=document.getElementById('cellOverlay');if(cellOv)cellOv.style.display='none';
-  // Hide structure-transform panel and reset state
-  const xfOv=document.getElementById('structXformOverlay');if(xfOv)xfOv.style.display='none';
-  resetStructureTransform();
-  setShapeUI('idle');
+  // If no bodies remain, hide overlays. Otherwise the surviving active body
+  // keeps the overlays visible with its own cell size + transform.
+  if(bodies.size === 0){
+    const cellOv=document.getElementById('cellOverlay');if(cellOv)cellOv.style.display='none';
+    const xfOv=document.getElementById('structXformOverlay');if(xfOv)xfOv.style.display='none';
+    resetStructureTransform();
+    setShapeUI('idle');
+    // Reset raymarcher to cube mode and re-bake the periodic field.
+    if(rm) rm.clearShape();
+    if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
+  } else {
+    // A new active body was promoted inside clearActiveBody. Re-render cards.
+    renderBodyCards();
+    if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
+  }
   updateExportEstimate();
-  // Reset raymarcher to cube mode and re-bake the periodic field so the user
-  // immediately sees a clean cube preview instead of stale shape-clipped one.
-  if(rm) rm.clearShape();
-  if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
 };
 
 
@@ -1931,6 +3542,12 @@ const EXPORT_SHAPE_SDF_N_BY_QUAL={draft:64,low:96,med:128,high:192,ultra:256};
 const QUAL_EDGE_MM={draft:0.40,low:0.20,med:0.12,high:0.09,ultra:0.075};
 
 let meshWorker=null;
+// v0.5.1-rc4.0b: module-level handles for the active export's timers so
+// cancelMesh() can clear them. Previously elapsedTimer was a local inside
+// triggerExport, so cancel terminated the worker but the elapsed counter kept
+// climbing — making a cancelled export look like it was still running.
+let _exportElapsedTimer=null;
+let _exportTimeoutTimer=null;
 let currentOversample=3; // preview oversample factor (2=draft,3=std,4=fine)
 let _workerBlobUrl=null;
 function getWorkerBlobUrl(){
@@ -3865,6 +5482,22 @@ self.onmessage=async function(e){
         if(evp[i+1]<emny)emny=evp[i+1]; if(evp[i+1]>emxy)emxy=evp[i+1];
         if(evp[i+2]<emnz)emnz=evp[i+2]; if(evp[i+2]>emxz)emxz=evp[i+2];
       }
+      // ── Coarse-pass diagnostic (v0.5.1-rc4.0b) ────────────────────────────
+      // The earlier rc4.0a memory-projection/auto-coarsen guard lived here. It
+      // was removed: the coarse pass undersamples thin walls, so its triangle
+      // count cannot distinguish a safe export from a runaway one (a dense 2mm
+      // spinodoid and a sparse 8mm one produce near-identical coarse tris). The
+      // real guard now runs on the MAIN THREAD before dispatch — a feature-to-
+      // voxel-edge ratio check (Layer 1), backed by a wall-clock timeout
+      // (Layer 2). We keep a console-only coarse-tris log purely for calibration
+      // reference; it drives no decision. coarseVox now reports ACTUAL voxels
+      // (the old /1e6 rounding made it read 0 for small parts).
+      const coarseTris = ecm.triVerts.length/3;
+      const coarseVoxActual = Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3));
+      self.postMessage({type:'diag',diag:{
+        coarseTris, coarseVox: coarseVoxActual, eCoarseEdge,
+        fineEdgeMm: relEdgeMm
+      }});
       eCoarseMfld.delete();
       const ePad=relEdgeMm*2;
       const eInner={
@@ -3952,9 +5585,15 @@ self.onmessage=async function(e){
 function showCancelBtn(show){const b=document.getElementById('cancelMeshBtn');if(b)b.style.display=show?'':'none';}
 window.cancelMesh=function(){
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  // v0.5.1-rc4.0b: clear the export timers so the elapsed counter stops and
+  // the wall-clock backstop doesn't fire after a manual cancel.
+  if(_exportElapsedTimer){clearInterval(_exportElapsedTimer);_exportElapsedTimer=null;}
+  if(_exportTimeoutTimer){clearTimeout(_exportTimeoutTimer);_exportTimeoutTimer=null;}
+  const ee=document.getElementById('expElapsed');if(ee)ee.style.display='none';
   if(window._cancelSdfBake)window._cancelSdfBake();
   if(window._cancelHuBake)window._cancelHuBake();
   hideComputing();setBtns(true);showCancelBtn(false);
+  const eb=document.getElementById('expBtn');if(eb){eb.disabled=false;eb.classList.remove('sweeping');eb.textContent='Export 3MF';}
 };
 
 
@@ -4359,6 +5998,8 @@ window.onCellSizeInput=function(){
   // via setCellSize (hardware REPEAT wrap handles the retiling).
   if(!recipeIsPeriodic(currentRecipe))setStale();
   updateExportEstimate();
+  // rc2: persist cell-size change to active body record.
+  snapshotActiveBodyState();
 };
 
 // v0.5.0-rc17: trim-to-nodes is an export-only operation (preview shows the
@@ -4370,10 +6011,14 @@ window.onTrimToNodesChange=function(){
   const im=document.getElementById('trimInsetWrap');
   if(im) im.style.display=(tg&&tg.checked)?'inline-flex':'none';
   updateExportEstimate();
+  // rc2: persist trim toggle to active body record.
+  snapshotActiveBodyState();
 };
 window.onTrimInsetMultChange=function(){
   // Pure export-time setting; no re-preview, just refresh the size estimate.
   updateExportEstimate();
+  // rc2: persist trim inset to active body record.
+  snapshotActiveBodyState();
 };
 
 // ── Structure transform handlers (v0.5.0 Phase B) ─────────────────────────
@@ -4436,6 +6081,8 @@ window.onStructXformInput=function(){
     structureTransform.spatialOffsetMmY!==before.oy ||
     structureTransform.spatialOffsetMmZ!==before.oz;
   if(xformChanged) _scheduleStructXformRebake();
+  // rc2: persist transform state to active body record so it survives switches.
+  snapshotActiveBodyState();
 };
 
 window.onStructXformReset=function(){
@@ -4453,6 +6100,8 @@ window.onStructXformReset=function(){
   }
   updateExportEstimate();
   if(wasNonIdentity) _scheduleStructXformRebake();
+  // rc2: persist reset state to active body record.
+  snapshotActiveBodyState();
 };
 
 // Pushes current structureTransform values into the UI inputs. Called on
@@ -4676,6 +6325,15 @@ const summaryEl=document.getElementById('summaryContent'),triPill=document.getEl
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
 const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM'};
+// rc2.5: Family colors from F13LD.vault scheme. Used by library chips and
+// the per-card recipe chip on body cards.
+const FAMILY_COLOR={
+  tpms:  '#5ecaa5',
+  noise: '#ea7050',
+  grain: '#a8a59a',
+  beam:  '#b8cf50'
+};
+function familyColor(fam){ return FAMILY_COLOR[fam] || '#888'; }
 let currentRecipe=null;
 
 // ── Export state & functions ───────────────────────────────────────────────
@@ -4792,6 +6450,48 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   return{estTris,estSec};
 }
 window.triggerExport=async function(){
+  // rc3.5: Solid-body fast path. If the active body is solid, the lattice
+  // pipeline doesn't apply — we just emit the body's own watertight mesh as
+  // a 3MF, restoring CAD-space vertex coordinates via importCenter.
+  if(activeBodyId !== null && isSolidAssignment(assignments.get(activeBodyId))){
+    if(!importedShape || !importedShape.posArr || !importedShape.idxArr){
+      console.warn('[export] solid body has no mesh data; aborting');
+      return;
+    }
+    const btn=document.getElementById('expBtn');
+    btn.disabled=true; btn.classList.add('sweeping'); btn.textContent='exporting solid...';
+    try {
+      // Restore CAD-space vertices by adding back the importCenter offset
+      // (same logic used by the lattice export path further below).
+      const verts = new Float32Array(importedShape.posArr.length);
+      const c = importedShape.importCenter || {x:0,y:0,z:0};
+      for(let i=0;i<importedShape.posArr.length;i+=3){
+        verts[i]   = importedShape.posArr[i]   + c.x;
+        verts[i+1] = importedShape.posArr[i+1] + c.y;
+        verts[i+2] = importedShape.posArr[i+2] + c.z;
+      }
+      // Index array is reused verbatim (uint32).
+      const tris = (importedShape.idxArr instanceof Uint32Array)
+        ? importedShape.idxArr
+        : new Uint32Array(importedShape.idxArr);
+      const blob = await buildMinimal3MF(verts, tris, 1.0);
+      const name = (importedShape.meta && importedShape.meta.name) || 'body';
+      const baseName = name.replace(/\.[^.]+$/, '');
+      const ts = (function(){ const d=new Date(); const p=n=>String(n).padStart(2,'0');
+        return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes()); })();
+      const fname = baseName + '_solid_' + ts + '.3mf';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+    } catch(e) {
+      console.error('[export] solid body export failed:', e);
+    } finally {
+      btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
+    }
+    return;
+  }
   if(!currentRecipe)return;
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
   // Hide stale timings pill from a previous export
@@ -4804,6 +6504,7 @@ window.triggerExport=async function(){
   let elapsedSec=0,elapsedTimer=null;
   if(elapsedEl){elapsedEl.style.display='block';elapsedEl.textContent='elapsed: 0s';
     elapsedTimer=setInterval(()=>{elapsedSec++;elapsedEl.textContent='elapsed: '+elapsedSec+'s';},1000);}
+  _exportElapsedTimer=elapsedTimer; // expose to cancelMesh()
 
   // Compute params on main thread (lightweight math only)
   let workerMsg, scale, domainLabel, edgeLabel;
@@ -4967,6 +6668,63 @@ window.triggerExport=async function(){
     }
     const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
     if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
+    // ── Layer 1: feature-ratio guard (v0.5.1-rc4.0b) ──────────────────────────
+    // The real predictor of export blow-up is NOT triangle count (the coarse
+    // pass undersamples thin walls and can't see the difference between a safe
+    // and a runaway export). It's the ratio of the thinnest physical feature to
+    // the marching-cubes voxel edge. The fine edge is fixed by QUALITY; cell
+    // size sets feature thickness. When walls get thin relative to a fixed edge,
+    // marching cubes produces sliver-dense surfaces that OOM or grind for
+    // minutes. getThinnestFeatureMm already depends on cell size, so this
+    // distinguishes the exact two cases the triangle-count approach could not.
+    //
+    // Below FEATURE_EDGE_RATIO_MIN voxels per half-feature, we stop BEFORE any
+    // level set and surface an actionable error. Tunable — calibrate from the
+    // diagnostic ratios on real safe-vs-broken runs.
+    // Floor = 0.5: the thinnest wall must be at least half a voxel edge thick.
+    // Calibrated against the spinodoid repro (half_width 0.15): 2mm cell gives
+    // 0.03mm walls (0.33× the 0.09mm High edge) and genuinely fails; 4mm gives
+    // 0.06mm walls (0.67×) and exports cleanly (user-verified); 8mm gives
+    // 0.12mm walls (1.33×). A 0.5 floor rejects the failing 2mm case and passes
+    // 4mm with margin. This is below a strict one-voxel-per-wall limit because
+    // marching cubes resolves sub-voxel walls down to ~half an edge before
+    // sliver density blows up. The 180s wall-clock timeout (Layer 2) backstops
+    // any geometry that slips through near the floor and still grinds. Raise
+    // toward 0.6 for more safety margin; lower only with a verified passing run.
+    const FEATURE_EDGE_RATIO_MIN = 0.5;
+    const thinnestFeatureMm = getThinnestFeatureMm(currentRecipe, cellSizeMm);
+    const featureEdgeRatio = (thinnestFeatureMm != null && thinnestFeatureMm > 0)
+      ? thinnestFeatureMm / relEdgeMm : null;
+    console.log('[export][feature-guard]', {
+      thinnestFeatureMm: thinnestFeatureMm != null ? +thinnestFeatureMm.toFixed(4) : null,
+      fineEdgeMm: +relEdgeMm.toFixed(4),
+      featureEdgeRatio: featureEdgeRatio != null ? +featureEdgeRatio.toFixed(2) : null,
+      ratioFloor: FEATURE_EDGE_RATIO_MIN,
+      cellSizeMm, quality: currentExportQual
+    });
+    if(featureEdgeRatio != null && featureEdgeRatio < FEATURE_EDGE_RATIO_MIN){
+      const fMm=thinnestFeatureMm.toFixed(3), eMm=relEdgeMm.toFixed(3);
+      // Cell size that would lift the ratio to the floor (features scale ~linearly
+      // with cell size for a fixed recipe), rounded up to a friendly value.
+      const suggestCell=Math.ceil(cellSizeMm*(FEATURE_EDGE_RATIO_MIN/featureEdgeRatio));
+      // This guard runs BEFORE the main export try/catch opens (which starts at
+      // the worker dispatch). Throwing here escapes as an uncaught promise
+      // rejection and leaves the overlay stuck on "preparing export". So we tear
+      // down the UI explicitly and return — mirroring the HU pre-bake cancel
+      // path above. Surfaces through the same exp-err styling as the catch.
+      if(elapsedTimer)clearInterval(elapsedTimer);
+      _exportElapsedTimer=null; _exportTimeoutTimer=null;
+      if(elapsedEl)elapsedEl.style.display='none';
+      hideComputing(); showCancelBtn(false);
+      report.innerHTML='<div class="exp-err">&#9888; '+
+        'Walls too thin for this quality. The thinnest features are ~'+fMm+'mm, '+
+        'but '+currentExportQual+' quality uses a '+eMm+'mm voxel edge ('+
+        featureEdgeRatio.toFixed(1)+'\u00d7 — needs '+FEATURE_EDGE_RATIO_MIN+'\u00d7 or more). '+
+        'Increase cell size to ~'+suggestCell+'mm, or lower export quality.'+
+        '</div>';
+      btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
+      return;
+    }
     coMain.textContent='exporting...';
     coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
     overlay.classList.remove('hidden');showCancelBtn(true);
@@ -5062,14 +6820,41 @@ window.triggerExport=async function(){
   try{
     const worker=new Worker(getWorkerBlobUrl());
     meshWorker=worker;
+    // ── Layer 2: wall-clock timeout backstop (v0.5.1-rc4.0b) ────────────────
+    // The feature-ratio guard (Layer 1) catches the known thin-wall failure
+    // before dispatch. This is the categorical safety net: if ANY export — for
+    // any reason Layer 1 didn't anticipate — runs past the ceiling, force-kill
+    // the worker so the app never hangs indefinitely. Generous (180s) so it
+    // never trips a legitimately large-but-progressing fine export; only true
+    // runaways reach it. Manifold's level set is synchronous inside the worker,
+    // so worker.terminate() is the only reliable way to stop it.
+    const EXPORT_TIMEOUT_MS = 180000;
+    let exportTimedOut = false;
+    let exportTimer = null;
     const result=await new Promise((resolve,reject)=>{
+      exportTimer = setTimeout(()=>{
+        exportTimedOut = true;
+        try{ worker.terminate(); }catch(_){}
+        if(meshWorker===worker) meshWorker=null;
+        reject(new Error(
+          'Export exceeded '+(EXPORT_TIMEOUT_MS/1000)+'s and was stopped. The '+
+          'geometry is too dense to mesh at this quality — increase cell size '+
+          'or lower export quality, then try again.'
+        ));
+      }, EXPORT_TIMEOUT_MS);
+      _exportTimeoutTimer = exportTimer; // expose to cancelMesh()
       worker.onmessage=e=>{
         const d=e.data;
+        if(exportTimedOut) return; // ignore late messages from a killed worker
         if(d.type==='progress') coSub.textContent=d.stage;
-        else if(d.type==='done') resolve(d);
-        else if(d.type==='error') reject(new Error(d.message));
+        else if(d.type==='diag'){
+          // v0.5.1-rc4.0b: calibration log for the export guards.
+          console.log('[export][mem-guard]', d.diag);
+        }
+        else if(d.type==='done'){ clearTimeout(exportTimer); resolve(d); }
+        else if(d.type==='error'){ clearTimeout(exportTimer); reject(new Error(d.message)); }
       };
-      worker.onerror=e=>reject(new Error(e.message||'Worker error'));
+      worker.onerror=e=>{ clearTimeout(exportTimer); reject(new Error(e.message||'Worker error')); };
       // Build transfer list — only include buffers that are actually present.
       // shapeSdfData is mandatory for shape-clipped exports; huGridData is
       // optional (only set for HU recipes when the parallel pre-bake ran).
@@ -5085,6 +6870,7 @@ window.triggerExport=async function(){
     if(meshWorker===worker){meshWorker=null;}
     worker.terminate();
     if(elapsedTimer)clearInterval(elapsedTimer);
+    _exportElapsedTimer=null; _exportTimeoutTimer=null;
     hideComputing();showCancelBtn(false);
     btn.textContent='building 3MF...';
     const vertProps=new Float32Array(result.vertProperties);
@@ -5155,6 +6941,8 @@ window.triggerExport=async function(){
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
   }catch(e){
     if(elapsedTimer)clearInterval(elapsedTimer);
+    if(_exportTimeoutTimer){clearTimeout(_exportTimeoutTimer);}
+    _exportElapsedTimer=null; _exportTimeoutTimer=null;
     if(elapsedEl){elapsedEl.style.display='none';}
     if(meshWorker){meshWorker.terminate();meshWorker=null;}
     hideComputing();showCancelBtn(false);
@@ -5188,14 +6976,46 @@ async function buildMinimal3MF(vertProps,triVerts,scale){
   if(badIdx>0){
     throw new Error('Export aborted: '+badIdx+' out-of-range triangle index value(s) detected (vertex count = '+nV+'). Mesh is invalid.');
   }
-  let vx='',tx='';
-  for(let i=0;i<nV;i++)vx+=`<vertex x="${(vertProps[i*3]*scale).toFixed(6)}" y="${(vertProps[i*3+1]*scale).toFixed(6)}" z="${(vertProps[i*3+2]*scale).toFixed(6)}"/>`;
-  for(let i=0;i<nT;i++)tx+=`<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
-  const model=`<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>${vx}</vertices><triangles>${tx}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>`;
+  // ── Chunked byte serialization (v0.5.1-rc4.0c) ──────────────────────────
+  // Previously vx/tx accumulated the entire mesh as two giant JS strings, then
+  // encoded once. V8 caps strings at ~536M chars; a dense near-floor export
+  // (millions of verts+tris) overruns that and throws "Invalid string length".
+  // Instead we encode in small batches: build ~CHUNK elements into a short
+  // string, encode to bytes, collect the byte arrays, and concatenate at the
+  // end. Each intermediate string stays tiny; the final Uint8Array has no such
+  // limit. Output XML is byte-identical to the old path — nTop pipeline
+  // unaffected. Also fixes the same latent limit on the solid-body fast path
+  // and any future export-all per-body serialization.
+  const enc=new TextEncoder();
+  const CHUNK=16384; // elements per intermediate string (keeps each well under cap)
+  const headBytes=enc.encode(
+    '<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" '+
+    'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>'+
+    '<object id="1" type="model"><mesh><vertices>'
+  );
+  const midBytes=enc.encode('</vertices><triangles>');
+  const tailBytes=enc.encode('</triangles></mesh></object></resources><build><item objectid="1"/></build></model>');
+  const parts=[headBytes];
+  let buf='';
+  for(let i=0;i<nV;i++){
+    buf+=`<vertex x="${(vertProps[i*3]*scale).toFixed(6)}" y="${(vertProps[i*3+1]*scale).toFixed(6)}" z="${(vertProps[i*3+2]*scale).toFixed(6)}"/>`;
+    if((i&(CHUNK-1))===(CHUNK-1)){ parts.push(enc.encode(buf)); buf=''; }
+  }
+  if(buf){ parts.push(enc.encode(buf)); buf=''; }
+  parts.push(midBytes);
+  for(let i=0;i<nT;i++){
+    buf+=`<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
+    if((i&(CHUNK-1))===(CHUNK-1)){ parts.push(enc.encode(buf)); buf=''; }
+  }
+  if(buf){ parts.push(enc.encode(buf)); buf=''; }
+  parts.push(tailBytes);
+  // Concatenate all byte chunks into one model buffer.
+  let modelLen=0; for(const p of parts) modelLen+=p.length;
+  const modelBytes=new Uint8Array(modelLen);
+  let off=0; for(const p of parts){ modelBytes.set(p,off); off+=p.length; }
   const ct=`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`;
   const rels=`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
-  const enc=new TextEncoder();
-  const zipped=fflate.zipSync({'[Content_Types].xml':enc.encode(ct),'_rels/.rels':enc.encode(rels),'3D/3dmodel.model':enc.encode(model)});
+  const zipped=fflate.zipSync({'[Content_Types].xml':enc.encode(ct),'_rels/.rels':enc.encode(rels),'3D/3dmodel.model':modelBytes});
   return new Blob([zipped],{type:'model/3mf'});
 }
 
@@ -5240,7 +7060,14 @@ let _previewQualUserSet=false;
 const PREVIEW_BTN_ID={draft:'btnDraft',low:'btnLow',med:'btnMed',high:'btnHigh',ultra:'btnUltra'};
 
 async function showRecipe(recipe){
-  clearError();currentRecipe=recipe;
+  clearError();
+  const added = setActiveRecipe(recipe);
+  if(!added){
+    // rc2.5: setActiveRecipe rejected (recipe cap reached). Toast was already
+    // shown by setActiveRecipe itself; just abort the preview pipeline.
+    return;
+  }
+  _assertModeAInvariants('after-showRecipe');
   // Default to Low quality on first recipe of the session, but respect any
   // user-selected quality from a previous recipe (v0.5.0).
   if(!_qualUserSet) currentExportQual='low';
@@ -5281,14 +7108,31 @@ async function showRecipe(recipe){
   setActivBtn(PREVIEW_BTN_ID[initialPreviewQ]||'btnLow');
   triggerPreview(initialPreviewQ);
   setTimeout(updateExportEstimate,0); // panel renders async
+  // rc2.5: refresh both rows so the new recipe appears in the library and
+  // any existing body cards update their recipe chips.
+  renderBodyCards();
+  renderRecipeLibrary();
 }
 function resetToDropzone(){
   recipeView.style.display='none';dropzone.style.display='flex';
   document.getElementById('shapeStrip').style.display='none';
   clearError();triPill.style.display='none';
   overlay.classList.remove('hidden');coMain.textContent='awaiting recipe…';coSub.textContent='';
-  // clear any loaded shape on recipe reset
-  if(importedShape) importedShape=null;
+  // rc2.5: "load different" is a TRUE RESET — clear all bodies + all recipes.
+  // Previously (rc2) bodies persisted across recipe changes; with per-body
+  // assignment in rc2.5, the reload button is now an explicit "start over"
+  // gesture per the user-confirmed design.
+  clearAllBodies();
+  recipes.clear();
+  recipeOrder.length = 0;
+  assignments.clear();
+  activeRecipeId = null;
+  currentRecipe = null;
+  // rc3: drop all ghost textures.
+  if(rm && rm.clearGhosts) rm.clearGhosts();
+  // Refresh both rows so they hide cleanly.
+  renderBodyCards();
+  renderRecipeLibrary();
   clearShapeWire();setShapeUI('idle');
 }
 document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
@@ -5316,7 +7160,7 @@ document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRec
 })();
 
 // ── File handling ─────────────────────────────────────────────────────────
-function handleJSON(text,filename){let json;try{json=JSON.parse(text);}catch(e){showError('Invalid JSON in '+(filename||'file')+' — '+e.message);return;}try{showRecipe(routeRecipe(json));}catch(e){showError(e.message);}}
+function handleJSON(text,filename){let json;try{json=JSON.parse(text);}catch(e){showError('Invalid JSON in '+(filename||'file')+' — '+e.message);return;}try{const recipe=routeRecipe(json);if(filename) recipe.filename=filename;showRecipe(recipe);}catch(e){showError(e.message);}}
 function handleFile(file){if(!file)return;if(!file.name.toLowerCase().endsWith('.json')){showError('Expected a .json file. Got: '+file.name);return;}const reader=new FileReader();reader.onload=e=>handleJSON(e.target.result,file.name);reader.onerror=()=>showError('Could not read: '+file.name);reader.readAsText(file);}
 const fileInput=document.getElementById('fileInput'),pickBtn=document.getElementById('pickBtn');
 dropzone.addEventListener('click',()=>fileInput.click());
@@ -5324,7 +7168,29 @@ pickBtn.addEventListener('click',e=>{e.stopPropagation();fileInput.click();});
 fileInput.addEventListener('change',()=>{if(fileInput.files[0])handleFile(fileInput.files[0]);fileInput.value='';});
 document.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover');});
 document.addEventListener('dragleave',e=>{if(!e.relatedTarget)dropzone.classList.remove('dragover');});
-document.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f)handleFile(f);});
+document.addEventListener('drop',e=>{
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  const f=e.dataTransfer?.files?.[0];
+  if(!f) return;
+  // rc2: route by extension. Mesh/CAD files go to handleShapeFile, everything
+  // else (json recipes) goes through handleFile. Note: handleShapeFile gates
+  // on currentRecipe being set — without a recipe, we can't preview a body,
+  // so we keep the "recipe first" gate by simply letting handleFile run for
+  // JSON-only main dropzone interactions until a recipe is loaded.
+  if(isShapeFile(f)){
+    if(!currentRecipe){
+      // No recipe loaded yet — main dropzone needs a recipe first.
+      // Show error in the recipe view, since shape strip isn't visible.
+      // (Same gate behavior as before, just via routing instead of refusal.)
+      handleFile(f);  // will surface "expected JSON" error
+      return;
+    }
+    handleShapeFile(f);
+  } else {
+    handleFile(f);
+  }
+});
 
 // ── Shape strip events ────────────────────────────────────────────────────
 const shapeDZ=document.getElementById('shapeDZ');

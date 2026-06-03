@@ -58,6 +58,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 #typeBadge.noise{background:rgba(34,211,238,.1);color:var(--cyan);border:.5px solid var(--cyan)}
 #typeBadge.tpms{background:rgba(124,111,247,.1);color:var(--purple);border:.5px solid var(--purple)}
 #typeBadge.grain{background:rgba(24,243,112,.1);color:var(--green);border:.5px solid var(--green)}
+#typeBadge.bundle{background:rgba(123,79,158,.1);color:#7B4F9E;border:.5px solid #7B4F9E}
 #reloadBtn{position:absolute;top:10px;right:10px;z-index:3;font-size:10px;color:var(--muted);background:rgba(6,8,15,.85);border:.5px solid var(--border);border-radius:5px;padding:3px 8px;cursor:pointer;font-family:inherit}
 #reloadBtn:hover{color:var(--text);border-color:var(--dim)}
 #resStrip{position:absolute;bottom:10px;right:10px;display:flex;gap:4px;z-index:3}
@@ -301,7 +302,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.6.0</span>
+      <span class="fh-version">v0.6.8</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -2004,7 +2005,7 @@ MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
   }
   this._dirty=true;
 };
-MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.panX=0;this.panY=0;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._dirty=true;};
+MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.panX=0;this.panY=0;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._periodicFitKey=null;this._dirty=true;};
 
 // rc3.5: Set whether the active body renders as solid (no lattice). When
 // solid is true, color is a Float32Array(3) of [r,g,b] in 0..1. Defaults
@@ -2105,6 +2106,18 @@ MeshRaymarcher.prototype.clearGhosts = function(){
   this._dirty = true;
 };
 MeshRaymarcher.prototype.setWorldBounds=function(wMin,wMax,isPeriodic){this.worldMin=wMin;this.worldMax=wMax;this.isPeriodic=isPeriodic!==false;this._dirty=true;};
+// Fit the view cube to a periodic bake box (no-shape recipe preview). Fresh-fit
+// when the cell bounds change (new recipe import); preserve the user's zoom/pan
+// on re-previews of the same cell (e.g. quality changes). Shape-mode framing is
+// handled separately in setShapeSDF and never calls this.
+MeshRaymarcher.prototype.fitPeriodicBounds=function(wMin,wMax){
+  var hx=(wMax[0]-wMin[0])*0.5,hy=(wMax[1]-wMin[1])*0.5,hz=(wMax[2]-wMin[2])*0.5;
+  var newViewH=Math.max(hx,hy,hz); if(!(newViewH>0))return;
+  var key=hx.toFixed(3)+','+hy.toFixed(3)+','+hz.toFixed(3);
+  if(key!==this._periodicFitKey){this.viewH=newViewH;this.camZoom=newViewH*3.2;this.panX=0;this.panY=0;this._periodicFitKey=key;}
+  else{this.viewH=newViewH;}
+  this._dirty=true;
+};
 // ── Structure SDF transform setter (v0.5.0 Phase B) ──────────────────────
 // Accepts the main-thread structureTransform object (mm units, raw user iso
 // sign) and converts to world units / SDF-correct iso sign for shader use.
@@ -2816,7 +2829,16 @@ function computeShapeBbox(pos){
   const dx=mxx-mnx, dy=mxy-mny, dz=mxz-mnz;
   const maxDim=Math.max(dx,dy,dz,0.001);
   const bboxStr=`${dx.toFixed(1)}×${dy.toFixed(1)}×${dz.toFixed(1)} mm`;
-  return {mnx,mny,mnz,mxx,mxy,mxz,cx,cy,cz,dx,dy,dz,maxDim,bboxStr};
+  // v0.6.4: pad the sampling box so the surface is strictly interior. A tight
+  // box leaves the rounded caps tangent to the boundary plane, where the grid
+  // has no outside (positive) sample beyond the surface — trilinear recon then
+  // clamps flat to the box face, the side-wall bumps. ~6% margin (>=3 texels at
+  // N=48/64) gives the interpolation outside samples on the far side. Only the
+  // sampled extents (mnx..mxz, consumed by the bake + shader uvw) are padded;
+  // reported dims (dx/dy/dz/maxDim/bboxStr) stay the true geometry size.
+  const pad=maxDim*0.06;
+  return {mnx:mnx-pad,mny:mny-pad,mnz:mnz-pad,mxx:mxx+pad,mxy:mxy+pad,mxz:mxz+pad,
+          cx,cy,cz,dx,dy,dz,maxDim,bboxStr};
 }
 
 // (v0.5.0-rc7) buildShapeManifold removed — main-thread Manifold object had
@@ -4979,6 +5001,231 @@ function buildGrainSDF(json,shapeCtx,normOverride){
 // If you add a new SDF builder or topology mode: return negative-inside from
 // a normalized field, and the one flip at wrappedSDF handles Manifold handoff.
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// F13LD.bundle family (ported from F13LD.bundle v0.2.1) — twisted fiber array,
+// helicoid, braid, woven sheet. BSDF.scene returns canonical NEGATIVE-INSIDE
+// with iso offset + solid/sheet topology already folded in (matches mesh).
+// Bundle evaluates over a [-PI,PI] domain; buildBundleSDF maps world->bundle
+// via S = Pxy/10 so one structural XY period spans [-5,+5] world. Z anisotropy
+// emerges because the twist period Lz differs from Pxy; export tiles via the
+// SDF's own periodicity, preview GL_REPEATs the baked cell (computeBundleBakeBounds).
+// ═══════════════════════════════════════════════════════════════════════════
+var BSDF={
+  PI:Math.PI,TWO_PI:Math.PI*2,
+  smax:function(a,b,k){if(k<0.0001)return Math.max(a,b);var h=Math.max(k-Math.abs(a-b),0)/k;return Math.max(a,b)+h*h*k*0.25;},
+  smin:function(a,b,k){if(k<0.0001)return Math.min(a,b);var h=Math.max(k-Math.abs(a-b),0)/k;return Math.min(a,b)-h*h*k*0.25;},
+  ckSign:function(bi,bj){return(((bi+bj)%2)+2)%2===0?1:-1;},
+  beamSDF:function(dx,dy,r,n){
+    if(n>=14)return r-Math.max(Math.abs(dx),Math.abs(dy));
+    if(n<=2.1)return r-Math.sqrt(dx*dx+dy*dy);
+    return r-Math.pow(Math.pow(Math.abs(dx),n)+Math.pow(Math.abs(dy),n),1/n);
+  },
+  bundleRaw:function(lx,ly,p){
+    var W=p.nx*p.d,hp=W*0.5,result=-1e6;
+    for(var j=0;j<p.ny;j++)for(var i=0;i<p.nx;i++){
+      var x0=(i-(p.nx-1)*0.5)*p.d,y0=(j-(p.ny-1)*0.5)*p.d;
+      if(Math.abs(x0)+p.r<=hp&&Math.abs(y0)+p.r<=hp)
+        result=BSDF.smax(result,BSDF.beamSDF(lx-x0,ly-y0,p.r,p.n),p.blend);
+    }
+    return result;
+  },
+  applyWarp:function(xm,ym,z,p){
+    if(p.warpMode===0)return[xm,ym];
+    var A=p.warpAmp,w=p.warpFreq;
+    if(p.warpMode===1){var cx=A*Math.sin(w*z),dC=A*w*Math.cos(w*z),L=Math.sqrt(1+dC*dC);return[(xm-cx)/L,ym];}
+    var cx=A*Math.sin(w*z),cy=A*Math.cos(w*z),L=Math.sqrt(1+A*A*w*w);
+    return[-(xm-cx)*Math.sin(w*z)-(ym-cy)*Math.cos(w*z),((xm-cx)*Math.cos(w*z)-(ym-cy)*Math.sin(w*z))/L];
+  },
+  bundleCell:function(xm,ym,pz,cs,p){
+    var ts=p.twistMode===0?1:cs;
+    var th=ts*p.twist*pz,cosT=Math.cos(th),sinT=Math.sin(th);
+    var lx,ly,w;
+    if(p.warpFrame===0){w=BSDF.applyWarp(xm,ym,pz,p);lx=w[0]*cosT-w[1]*sinT;ly=w[0]*sinT+w[1]*cosT;}
+    else{var tx=xm*cosT-ym*sinT,ty=xm*sinT+ym*cosT;w=BSDF.applyWarp(tx,ty,pz,p);lx=w[0];ly=w[1];}
+    return -BSDF.bundleRaw(lx,ly,p);
+  },
+  bundle:function(px,py,pz_in,p){
+    var period=Math.max(p.nx*p.d+p.gap,0.01);
+    var hp=period*0.5,SH=Math.PI;
+    var xBase=((px+SH)%period+period)%period-hp;
+    var yBase=((py+SH)%period+period)%period-hp;
+    var biBase=Math.floor((px+SH)/period);
+    var bjBase=Math.floor((py+SH)/period);
+    var result=1e6;
+    for(var di=-1;di<=1;di++)for(var dj=-1;dj<=1;dj++){
+      var xm=xBase-di*period,ym=yBase-dj*period;
+      var bi=biBase+di,bj=bjBase+dj;
+      var cs=BSDF.ckSign(bi,bj);
+      var pz=pz_in+bi*p.zRampX+bj*p.zRampY+cs*p.zChkStep;
+      result=BSDF.smin(result,BSDF.bundleCell(xm,ym,pz,cs,p),p.blend);
+    }
+    return result;
+  },
+  helicoidCell:function(xm,ym,pz,cs,p){
+    var omega=p.hPitch;
+    if(p.hColHand&&cs<0)omega=-omega;
+    // Alternating: reverse twist every other period via a smooth (C0/C1) oscillation
+    // of the accumulated twist angle, Lambda = 4*pi/|omega| (= two base periods).
+    var twAng,twRate;
+    if(p.hZHand){var hk=Math.abs(omega)*0.5;twRate=omega*Math.cos(hk*pz);twAng=(hk>1e-6?omega/hk:omega*pz)*Math.sin(hk*pz);}
+    else{twAng=omega*pz;twRate=omega;}
+    var rxy=Math.sqrt(xm*xm+ym*ym);
+    var rMask=Math.min(rxy-p.hInner,p.hOuter-rxy);
+    var phi=p.hStarts*Math.atan2(ym,xm)-twAng;
+    phi-=BSDF.TWO_PI*Math.round(phi/BSDF.TWO_PI);
+    var rSafe=Math.max(rxy,1e-4);
+    var gradMag=Math.sqrt(p.hStarts*p.hStarts/(rSafe*rSafe)+twRate*twRate);
+    var dSheet=Math.abs(phi)/gradMag-p.hThick;
+    return Math.max(dSheet,-rMask);
+  },
+  helicoid:function(px,py,pz_in,p){
+    var period=Math.max(2*p.hOuter+p.hGap,0.01);
+    var hp=period*0.5,SH=Math.PI;
+    var xBase=((px+SH)%period+period)%period-hp;
+    var yBase=((py+SH)%period+period)%period-hp;
+    var biBase=Math.floor((px+SH)/period);
+    var bjBase=Math.floor((py+SH)/period);
+    var result=1e6;
+    for(var di=-1;di<=1;di++)for(var dj=-1;dj<=1;dj++){
+      var xm=xBase-di*period,ym=yBase-dj*period;
+      var bi=biBase+di,bj=bjBase+dj;
+      var cs=BSDF.ckSign(bi,bj);
+      var pz=pz_in+bi*p.zRampX+bj*p.zRampY+cs*p.zChkStep;
+      result=BSDF.smin(result,BSDF.helicoidCell(xm,ym,pz,cs,p),p.hBlend);
+    }
+    return result;
+  },
+  braidCell:function(xm,ym,pz,cs,p){
+    var omega=p.bPitch;
+    if(p.bColHand&&cs<0)omega=-omega;
+    var dA2=p.bRadius*p.bRadius*omega*omega+1;
+    var result=-1e6;
+    for(var k=0;k<p.bN;k++){
+      var phase=BSDF.TWO_PI*k/p.bN,tt=pz;
+      for(var iter=0;iter<5;iter++){
+        var phi=omega*tt+phase;
+        var Ckx=p.bRadius*Math.cos(phi),Cky=p.bRadius*Math.sin(phi);
+        var dCkx=-p.bRadius*omega*Math.sin(phi),dCky=p.bRadius*omega*Math.cos(phi);
+        var ddCkx=-p.bRadius*omega*omega*Math.cos(phi),ddCky=-p.bRadius*omega*omega*Math.sin(phi);
+        var dx=xm-Ckx,dy=ym-Cky,dz=pz-tt;
+        var f=-(dx*dCkx+dy*dCky+dz);
+        var fp=dA2-(dx*ddCkx+dy*ddCky);
+        tt-=f/(Math.abs(fp)>1e-6?fp:1e-6);
+      }
+      var phi2=omega*tt+phase;
+      var dist=Math.sqrt((xm-p.bRadius*Math.cos(phi2))*(xm-p.bRadius*Math.cos(phi2))+(ym-p.bRadius*Math.sin(phi2))*(ym-p.bRadius*Math.sin(phi2))+(pz-tt)*(pz-tt));
+      result=BSDF.smax(result,p.bFiber-dist,p.bBlend);
+    }
+    return -result;
+  },
+  braid:function(px,py,pz_in,p){
+    var period=Math.max(2*(p.bRadius+p.bFiber)+p.bGap,0.01);
+    var hp=period*0.5,SH=Math.PI;
+    var xBase=((px+SH)%period+period)%period-hp;
+    var yBase=((py+SH)%period+period)%period-hp;
+    var biBase=Math.floor((px+SH)/period);
+    var bjBase=Math.floor((py+SH)/period);
+    var result=1e6;
+    for(var di=-1;di<=1;di++)for(var dj=-1;dj<=1;dj++){
+      var xm=xBase-di*period,ym=yBase-dj*period;
+      var bi=biBase+di,bj=bjBase+dj;
+      var cs=BSDF.ckSign(bi,bj);
+      var pz=pz_in+bi*p.zRampX+bj*p.zRampY+cs*p.zChkStep;
+      result=BSDF.smin(result,BSDF.braidCell(xm,ym,pz,cs,p),p.bBlend);
+    }
+    return result;
+  },
+  weave:function(px,py,pz,p){
+    var period=Math.max(p.wvP,0.01),hp=period*0.5;
+    var zPeriod=Math.max(2*(p.wvA+p.wvR)+p.wvZGap,0.01),zHalfP=zPeriod*0.5;
+    var zmBase=((pz+zHalfP)%zPeriod+zPeriod)%zPeriod-zHalfP;
+    var xBase=((px+hp)%period+period)%period-hp;
+    var biBase=Math.floor((px+hp)/period);
+    var yBase=((py+hp)%period+period)%period-hp;
+    var bjBase=Math.floor((py+hp)/period);
+    var result=1e6;
+    for(var dzi=-1;dzi<=1;dzi++){
+      var zm=zmBase-dzi*zPeriod;
+      var warpD=1e6;
+      for(var di=-1;di<=1;di++){
+        var xm=xBase-di*period;
+        var bi=biBase+di;
+        var cs=(((bi%2)+2)%2===0)?1:-1;
+        var zc=cs*p.wvA*Math.cos(Math.PI*py/period);
+        warpD=Math.min(warpD,Math.sqrt(xm*xm+(zm-zc)*(zm-zc))-p.wvR);
+      }
+      var weftD=1e6;
+      for(var dj=-1;dj<=1;dj++){
+        var ym=yBase-dj*period;
+        var bj=bjBase+dj;
+        var cs2=(((bj%2)+2)%2===0)?1:-1;
+        var zc2=-cs2*p.wvA*Math.cos(Math.PI*px/period);
+        weftD=Math.min(weftD,Math.sqrt(ym*ym+(zm-zc2)*(zm-zc2))-p.wvR);
+      }
+      result=BSDF.smin(result,BSDF.smin(warpD,weftD,p.wvBlend),p.wvBlend);
+    }
+    return result;
+  },
+  raw:function(px,py,pz,p){
+    if(p.structure===0)return BSDF.bundle(px,py,pz,p);
+    if(p.structure===1)return BSDF.helicoid(px,py,pz,p);
+    if(p.structure===2)return BSDF.braid(px,py,pz,p);
+    return BSDF.weave(px,py,pz,p);
+  },
+  scene:function(px,py,pz,p){
+    var raw=BSDF.raw(px,py,pz,p)-p.iso;
+    if(p.topoMode===0)return p.flip?-raw:raw;
+    return Math.abs(raw)-p.sheetW;
+  }
+};
+function bundleParamsFromJSON(json){
+  var surf=json.surface||{}, g=json.geometry||{};
+  function num(v,d){return (typeof v==='number'&&isFinite(v))?v:d;}
+  function int(v,d){return (typeof v==='number'&&isFinite(v))?Math.round(v):d;}
+  var structNames=['bundle','helicoid','braid','weave'];
+  var sName=surf.structure||(json.meta&&json.meta.preset)||'bundle';
+  var structure=structNames.indexOf(sName); if(structure<0)structure=0;
+  function shapeToN(sn){return sn==='square'?16:sn==='rounded'?4:2;}
+  var topoMode=(surf.topology==='sheet')?1:0;
+  var flip=(surf.topology==='void')?1:0;
+  return {
+    structure:structure,
+    r:num(g.beam_radius,0.09), n:shapeToN(g.beam_shape||'circle'),
+    nx:int(g.beams_per_side,2), ny:int(g.beams_per_side,2),
+    d:num(g.beam_spacing,0.28), gap:num(g.column_gap,0.20),
+    blend:num(g.blend_k,0.01), twist:num(g.twist_rate,1.20),
+    twistMode:int(g.twist_mode,0),
+    warpMode:int(g.warp_mode,0), warpAmp:num(g.warp_amp,0.15),
+    warpFreq:num(g.warp_freq,1.50), warpFrame:int(g.warp_frame,0),
+    hPitch:num(g.pitch,1.5), hThick:num(g.thickness,0.05),
+    hInner:num(g.inner_radius,0.0), hOuter:num(g.outer_radius,0.4),
+    hStarts:int(g.starts,1), hBlend:num(g.helicoid_blend,0.01),
+    hGap:num(g.column_gap,0.20), hColHand:int(g.col_handed,0), hZHand:int(g.z_handed,0),
+    bN:int(g.strand_count,3), bRadius:num(g.braid_radius,0.12),
+    bPitch:num(g.pitch,1.20), bFiber:num(g.fiber_radius,0.06),
+    bBlend:num(g.blend_k,0.01), bGap:num(g.column_gap,0.20),
+    bColHand:int(g.braid_col_handed,0),
+    wvP:num(g.weave_pitch,0.5), wvA:num(g.weave_amplitude,0.1),
+    wvR:num(g.fiber_radius,0.06), wvZGap:num(g.weave_layer_gap,0.0),
+    wvBlend:num(g.blend_k,0.01),
+    iso:num(surf.iso_offset,0.0), sheetW:num(surf.sheet_width,0.025),
+    topoMode:topoMode, flip:flip,
+    zRampX:num(g.z_ramp_x,0.0), zRampY:num(g.z_ramp_y,0.0), zChkStep:num(g.z_checker_step,0.0)
+  };
+}
+function bundleXYPeriod(p){
+  if(p.structure===0)return Math.max(p.nx*p.d+p.gap,0.01);
+  if(p.structure===1)return Math.max(2*p.hOuter+p.hGap,0.01);
+  if(p.structure===2)return Math.max(2*(p.bRadius+p.bFiber)+p.bGap,0.01);
+  return Math.max(p.wvP,0.01);
+}
+function buildBundleSDF(json){
+  var p=bundleParamsFromJSON(json);
+  var S=bundleXYPeriod(p)/10;
+  var invS=1/S; // bundle-domain distance -> world units (one cell = 10 world units); analogous to beam's L2Wgeo
+  return function(q){ return BSDF.scene(q[0]*S,q[1]*S,q[2]*S,p)*invS; };
+}
+
 function buildSDF(recipe,shapeCtx){
   // v0.5.0-rc14: if the preview cached fieldMin/Max on the recipe, forward
   // them as a normalization override. Builders use the cached range instead
@@ -4992,6 +5239,7 @@ function buildSDF(recipe,shapeCtx){
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
   if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride);
   if(recipe.family==='beam') return buildBeamSDF(recipe.json);
+  if(recipe.family==='bundle')return buildBundleSDF(recipe.json);
   throw new Error('No evaluator for family: '+recipe.family);
 }
 
@@ -5128,9 +5376,33 @@ self.onmessage=async function(e){
         const gz=(field[i+N*N]-field[i-N*N])/(2*sz);
         const g=Math.sqrt(gx*gx+gy*gy+gz*gz);if(g>maxG)maxG=g;
       }
+      // v0.6.1: robust Lipschitz for raymarch step control. A few cusp voxels
+      // (tight smin/smax blends, twist shear, braid Newton) inflate the raw max
+      // and throttle every step across the model. Use the 98th-percentile
+      // gradient via a 256-bin histogram instead; the shader's 0.85 safety
+      // factor + min-step clamp still cover the rare steeper voxels. Metric
+      // families (tpms/beam/grain) are unaffected since their p98 ~= max.
+      let lipRobust=maxG;
+      if(maxG>0){
+        const BINS=256, hist=new Int32Array(BINS), invB=BINS/maxG;
+        let cnt=0;
+        for(let iz=1;iz<N-1;iz++)for(let iy=1;iy<N-1;iy++)for(let ix=1;ix<N-1;ix++){
+          const i=ix+iy*N+iz*N*N;
+          const gx=(field[i+1]-field[i-1])/(2*sx);
+          const gy=(field[i+N]-field[i-N])/(2*sy);
+          const gz=(field[i+N*N]-field[i-N*N])/(2*sz);
+          const g=Math.sqrt(gx*gx+gy*gy+gz*gz);
+          let b=(g*invB)|0; if(b>=BINS)b=BINS-1; else if(b<0)b=0;
+          hist[b]++; cnt++;
+        }
+        const target=cnt*0.98;
+        let acc=0,bin=BINS-1;
+        for(let b=0;b<BINS;b++){acc+=hist[b];if(acc>=target){bin=b;break;}}
+        lipRobust=(bin+1)/invB; // upper edge of the 98th-percentile bin
+      }
       const buf=field.buffer;
       self.postMessage({type:'baked',field:buf,N,fieldMin:minV,fieldMax:maxV,
-        lipschitz:Math.max(maxG*1.1,0.05),
+        lipschitz:Math.max(lipRobust*1.1,0.05),
         worldMin:wMin,worldMax:wMax,isPeriodic},[ buf]);
       return;
     }
@@ -5774,6 +6046,15 @@ function recipeIsPeriodic(recipe){
   if(!recipe) return false;
   if(recipe.family==='tpms') return true;
   if(recipe.family==='beam') return true;  // v0.5.0-rc16: cubic tile via wrap+halo neighbors
+  if(recipe.family==='bundle'){
+    // v0.6.5: tile only when a small exact Z period exists — i.e. no warp. Warp
+    // is generally incommensurate with the twist, so no small period exists;
+    // tiling a giant 'period' cell drops the shape at the cell center (twist~0,
+    // mirror-symmetric) and under-resolves Z. Warped bundles bake continuously
+    // over the shape bbox instead (matches the export's continuous evaluation).
+    const wm=(recipe.json.geometry&&recipe.json.geometry.warp_mode)||0;
+    return wm===0;
+  }
   if(recipe.family==='grain'){
     const ft=recipe.json.field&&recipe.json.field.type;
     return ft==='reactiondiffusion';
@@ -5873,6 +6154,111 @@ function computeBeamBakeBounds(recipe){
   return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
 }
 
+// ── F13LD.bundle main-thread helpers (cell geometry; mirror worker port) ──
+// Authoritative cell derivation for tiling. bundleZPeriod uses the cross-
+// section's rotational symmetry for the tightest valid Z cell: C4 (quarter
+// turn) for the square bundle grid, hStarts-fold for helicoid, bN-fold for
+// braid, explicit zPeriod for weave. Warp breaks rotational symmetry, so the
+// twist falls back to a full turn and is LCM'd with the warp period (capped,
+// seams accepted past the cap). bundleSuperCellXY grows the XY tile to 2x2 for
+// checker/handedness/alternating-twist, and extends it (parity-preserving, cap
+// 8) until any z-ramp marries the Z period; past the cap it tiles with seams.
+function bundleParamsFromJSON(json){
+  var surf=json.surface||{}, g=json.geometry||{};
+  function num(v,d){return (typeof v==='number'&&isFinite(v))?v:d;}
+  function int(v,d){return (typeof v==='number'&&isFinite(v))?Math.round(v):d;}
+  var structNames=['bundle','helicoid','braid','weave'];
+  var sName=surf.structure||(json.meta&&json.meta.preset)||'bundle';
+  var structure=structNames.indexOf(sName); if(structure<0)structure=0;
+  function shapeToN(sn){return sn==='square'?16:sn==='rounded'?4:2;}
+  var topoMode=(surf.topology==='sheet')?1:0;
+  var flip=(surf.topology==='void')?1:0;
+  return {
+    structure:structure,
+    r:num(g.beam_radius,0.09), n:shapeToN(g.beam_shape||'circle'),
+    nx:int(g.beams_per_side,2), ny:int(g.beams_per_side,2),
+    d:num(g.beam_spacing,0.28), gap:num(g.column_gap,0.20),
+    blend:num(g.blend_k,0.01), twist:num(g.twist_rate,1.20),
+    twistMode:int(g.twist_mode,0),
+    warpMode:int(g.warp_mode,0), warpAmp:num(g.warp_amp,0.15),
+    warpFreq:num(g.warp_freq,1.50), warpFrame:int(g.warp_frame,0),
+    hPitch:num(g.pitch,1.5), hThick:num(g.thickness,0.05),
+    hInner:num(g.inner_radius,0.0), hOuter:num(g.outer_radius,0.4),
+    hStarts:int(g.starts,1), hBlend:num(g.helicoid_blend,0.01),
+    hGap:num(g.column_gap,0.20), hColHand:int(g.col_handed,0), hZHand:int(g.z_handed,0),
+    bN:int(g.strand_count,3), bRadius:num(g.braid_radius,0.12),
+    bPitch:num(g.pitch,1.20), bFiber:num(g.fiber_radius,0.06),
+    bBlend:num(g.blend_k,0.01), bGap:num(g.column_gap,0.20),
+    bColHand:int(g.braid_col_handed,0),
+    wvP:num(g.weave_pitch,0.5), wvA:num(g.weave_amplitude,0.1),
+    wvR:num(g.fiber_radius,0.06), wvZGap:num(g.weave_layer_gap,0.0),
+    wvBlend:num(g.blend_k,0.01),
+    iso:num(surf.iso_offset,0.0), sheetW:num(surf.sheet_width,0.025),
+    topoMode:topoMode, flip:flip,
+    zRampX:num(g.z_ramp_x,0.0), zRampY:num(g.z_ramp_y,0.0), zChkStep:num(g.z_checker_step,0.0)
+  };
+}
+function bundleXYPeriod(p){
+  if(p.structure===0)return Math.max(p.nx*p.d+p.gap,0.01);
+  if(p.structure===1)return Math.max(2*p.hOuter+p.hGap,0.01);
+  if(p.structure===2)return Math.max(2*(p.bRadius+p.bFiber)+p.bGap,0.01);
+  return Math.max(p.wvP,0.01);
+}
+function bundleLcm(a,b,cap){
+  if(!(b>1e-9))return a;
+  for(var m=1;m<=cap;m++){var L=m*a,n=L/b;if(Math.abs(n-Math.round(n))<1e-3*Math.max(1,Math.round(n))&&Math.round(n)>=1)return L;}
+  return cap*a;
+}
+function bundleZPeriod(p){
+  var TP=Math.PI*2;
+  if(p.structure===3)return Math.max(2*(p.wvA+p.wvR)+p.wvZGap,0.01);
+  if(p.structure===1){
+    var w=Math.abs(p.hPitch);
+    if(w<=1e-6)return bundleXYPeriod(p);
+    // v0.6.8: helicoid Z period = 2π/pitch, NOT /starts. At a fixed (x,y) the
+    // field depends on z only via φ = starts·θ − pitch·z, so it repeats when
+    // pitch·z advances 2π. starts sets angular sheet count, not the z period.
+    // (Contrast braid: strands rotate rigidly at pitch, so N-fold → 2π/(N·pitch).)
+    var Lh=TP/w;
+    if(p.hZHand)Lh*=2; // z-handedness flips each base period → tile spans two
+    return Lh;
+  }
+  if(p.structure===2){var w2=Math.abs(p.bPitch);return w2>1e-6?TP/(Math.max(1,p.bN)*w2):bundleXYPeriod(p);}
+  var tw=Math.abs(p.twist);
+  var singleCircle=(p.nx<=1&&p.n<=2.1);
+  if(tw<1e-6||singleCircle){
+    if(p.warpMode!==0&&Math.abs(p.warpFreq)>1e-6)return TP/Math.abs(p.warpFreq);
+    return bundleXYPeriod(p);
+  }
+  if(p.warpMode===0)return (TP/4)/tw;
+  var Ltwist=TP/tw;
+  var Lwarp=(Math.abs(p.warpFreq)>1e-6)?TP/Math.abs(p.warpFreq):Ltwist;
+  // v0.6.5: warped bundles bake continuously (non-periodic), so this period only
+  // sizes the no-shape fallback and the reported cell aspect. Cap at one full
+  // turn — the incommensurate LCM ceiling (8 turns) was an absurd ~55x cell.
+  return Math.min(bundleLcm(Ltwist,Lwarp,8), Ltwist);
+}
+function bundleSuperCellXY(p,Lz){
+  var alt=(Math.abs(p.zChkStep)>1e-9)
+    ||(p.structure===0&&p.twistMode===1)
+    ||(p.structure===1&&(p.hColHand||p.hZHand))
+    ||(p.structure===2&&p.bColHand)
+    ||(p.structure===3); // weave: cosine wave + over/under alternation repeat at 2*wvP -> 2x2 super-cell
+  var baseK=alt?2:1;
+  function rampK(ramp){
+    if(Math.abs(ramp)<1e-9)return baseK;
+    for(var K=baseK;K<=8;K+=(baseK===2?2:1)){var t=(K*ramp)/Lz;if(Math.abs(t-Math.round(t))<1e-3)return K;}
+    return 8;
+  }
+  return {Kx:rampK(p.zRampX),Ky:rampK(p.zRampY)};
+}
+function computeBundleBakeBounds(recipe){
+  var p=bundleParamsFromJSON(recipe.json);
+  var Pxy=bundleXYPeriod(p), Lz=bundleZPeriod(p), sc=bundleSuperCellXY(p,Lz);
+  var hx=5*sc.Kx, hy=5*sc.Ky, hz=5*(Lz/Pxy);
+  return {wMin:[-hx,-hy,-hz],wMax:[hx,hy,hz],Kx:sc.Kx,Ky:sc.Ky,Lz:Lz,Pxy:Pxy};
+}
+
 async function triggerPreview(quality){
   if(!currentRecipe||!rm)return;
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
@@ -5928,8 +6314,12 @@ async function triggerPreview(quality){
       }
       const wMin=[aMnX,aMnY,aMnZ];
       const wMax=[aMxX,aMxY,aMxZ];
-      bakeOpts={isPeriodic:false,bakeRaw:true,worldMin:wMin,worldMax:wMax,
-        shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
+      // v0.6.5: bundle is a true SDF (not a stochastic field), so bake it raw —
+      // no [0,1] normalization — continuously over the shape AABB. twist/warp
+      // accumulate up the shape exactly as in the export; no tiling, no mirror.
+      const isBundle=currentRecipe.family==='bundle';
+      bakeOpts={isPeriodic:false,bakeRaw:!isBundle,worldMin:wMin,worldMax:wMax};
+      if(!isBundle) bakeOpts.shapeCtx={cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}};
       rm.setWorldBounds(wMin,wMax,false);
     }
     await new Promise(r=>setTimeout(r,0));
@@ -5964,8 +6354,13 @@ async function triggerPreview(quality){
     const b=computeBeamBakeBounds(currentRecipe);
     pMin=b.wMin; pMax=b.wMax;
     bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+  } else if(currentRecipe.family==='bundle'){
+    const b=computeBundleBakeBounds(currentRecipe);
+    pMin=b.wMin; pMax=b.wMax;
+    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
   }
   rm.setWorldBounds(pMin,pMax,periodic);
+  if(!importedShape) rm.fitPeriodicBounds(pMin,pMax); // frame the full cell on import; preserves zoom on re-preview
   try{
     const result=await bakeField(currentRecipe, N, bakeOpts);
     rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
@@ -6157,6 +6552,10 @@ function routeRecipe(json){
       const nt=(json.surface&&json.surface.noise_type)||'simplex';
       return{family:'noise',subtype:nt,json};
     }
+    if(fam==='bundle'){
+      const sn=(json.surface&&json.surface.structure)||(json.meta&&json.meta.preset)||'bundle';
+      return{family:'bundle',subtype:sn,json};
+    }
     // Unknown family value — fall through to legacy detection rather than
     // hard-erroring, so an unfamiliar family doesn't lock out otherwise
     // valid recipes.
@@ -6169,6 +6568,12 @@ function routeRecipe(json){
     }
     const sub=(json.topology&&json.topology.name)||(json.cell&&json.cell.name)||'custom';
     return{family:'beam',subtype:sub,json};
+  }
+
+  // ── 2b. Legacy F13LD.bundle (ihb surface; predates the family field) ──
+  if((json.meta&&json.meta.tool==='bundle-builder')||(json.surface&&json.surface.type==='ihb')){
+    const sn=(json.surface&&json.surface.structure)||(json.meta&&json.meta.preset)||'bundle';
+    return{family:'bundle',subtype:sn,json};
   }
 
   // ── 3. Legacy structural detection ───────────────────────────────────
@@ -6316,7 +6721,37 @@ function buildBeamSummary(r){
     ${an.zener_label?card('anisotropy',an.zener_label):''}
     </div>${homoBlock}${exportPanel()}`;
 }
-function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);}
+function buildBundleSummary(r){
+  const j=r.json, surf=j.surface||{}, g=j.geometry||{}, h=j.homogenization;
+  const p=bundleParamsFromJSON(j);
+  const Pxy=bundleXYPeriod(p), Lz=bundleZPeriod(p), sc=bundleSuperCellXY(p,Lz);
+  const aspect=Lz/Pxy;
+  const structNames={0:'BUNDLE',1:'HELICOID',2:'BRAID',3:'WEAVE'};
+  const topoLbl=surf.topology||(p.topoMode?'sheet':'solid');
+  let rows='';
+  if(p.structure===0){
+    rows=card('beam shape',(g.beam_shape||'circle'))+card('beam radius',g.beam_radius)+card('beams/side',g.beams_per_side)+card('spacing',g.beam_spacing)+card('column gap',g.column_gap)+card('twist rate',g.twist_rate)+(p.twistMode?card('twist mode','alternating'):'')+(p.warpMode?card('warp',['off','shear','helical'][p.warpMode]||'on'):'');
+  } else if(p.structure===1){
+    rows=card('pitch',g.pitch)+card('thickness',g.thickness)+card('inner R',g.inner_radius)+card('outer R',g.outer_radius)+card('starts',g.starts)+card('column gap',g.column_gap)+((p.hColHand||p.hZHand)?card('handedness','alternating'):'');
+  } else if(p.structure===2){
+    rows=card('strands',g.strand_count)+card('braid R',g.braid_radius)+card('fiber R',g.fiber_radius)+card('pitch',g.pitch)+card('column gap',g.column_gap)+(p.bColHand?card('handedness','alternating'):'');
+  } else {
+    rows=card('weave pitch',g.weave_pitch)+card('amplitude',g.weave_amplitude)+card('fiber R',g.fiber_radius)+card('layer gap',g.weave_layer_gap);
+  }
+  const cellLbl=(sc.Kx===1&&sc.Ky===1)?'1×1':(sc.Kx+'×'+sc.Ky);
+  const cellRow=card('tile cell',cellLbl+' · Z '+aspect.toFixed(2)+'×');
+  const rampNote=(Math.abs(p.zRampX)>1e-9||Math.abs(p.zRampY)>1e-9)?card('z-ramp','on · seams at borders'):'';
+  return`<div class="sec-lbl">bundle scaffold &middot; ${structNames[p.structure]}</div>
+    <div class="meta-grid">
+    ${card('topology',topoLbl)}
+    ${rows}
+    ${surf.iso_offset?card('iso offset',surf.iso_offset):''}
+    ${p.topoMode?card('sheet width',surf.sheet_width):''}
+    ${cellRow}
+    ${rampNote}
+    </div>${homoSection(h)}${exportPanel()}`;
+}
+function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);if(r.family==='bundle')return buildBundleSummary(r);}
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 const dropzone=document.getElementById('dropzone'),recipeView=document.getElementById('recipeView');
@@ -6324,14 +6759,15 @@ const errorBox=document.getElementById('errorBox'),typeBadge=document.getElement
 const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill');
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
-const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM'};
+const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM',bundle:'BUNDLE'};
 // rc2.5: Family colors from F13LD.vault scheme. Used by library chips and
 // the per-card recipe chip on body cards.
 const FAMILY_COLOR={
   tpms:  '#5ecaa5',
   noise: '#ea7050',
   grain: '#a8a59a',
-  beam:  '#b8cf50'
+  beam:  '#b8cf50',
+  bundle:'#7B4F9E'
 };
 function familyColor(fam){ return FAMILY_COLOR[fam] || '#888'; }
 let currentRecipe=null;

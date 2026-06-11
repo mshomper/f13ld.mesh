@@ -338,7 +338,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
   <div id="dropzone">
     <div class="dz-icon">⬡</div>
     <div class="dz-main">Drop a JSON recipe here</div>
-    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; grain &nbsp;·&nbsp; beam &nbsp;·&nbsp; spinodoid</div>
+    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; wave &nbsp;·&nbsp; grain &nbsp;·&nbsp; beam &nbsp;·&nbsp; spinodoid</div>
     <div class="dz-pick" id="pickBtn">or pick a file</div>
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
@@ -3387,6 +3387,7 @@ const COLOR_PALETTE = [
   '#ea7050',   // noise terracotta (family default)
   '#a8a59a',   // grain warm gray (family default)
   '#b8cf50',   // beam olive (family default)
+  '#d97706',   // wave amber (family default)
   '#22d3ee',   // cyan
   '#7c6ff7',   // purple
   '#f59e0b',   // amber
@@ -5226,6 +5227,53 @@ function buildBundleSDF(json){
   return function(q){ return BSDF.scene(q[0]*S,q[1]*S,q[2]*S,p)*invS; };
 }
 
+// -- F13LD.wave: cymatic standing-wave SDF (negative-inside) --------------
+// Sum of cosine modes under one of five symmetry operators, transcribed
+// verbatim from F13LD.wave's f13ldWaveEvalRaw. The mesh world cube [-5,5]
+// maps to exactly one wave cell via q = p * worldScale (pi/5): q spans
+// [-pi,pi] (cos period 2pi = one cell), giving seamless cubic tiling.
+// cellScale is a PHYSICAL size in wave (domain.size mm), intentionally NOT
+// a frequency multiplier here -- the mesh cell-size input owns physical
+// scale, exactly as on the analytic TPMS path.
+function buildWaveSDF(json){
+  const f=json.field||{};
+  const modes=Array.isArray(f.modes)?f.modes:[];
+  const SYM={pure:0,anti:1,antisym:1,chladni:1,cubic:2,chiral:3,schoen:4};
+  let sym=(typeof f.symmetryId==='number')?f.symmetryId
+         :(typeof f.symmetry==='string'?(SYM[f.symmetry.toLowerCase()]??0):0);
+  const iso=(typeof f.iso==='number')?f.iso:0;
+  const sheet=(f.mode==='sheet');
+  const thickness=(typeof f.thickness==='number')?f.thickness:0.2;
+  const signFlip=!!f.signFlip;
+  const t=(typeof f.phaseTime==='number')?f.phaseTime:0;
+  const WS=(json.coordinate&&typeof json.coordinate.worldScale==='number')?json.coordinate.worldScale:(Math.PI/5.0);
+  function evalRaw(qx,qy,qz){
+    let acc=0;
+    for(let i=0;i<modes.length;i++){
+      const mm=modes[i];
+      const n=mm.n,m=mm.m,pp=mm.p,A=(mm.A!=null?mm.A:1);
+      const cphi=Math.cos((mm.phi||0)+t);
+      const cnX=Math.cos(n*qx),cmX=Math.cos(m*qx),cpX=Math.cos(pp*qx);
+      const cnY=Math.cos(n*qy),cmY=Math.cos(m*qy),cpY=Math.cos(pp*qy);
+      const cnZ=Math.cos(n*qz),cmZ=Math.cos(m*qz),cpZ=Math.cos(pp*qz);
+      let v;
+      if(sym===1){v=cnX*cmY*cpZ+cnY*cmZ*cpX+cnZ*cmX*cpY-cnY*cmX*cpZ-cnX*cmZ*cpY-cnZ*cmY*cpX;}
+      else if(sym===2){v=cnX*cmY*cpZ+cnY*cmZ*cpX+cnZ*cmX*cpY+cnY*cmX*cpZ+cnX*cmZ*cpY+cnZ*cmY*cpX;}
+      else if(sym===3){v=cnX*cmY*cpZ+cnY*cmZ*cpX+cnZ*cmX*cpY;}
+      else if(sym===4){const snX=Math.sin(n*qx),snY=Math.sin(n*qy),snZ=Math.sin(n*qz);v=snX*cmY*cpZ+snY*cmZ*cpX+snZ*cmX*cpY;}
+      else{v=cnX*cmY*cpZ;}
+      acc+=A*v*cphi;
+    }
+    return acc;
+  }
+  return p=>{
+    const qx=p[0]*WS,qy=p[1]*WS,qz=p[2]*WS;
+    const fr=evalRaw(qx,qy,qz);
+    let cym=sheet?(Math.abs(iso-fr)-thickness):(iso-fr);
+    if(signFlip)cym=-cym;
+    return cym;   // negative-inside (mesh canonical convention)
+  };
+}
 function buildSDF(recipe,shapeCtx){
   // v0.5.0-rc14: if the preview cached fieldMin/Max on the recipe, forward
   // them as a normalization override. Builders use the cached range instead
@@ -5240,6 +5288,7 @@ function buildSDF(recipe,shapeCtx){
   if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride);
   if(recipe.family==='beam') return buildBeamSDF(recipe.json);
   if(recipe.family==='bundle')return buildBundleSDF(recipe.json);
+  if(recipe.family==='wave')  return buildWaveSDF(recipe.json);
   throw new Error('No evaluator for family: '+recipe.family);
 }
 
@@ -6045,6 +6094,7 @@ function updateQualButtonVoxelSizes(){
 function recipeIsPeriodic(recipe){
   if(!recipe) return false;
   if(recipe.family==='tpms') return true;
+  if(recipe.family==='wave') return true;  // cosine sums are 2pi-periodic; one seamless cell across [-5,5]
   if(recipe.family==='beam') return true;  // v0.5.0-rc16: cubic tile via wrap+halo neighbors
   if(recipe.family==='bundle'){
     // v0.6.5: tile only when a small exact Z period exists — i.e. no warp. Warp
@@ -6556,6 +6606,10 @@ function routeRecipe(json){
       const sn=(json.surface&&json.surface.structure)||(json.meta&&json.meta.preset)||'bundle';
       return{family:'bundle',subtype:sn,json};
     }
+    if(fam==='wave'){
+      const sub=(json.field&&json.field.symmetry)||'pure';
+      return{family:'wave',subtype:sub,json};
+    }
     // Unknown family value — fall through to legacy detection rather than
     // hard-erroring, so an unfamiliar family doesn't lock out otherwise
     // valid recipes.
@@ -6579,6 +6633,8 @@ function routeRecipe(json){
   // ── 3. Legacy structural detection ───────────────────────────────────
   if(json.field&&json.field.type){const ft=json.field.type;if(['spinodoid','gaussian','hyperuniform','reactiondiffusion'].includes(ft))return{family:'grain',subtype:ft,json};}
   if(json.surface&&json.surface.type){const st=json.surface.type;if(st==='noise')return{family:'noise',subtype:json.surface.noise_type||'simplex',json};if(st==='terms'||st==='raw_preset')return{family:'tpms',subtype:json.surface.preset||json.geometry?.mode||'custom',json};}
+  // -- 3b. F13LD.wave -- cymatic standing-wave field (field.modes array) --
+  if(json.field&&Array.isArray(json.field.modes)){const sub=(json.field.symmetry)||'wave';return{family:'wave',subtype:sub,json};}
 
   // ── 4. Structural beam fallback — last resort ────────────────────────
   // Only reached when no family field, no known meta.tool, no field.type,
@@ -6751,7 +6807,8 @@ function buildBundleSummary(r){
     ${rampNote}
     </div>${homoSection(h)}${exportPanel()}`;
 }
-function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);if(r.family==='bundle')return buildBundleSummary(r);}
+function buildWaveSummary(r){const f=r.json.field||{},h=r.json.homogenization;const nModes=Array.isArray(f.modes)?f.modes.length:0;const phase=f.phase||(f.signFlip?'B':'A');return `<div class="sec-lbl">wave scaffold</div><div class="meta-grid">${card('symmetry',(f.symmetry||'pure'))}${card('topology',f.mode||'solid')}${card('modes',nModes)}${card('iso',f.iso)}${f.mode==='sheet'?card('thickness',f.thickness):''}${card('phase',phase)}${card('cell scale',f.cellScale)}</div>${homoSection(h)}${exportPanel()}`;}
+function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);if(r.family==='bundle')return buildBundleSummary(r);if(r.family==='wave')return buildWaveSummary(r);}
 
 // ── UI helpers ────────────────────────────────────────────────────────────
 const dropzone=document.getElementById('dropzone'),recipeView=document.getElementById('recipeView');
@@ -6759,7 +6816,7 @@ const errorBox=document.getElementById('errorBox'),typeBadge=document.getElement
 const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill');
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
-const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM',bundle:'BUNDLE'};
+const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM',bundle:'BUNDLE',wave:'WAVE'};
 // rc2.5: Family colors from F13LD.vault scheme. Used by library chips and
 // the per-card recipe chip on body cards.
 const FAMILY_COLOR={
@@ -6767,7 +6824,8 @@ const FAMILY_COLOR={
   noise: '#ea7050',
   grain: '#a8a59a',
   beam:  '#b8cf50',
-  bundle:'#7B4F9E'
+  bundle:'#7B4F9E',
+  wave:  '#D97706'
 };
 function familyColor(fam){ return FAMILY_COLOR[fam] || '#888'; }
 let currentRecipe=null;

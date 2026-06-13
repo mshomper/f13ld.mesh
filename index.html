@@ -66,6 +66,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 .res-btn.active{color:var(--cyan);border-color:var(--cyan)}
 .res-btn:disabled{opacity:.4;cursor:default}
 #triPill{display:none;position:absolute;bottom:10px;left:10px;z-index:3;font-size:10px;color:var(--dim);background:rgba(6,8,15,.85);border:.5px solid var(--border);border-radius:5px;padding:3px 8px}
+#seamPill{display:none;position:absolute;bottom:80px;left:10px;z-index:6;font-size:10px;color:#f0b35b;background:rgba(30,18,4,.9);border:.5px solid #b4791f;border-radius:5px;padding:3px 8px;cursor:help}
 #panel{background:var(--panel);border:.5px solid var(--border);border-radius:12px;padding:12px 14px;overflow-y:auto;width:240px;flex-shrink:0;min-height:0}
 .sec-lbl{font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
 hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
@@ -362,6 +363,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
         <button class="res-btn"       id="btnUltra">Ultra</button>
       </div>
       <div id="triPill"></div>
+      <div id="seamPill"></div>
       <!-- ── XYZ orientation gimbal (v0.5.0) ─────────────────────────────── -->
       <svg id="orientGimbal" width="84" height="84" viewBox="-42 -42 84 84">
         <!-- Lines drawn from origin out to axis tips; updated by _updateGimbal() -->
@@ -6151,6 +6153,127 @@ function computeTPMSBakeBounds(recipe){
   return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
 }
 
+// Wave analog of computeTPMSBakeBounds — preview-only fix for the GL_REPEAT
+// seam that appears when a wave recipe contains a NON-integer mode index.
+//
+// buildWaveSDF maps world [-5,+5] → q [-pi,+pi] via worldScale=pi/5, so one
+// cell is 2pi of phase. cos(k*q)/sin(k*q) only return to the same value after
+// q advances by 2pi when k is an INTEGER — so the field repeats over one cell
+// (world span 10) only when every n,m,p is whole. A half-integer index (e.g.
+// 0.5) is anti-periodic over one cell: f(+pi) = -f(-pi). Its true period is
+// 4pi = a 2x2x2 supercell (world span 20). Baking a single [-5,+5] cell and
+// tiling it with GL_REPEAT then stamps a field discontinuity at every cell
+// face → the visible seams.
+//
+// Fix: bake one full SUPERCELL. S = smallest integer that makes S*n, S*m, S*p
+// whole for every mode (0.5→2, 0.25→4, integers→1; capped at 8). Bake half-
+// span = 5*S so REPEAT tiles a seamless unit. Each sub-cell keeps its physical
+// size (the mesh cell-size input still owns scale). S=1 returns [±5,±5,±5],
+// identical to current behaviour for integer recipes.
+//
+// If the recipe carries coordinate.cellRepeat (written by F13LD.wave), that
+// value is trusted directly — the exporter computed S the same way.
+//
+// Export path is unaffected: Manifold.levelSet evaluates the analytic SDF at
+// every voxel with no texture, no wrap — already seamless for any recipe.
+function waveSuperCell(recipe){
+  const j=recipe&&recipe.json||{};
+  const ann=j.coordinate&&j.coordinate.cellRepeat;
+  if(typeof ann==='number'&&isFinite(ann)&&ann>=1) return Math.max(1,Math.min(8,Math.round(ann)));
+  const modes=(j.field&&Array.isArray(j.field.modes))?j.field.modes:[];
+  const MAXD=8, TOL=1e-4;
+  // smallest d in 1..MAXD that turns v into a (near-)integer; MAXD if none
+  function denom(v){ if(v==null||!isFinite(v))return 1; v=Math.abs(v);
+    for(let d=1;d<=MAXD;d++){ if(Math.abs(d*v-Math.round(d*v))<TOL) return d; } return MAXD; }
+  function gcd(a,b){ while(b){ const t=a%b; a=b; b=t; } return a; }
+  function lcm(a,b){ return a/gcd(a,b)*b; }
+  let S=1;
+  for(let i=0;i<modes.length;i++){ const mm=modes[i]; if(!mm)continue;
+    S=lcm(S, lcm(denom(mm.n), lcm(denom(mm.m), denom(mm.p))));
+    if(S>=MAXD){ S=MAXD; break; } }
+  return Math.max(1,Math.min(8,S));
+}
+function computeWaveBakeBounds(recipe){
+  const S=waveSuperCell(recipe);
+  const h=5*S;
+  return {wMin:[-h,-h,-h],wMax:[+h,+h,+h],S:S};
+}
+
+// ── Wave tiling diagnosis (preview-only "seams" badge) ─────────────────────
+// The supercell tile (computeWaveBakeBounds) is seamless only when every mode
+// index reduces to a denominator ≤ 8 (LCM ≤ 8). Outside that, the tiled GL_
+// REPEAT preview shows seams — but the 3MF export is always exact (it samples
+// the analytic SDF directly, no tiling). These helpers classify *why* a recipe
+// can't tile cleanly so the badge can say something useful instead of leaving
+// a silent seam.
+function _waveGcd(x,y){x=Math.abs(x);y=Math.abs(y);while(y){const t=x%y;x=y;y=t;}return x;}
+// Classify a single index value. Returns {ok:true} when it tiles within the
+// 8-cell cap, else a reason describing the cleanest interpretation.
+function classifyWaveIndex(v){
+  if(v==null||!isFinite(v)) return {ok:true};
+  const a=Math.abs(v);
+  if(Math.abs(a-Math.round(a))<1e-9) return {ok:true};        // whole number
+  // Exact-ish rational with denominator up to 64?
+  let bq=0,bp=0,bErr=1;
+  for(let q=2;q<=64;q++){ const p=Math.round(a*q), err=Math.abs(a-p/q);
+    if(err<bErr){bErr=err;bp=p;bq=q;} if(err<1e-9) break; }
+  if(bErr<1e-4){
+    const g=_waveGcd(bp,bq)||1, p=bp/g, q=bq/g;
+    if(q<=8) return {ok:true};                                 // tiles within cap
+    return {kind:'overcap', frac:p+'/'+q, q};                  // exact but too big
+  }
+  // Not an exact small rational — is it a truncated repeating decimal that the
+  // user clearly meant (e.g. 0.333 → 1/3)? Snap to nearest q≤8 within 5e-3.
+  let tq=0,tp=0,tErr=1;
+  for(let q=2;q<=8;q++){ const p=Math.round(a*q), err=Math.abs(a-p/q);
+    if(err<tErr){tErr=err;tp=p;tq=q;} }
+  if(tErr<5e-3){
+    const g=_waveGcd(tp,tq)||1, p=tp/g, q=tq/g;
+    return {kind:'trunc', frac:p+'/'+q, q, dec:(p/q).toFixed(6)};
+  }
+  return {kind:'irrational'};                                  // quasi-periodic
+}
+// Walk every mode index; report the first offender (+count of any others).
+function analyzeWaveTiling(recipe){
+  const j=recipe&&recipe.json||{};
+  const modes=(j.field&&Array.isArray(j.field.modes))?j.field.modes:[];
+  const S=waveSuperCell(recipe);
+  let first=null, extra=0;
+  for(let i=0;i<modes.length;i++){ const mm=modes[i]; if(!mm)continue;
+    const params=[['n',mm.n],['m',mm.m],['p',mm.p]];
+    for(let k=0;k<params.length;k++){
+      const c=classifyWaveIndex(params[k][1]);
+      if(!c.ok){ if(!first) first={mode:i+1,param:params[k][0],val:params[k][1],c:c}; else extra++; }
+    }
+  }
+  if(!first) return {exact:true, S};
+  return {exact:false, S, first, extra};
+}
+// Build the hover-tooltip text for an inexact recipe.
+function waveSeamTooltip(a){
+  const f=a.first, v=parseFloat((+f.val).toPrecision(6));
+  const who='Mode '+f.mode+' '+f.param+'='+v;
+  let head;
+  if(f.c.kind==='trunc')
+    head=who+' \u2248 '+f.c.frac+'. Type '+f.c.dec+' (more digits) for a clean '+f.c.q+'\u00d7'+f.c.q+'\u00d7'+f.c.q+' tile.';
+  else if(f.c.kind==='overcap')
+    head=who+' = '+f.c.frac+' needs a '+f.c.q+'\u00d7'+f.c.q+'\u00d7'+f.c.q+' tile \u2014 beyond the preview\u2019s 8-cell limit.';
+  else
+    head=who+' isn\u2019t a simple fraction \u2014 this lattice never repeats (quasi-periodic), so no tiled preview can be seamless.';
+  if(a.extra>0) head+=' (+'+a.extra+' more)';
+  return head+'\nThe exported 3MF samples the field directly and is seam-free.';
+}
+// Show/hide the badge for the current recipe (wave + inexact only).
+function updateSeamPill(recipe){
+  if(!seamPill) return;
+  if(!recipe || recipe.family!=='wave'){ seamPill.style.display='none'; return; }
+  const a=analyzeWaveTiling(recipe);
+  if(a.exact){ seamPill.style.display='none'; return; }
+  seamPill.textContent='\u26a0 tiles with seams';
+  seamPill.title=waveSeamTooltip(a);
+  seamPill.style.display='block';
+}
+
 // v0.5.0-rc26: Beam analog of computeTPMSBakeBounds.
 //
 // Anisotropic beam cells (scale_xyz != isotropic) need per-axis bake spans
@@ -6316,7 +6439,7 @@ async function triggerPreview(quality){
   showComputing('building preview…','baking field…');
   rm.setQuality(quality);
   const periodic=recipeIsPeriodic(currentRecipe);
-  const N=PREVIEW_BAKE_N[quality]||64;
+  let N=PREVIEW_BAKE_N[quality]||64;
   const needsRawBake=!periodic;
   let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
   if(!periodic&&importedShape){
@@ -6386,6 +6509,7 @@ async function triggerPreview(quality){
     clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
+    seamPill.style.display='none';
     hideComputing();setBtns(true);
     return;
   }
@@ -6408,6 +6532,16 @@ async function triggerPreview(quality){
     const b=computeBundleBakeBounds(currentRecipe);
     pMin=b.wMin; pMax=b.wMax;
     bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+  } else if(currentRecipe.family==='wave'){
+    // Non-integer mode indices make the true period a 2x2x2 (or larger)
+    // supercell. Bake that whole supercell so GL_REPEAT tiles seamlessly;
+    // integer recipes return S=1 → [±5,±5,±5] (unchanged fast path). Scale
+    // the bake grid by S (capped at the ultra tier, 192) so each sub-cell
+    // keeps its preview voxel density instead of getting S× coarser.
+    const b=computeWaveBakeBounds(currentRecipe);
+    pMin=b.wMin; pMax=b.wMax;
+    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+    if(b.S>1) N=Math.min(192, N*b.S);
   }
   rm.setWorldBounds(pMin,pMax,periodic);
   if(!importedShape) rm.fitPeriodicBounds(pMin,pMax); // frame the full cell on import; preserves zoom on re-preview
@@ -6422,6 +6556,7 @@ async function triggerPreview(quality){
     clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
+    updateSeamPill(currentRecipe);
     hideComputing();
   }catch(e){
     hideComputing();
@@ -6813,7 +6948,7 @@ function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r
 // ── UI helpers ────────────────────────────────────────────────────────────
 const dropzone=document.getElementById('dropzone'),recipeView=document.getElementById('recipeView');
 const errorBox=document.getElementById('errorBox'),typeBadge=document.getElementById('typeBadge');
-const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill');
+const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill'),seamPill=document.getElementById('seamPill');
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
 const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM',bundle:'BUNDLE',wave:'WAVE'};
@@ -7515,7 +7650,7 @@ async function buildMinimal3MF(vertProps,triVerts,scale){
 
 function showError(m){errorBox.style.display='block';errorBox.textContent='⚠ '+m;}
 function clearError(){errorBox.style.display='none';}
-function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';if(window._orbStart)_orbStart();}
+function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';if(seamPill)seamPill.style.display='none';if(window._orbStart)_orbStart();}
 function hideComputing(){overlay.classList.add('hidden');if(window._orbStop)_orbStop();}
 
 function setStale(){
@@ -7542,7 +7677,7 @@ function clearStale(){
   if(btn){btn.classList.remove('pulsing');}
   if(area){area.classList.remove('preview-stale');}
 }
-function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';}
+function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';if(seamPill)seamPill.style.display='none';}
 function setBtns(on){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
 function setActivBtn(id){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
 
@@ -7610,7 +7745,7 @@ async function showRecipe(recipe){
 function resetToDropzone(){
   recipeView.style.display='none';dropzone.style.display='flex';
   document.getElementById('shapeStrip').style.display='none';
-  clearError();triPill.style.display='none';
+  clearError();triPill.style.display='none';if(seamPill)seamPill.style.display='none';
   overlay.classList.remove('hidden');coMain.textContent='awaiting recipe…';coSub.textContent='';
   // rc2.5: "load different" is a TRUE RESET — clear all bodies + all recipes.
   // Previously (rc2) bodies persisted across recipe changes; with per-body

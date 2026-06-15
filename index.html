@@ -7778,7 +7778,7 @@ document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRec
 (function(){
   try{
     const p=new URLSearchParams(location.search);
-    if(p.has('r')){
+    if(p.has('r') && !p.has('queue')){
       const json=JSON.parse(decodeURIComponent(p.get('r')));
       // Wait for DOM + Manifold to be ready, then show
       setTimeout(()=>showRecipe(routeRecipe(json)),0);
@@ -7786,6 +7786,29 @@ document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRec
   }catch(e){
     console.warn('URL recipe parse error:',e);
   }
+})();
+
+// ── URL ingestion — load a saved queue from F13LD.queue via ?queue=CODE ──
+// Stocks the recipe library with up to MAX_RECIPES items. Takes priority over ?r=.
+(function(){
+  const code=new URLSearchParams(location.search).get('queue');
+  if(!code) return;
+  const URL='https://axinljpecycnvfncyhfs.supabase.co/rest/v1/rpc/queue_fetch';
+  const KEY='sb_publishable_DAlrNLqbUZiwkaA6wPSMIw_YUNY85LX';
+  fetch(URL,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json'},body:JSON.stringify({p_code:code})})
+    .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
+    .then(res=>{
+      const items=(res&&res.items)||[];
+      if(!items.length){showError('Queue "'+code+'" is empty or not found.');return;}
+      const load=items.slice(0, Math.max(0, MAX_RECIPES-recipes.size));
+      if(!load.length){showError('Recipe library is full — clear a recipe before loading a queue.');return;}
+      setTimeout(()=>{
+        for(let i=0;i<load.length-1;i++) setActiveRecipe(routeRecipe(load[i].recipe));
+        showRecipe(routeRecipe(load[load.length-1].recipe));
+        if(items.length>load.length) showCapToast('Loaded '+load.length+' of '+items.length+' — limit is '+MAX_RECIPES+'.');
+      },0);
+    })
+    .catch(e=>showError('Could not load queue — '+e.message));
 })();
 
 // ── File handling ─────────────────────────────────────────────────────────

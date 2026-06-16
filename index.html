@@ -159,6 +159,22 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .shapeCard-add .sca-icon{font-size:18px;line-height:1;opacity:.6}
 .shapeCard-add .sca-lbl{font-size:10px;letter-spacing:.06em}
 .shapeCard-add .sca-cap{font-size:9px;color:var(--muted);opacity:.7}
+/* ── Weld groups (v0.7.0): horizontal cluster with top rail + fillet badge ── */
+.weldGroup{flex:0 0 auto;display:flex;flex-direction:column;gap:5px;border:.5px solid var(--wg-border);border-radius:8px;padding:5px 6px 6px;background:var(--wg-bg);box-shadow:inset 0 3px 0 0 var(--wg-rail);transition:box-shadow .14s,border-color .14s}
+.weldGroup .wg-head{display:flex;align-items:center;gap:8px;padding:1px 2px 0 4px}
+.weldGroup .wg-label{font-family:'Exo 2',system-ui,sans-serif;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--wg-rail);font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.weldGroup .wg-lk{font-size:11px;opacity:.85}
+.weldGroup .wg-count{font-size:9.5px;color:var(--muted);white-space:nowrap}
+.weldGroup .wg-fillet{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--wg-rail);background:color-mix(in srgb,var(--wg-rail) 12%,transparent);border:.5px solid color-mix(in srgb,var(--wg-rail) 35%,transparent);border-radius:20px;padding:1px 8px;cursor:text}
+.weldGroup .wg-arc{font-size:12px;line-height:1}
+.weldGroup .wg-fillet input{width:30px;background:transparent;border:none;color:var(--wg-rail);font-family:inherit;font-size:10px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+.weldGroup .wg-members{display:flex;gap:6px;align-items:stretch}
+.weldDetach{flex:0 0 90px;min-width:90px;display:flex;align-items:center;justify-content:center;border:.5px dashed var(--border);border-radius:6px;color:var(--muted);font-size:10px;letter-spacing:.04em;text-align:center;padding:7px 6px;transition:border-color .12s,color .12s,background .12s}
+.shapeCard[draggable="true"]{cursor:grab}
+.shapeCard.dragging{opacity:.35;border-style:dashed}
+.shapeCard.drop-hover{border-color:var(--cyan)!important;box-shadow:0 0 0 1px rgba(34,211,238,.5)!important}
+.weldGroup.drop-hover{box-shadow:inset 0 3px 0 0 var(--wg-rail),0 0 0 1px rgba(34,211,238,.55)!important;border-color:var(--cyan)!important}
+.weldDetach.drop-hover{border-color:var(--cyan);color:var(--cyan);background:rgba(34,211,238,.05)}
 /* Cap toast — transient message when drop rejected at 8-body cap */
 #capToast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(245,158,11,.15);border:.5px solid var(--amber);border-radius:6px;padding:8px 14px;font-size:12px;color:var(--amber);z-index:1000;pointer-events:none;opacity:0;transition:opacity .25s}
 #capToast.show{opacity:1}
@@ -303,7 +319,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.6.8</span>
+      <span class="fh-version">v0.7.0</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -859,8 +875,13 @@ function syncGhostsToRaymarcher(){
   // raymarcher converts via cellSizeMm uniformly.
   const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
   const ghosts = [];
+  const _ag = (typeof activeGroupId==='function') ? activeGroupId() : null;
   for(const bodyId of bodyOrder){
     if(bodyId === activeBodyId) continue;
+    // Members of the ACTIVE weld group are baked into the union field — don't
+    // also draw them as ghosts (they'd overlap the welded mass). Bodies outside
+    // the group still ghost normally, per their visibility.
+    if(_ag && bodyGroup.get(bodyId)===_ag) continue;
     const b = bodies.get(bodyId);
     if(!b || !b.sdfGhost) continue;
     // rc3.6: respect per-body visibility state.
@@ -918,6 +939,51 @@ function computeAssemblyBbox(){
     if(b.bbox.mxz > mxz) mxz = b.bbox.mxz;
   }
   return {mnx,mny,mnz,mxx,mxy,mxz};
+}
+
+// -- Weld groups (v0.7.0) - bodyGroup[bodyId]=groupId welds bodies into one part.
+// Absent = standalone (exports as today). weldGroups[groupId]={filletMm}.
+const weldGroups = new Map();   // groupId -> { filletMm }
+const bodyGroup  = new Map();   // bodyId  -> groupId  (absent = ungrouped)
+function activeGroupId(){ return activeBodyId!=null ? (bodyGroup.get(activeBodyId)||null) : null; }
+function groupMembers(gid){ return bodyOrder.filter(id=>bodyGroup.get(id)===gid); }
+function groupFilletMm(gid){ const g=weldGroups.get(gid); return g?g.filletMm:0; }
+function computeGroupBbox(gid){
+  let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
+  for(const id of groupMembers(gid)){
+    const b=bodies.get(id); if(!b||!b.bbox) continue;
+    if(b.bbox.mnx<mnx)mnx=b.bbox.mnx; if(b.bbox.mny<mny)mny=b.bbox.mny; if(b.bbox.mnz<mnz)mnz=b.bbox.mnz;
+    if(b.bbox.mxx>mxx)mxx=b.bbox.mxx; if(b.bbox.mxy>mxy)mxy=b.bbox.mxy; if(b.bbox.mxz>mxz)mxz=b.bbox.mxz;
+  }
+  return isFinite(mnx)?{mnx,mny,mnz,mxx,mxy,mxz}:null;
+}
+// Build the per-body spec list for a weld group's members. ensureN re-bakes a
+// member's shape SDF grid if coarser than ensureN (0 = use whatever exists).
+// cloneBuffers=true slices each grid buffer (for transfer on export); false
+// passes the live buffer (preview posts without a transfer list, so it is
+// structure-cloned and the body's grid survives). v1: identity per-body xform;
+// noise/grain lattice members need their own preview-cached fieldMin/Max and
+// are not yet covered.
+async function gatherGroupSpecs(gid, ensureN, cloneBuffers){
+  const specs=[];
+  for(const id of groupMembers(gid)){
+    const b=bodies.get(id); if(!b||!b.bbox) continue;
+    if((b.visibility||VIS_DEFAULT)===VIS_HIDDEN) continue;   // hidden member drops out of the weld
+    if(ensureN && (!b.sdfGrid || b.sdfGrid.N<ensureN) && b.posArr && b.idxArr){
+      b.sdfGrid=await computeShapeSDF(b.posArr, b.idxArr, b.bbox, ensureN);
+    }
+    if(!b.sdfGrid) continue;
+    const rid=assignments.get(id);
+    const isSolid=isSolidAssignment(rid)||!recipes.has(rid);
+    const cellSizeMm=(b.cellSizeMm!=null)?b.cellSizeMm
+      :((id===activeBodyId)?(parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3):3);
+    const buf=cloneBuffers?b.sdfGrid.data.buffer.slice(0):b.sdfGrid.data.buffer;
+    specs.push({solid:isSolid, recipe:isSolid?null:recipes.get(rid),
+      shapeSdfData:buf, shapeN:b.sdfGrid.N,
+      bbox:{mnx:b.bbox.mnx,mny:b.bbox.mny,mnz:b.bbox.mnz,mxx:b.bbox.mxx,mxy:b.bbox.mxy,mxz:b.bbox.mxz},
+      cellSizeMm});
+  }
+  return {specs};
 }
 
 // rc2.5: assign a specific recipe to a specific body, switch active to that
@@ -1878,6 +1944,10 @@ function MeshRaymarcher(canvas){
   this.fieldMin=0; this.fieldMax=1; this.lipschitz=1.0; this.bakeN=64;
   this.topology=null;
   this.hasShape=false; this.shapeData=null; this.viewH=5.0;
+  // v0.7.0: weld-group assembly render mode. When true, implicit() renders the
+  // baked scaffold field DIRECTLY (no active-body shape clip, no solid short-
+  // circuit, no ghosts) — the field already holds the fully-composed union.
+  this._assemblyMode=false;
   this.worldMin=[-5,-5,-5]; this.worldMax=[5,5,5]; this.isPeriodic=true;
   this._quality='draft';
   this.quadBuf=gl.createBuffer();
@@ -1905,14 +1975,20 @@ MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_3D,null);
   }else{
-    // Scaffold raw field: R8 is fine — field varies smoothly, topology applied in shader.
+    // Scaffold/assembly raw field. v0.7.x: R16F (half float) instead of R8. The
+    // value stored is the SAME normalized [0,1] the shader already reconstructs
+    // (sampleRaw: t*(max-min)+min), so no shader change — but ~2000 levels across
+    // the range instead of 256. R8 quantized a welded assembly's wide range (deep
+    // solid interiors to exterior) into ~0.16mm value bands, flattening the
+    // lattice's near-surface oscillation; R16F removes that banding. LINEAR
+    // filtering + REPEAT wrap of R16F are core WebGL 2.0.
     var range=Math.max(maxV-minV,1e-6);
-    var bytes=new Uint8Array(N*N*N);
-    for(var i=0;i<data.length;i++)bytes[i]=Math.round(Math.max(0,Math.min(1,(data[i]-minV)/range))*255);
+    var norm=new Float32Array(N*N*N);
+    for(var i=0;i<data.length;i++)norm[i]=Math.max(0,Math.min(1,(data[i]-minV)/range));
     if(!this.fieldTex)this.fieldTex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,norm);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     // REPEAT so hardware LINEAR filtering interpolates continuously across
@@ -1943,7 +2019,16 @@ MeshRaymarcher.prototype.setShapeSDF=function(sdfGrid,bbox,cellSizeMm,assemblyBb
   // scene, not just the active one — otherwise ghosts outside the active
   // body's extent get clipped.
   var sizeBbox = assemblyBbox || bbox;
-  var maxDim=Math.max(sizeBbox.mxx-sizeBbox.mnx,sizeBbox.mxy-sizeBbox.mny,sizeBbox.mxz-sizeBbox.mnz);
+  // reach-from-origin (not half-span): the render cube is hard-centered on the
+  // origin, and a multi-body assembly's centroid is generally NOT at the origin
+  // (sceneCenter pins the FIRST body's center there). Sizing by half-span lets
+  // the far body overflow the cube and get sliced flat by a cube face. Using the
+  // max absolute coordinate guarantees the origin-centered cube contains every
+  // body wherever it sits. No geometry is moved — export positions are intact.
+  var _reach = Math.max(Math.abs(sizeBbox.mnx),Math.abs(sizeBbox.mxx),
+                        Math.abs(sizeBbox.mny),Math.abs(sizeBbox.mxy),
+                        Math.abs(sizeBbox.mnz),Math.abs(sizeBbox.mxz));
+  var maxDim = 2*_reach;   // effective span so downstream maxDim/2 == reach
   var newViewH = Math.ceil(maxDim/2*(10/cellSizeMm)*1.05); // 5% padding
   // rc3.7: preserveCamera = true means "user is already framed at a comfortable
   // zoom; don't reset to fit-the-new-shape." Used when importing a second+
@@ -2015,6 +2100,14 @@ MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.
 MeshRaymarcher.prototype.setSolidMode=function(isSolid, color){
   this._solidMode = isSolid ? 1.0 : 0.0;
   this._solidColor = color || [0.8, 0.8, 0.8];
+  this._dirty = true;
+};
+// v0.7.0: toggle weld-group assembly render mode. On = force uHasShape/
+// uSolidMode/uGhostCount to 0 at draw time so the baked union field renders
+// as-is. Leaves the active body's shape texture binding intact, so returning
+// to a single-body preview is immediate (no re-upload).
+MeshRaymarcher.prototype.setAssemblyMode=function(on){
+  this._assemblyMode = !!on;
   this._dirty = true;
 };
 
@@ -2116,6 +2209,20 @@ MeshRaymarcher.prototype.fitPeriodicBounds=function(wMin,wMax){
   var hx=(wMax[0]-wMin[0])*0.5,hy=(wMax[1]-wMin[1])*0.5,hz=(wMax[2]-wMin[2])*0.5;
   var newViewH=Math.max(hx,hy,hz); if(!(newViewH>0))return;
   var key=hx.toFixed(3)+','+hy.toFixed(3)+','+hz.toFixed(3);
+  if(key!==this._periodicFitKey){this.viewH=newViewH;this.camZoom=newViewH*3.2;this.panX=0;this.panY=0;this._periodicFitKey=key;}
+  else{this.viewH=newViewH;}
+  this._dirty=true;
+};
+// Like fitPeriodicBounds, but sizes the (origin-centered) cube to the bounds'
+// max ABSOLUTE coordinate rather than half-span — so an off-center box (e.g. a
+// weld group whose centroid isn't on the origin) is fully contained instead of
+// clipped by a cube face. Used by the weld preview. Geometry is not moved.
+MeshRaymarcher.prototype.fitReachBounds=function(wMin,wMax){
+  var rx=Math.max(Math.abs(wMin[0]),Math.abs(wMax[0]));
+  var ry=Math.max(Math.abs(wMin[1]),Math.abs(wMax[1]));
+  var rz=Math.max(Math.abs(wMin[2]),Math.abs(wMax[2]));
+  var newViewH=Math.max(rx,ry,rz)*1.05; if(!(newViewH>0))return;
+  var key='reach:'+rx.toFixed(3)+','+ry.toFixed(3)+','+rz.toFixed(3);
   if(key!==this._periodicFitKey){this.viewH=newViewH;this.camZoom=newViewH*3.2;this.panX=0;this.panY=0;this._periodicFitKey=key;}
   else{this.viewH=newViewH;}
   this._dirty=true;
@@ -2550,7 +2657,10 @@ MeshRaymarcher.prototype.render=function(){
   // ── Structure SDF transform uniforms (v0.5.0 Phase B) ───────────────────
   // Default to identity (R=I, offset=0, pivot=0, iso=0) when no transform
   // has been set — cube mode and untransformed shape mode unchanged.
-  var st=this._structXform || null;
+  // In assembly (weld) mode the active member's structure transform must NOT
+  // be applied to the baked union — it would shift/inflate the whole group,
+  // solids included. Force identity (iso/offset/rot neutralized).
+  var st=this._assemblyMode?null:(this._structXform || null);
   if(st){
     gl.uniformMatrix3fv(this._uStructRotInv,false,new Float32Array(st.rotMat));
     gl.uniform3f(this._uStructPivotWorld,st.pivot[0],st.pivot[1],st.pivot[2]);
@@ -2563,7 +2673,7 @@ MeshRaymarcher.prototype.render=function(){
     gl.uniform1f(this._uStructIsoWorld,0.0);
   }
   // rc3.5: solid-mode uniforms. Default to off if never set.
-  if(this._uSolidMode) gl.uniform1f(this._uSolidMode, this._solidMode || 0.0);
+  if(this._uSolidMode) gl.uniform1f(this._uSolidMode, this._assemblyMode?0.0:(this._solidMode || 0.0));
   if(this._uSolidColor){
     var sc = this._solidColor || [0.8, 0.8, 0.8];
     gl.uniform3f(this._uSolidColor, sc[0], sc[1], sc[2]);
@@ -2576,7 +2686,7 @@ MeshRaymarcher.prototype.render=function(){
     gl.uniform3f(this._uBaseColor, bc[0], bc[1], bc[2]);
   }
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
-  gl.uniform1f(this._uHasShape,this.hasShape&&this.shapeTex?1.0:0.0);
+  gl.uniform1f(this._uHasShape, this._assemblyMode?0.0:(this.hasShape&&this.shapeTex?1.0:0.0));
   if(this.hasShape&&this.shapeTex&&this.shapeData){
     var sd=this.shapeData;
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,this.shapeTex);gl.uniform1i(this._uShapeSDF,1);
@@ -3120,83 +3230,168 @@ function setShapeUI(state, name, meta, errMsg, suggestedCell){
 // + _pendingImport and rebuilds #shapeCardRow. Called from setShapeUI, from
 // switchActiveBody, and from clearActiveBody when the active body changes.
 // rc2.5: now also renders the recipe-chip dropdown trigger on each card.
+// ── Build one body card's HTML. Used standalone AND inside a weld group, so
+// grouped cards keep every control (recipe chip, visibility, palette, ×). ──
+function buildBodyCardHTML(bodyId){
+  const b = bodies.get(bodyId);
+  if(!b) return '';
+  const isActive = (bodyId === activeBodyId);
+  const meta = b.meta || {};
+  const tris = (meta.tris != null) ? meta.tris.toLocaleString() : '?';
+  const chips = `
+      <span class="sc-chip">${meta.format||''}</span>
+      <span class="sc-chip">tris <b>${tris}</b></span>`;
+  const safeName = String(meta.name||'shape').replace(/</g,'&lt;');
+  const rid = assignments.get(bodyId);
+  const r = (rid && rid !== SOLID_SENTINEL && recipes.has(rid)) ? recipes.get(rid) : null;
+  const bodyCol = resolveBodyColor(bodyId);
+  let recipeChipHtml;
+  if(isSolidAssignment(rid)){
+    recipeChipHtml = `
+      <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
+        <span class="scr-dot" style="background:${bodyCol}"></span>
+        <span class="scr-name">solid</span>
+        <span class="scr-caret">▾</span>
+      </span>`;
+  } else if(r){
+    const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
+    recipeChipHtml = `
+      <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
+        <span class="scr-dot" style="background:${bodyCol}"></span>
+        <span class="scr-name">${label}</span>
+        <span class="scr-caret">▾</span>
+      </span>`;
+  } else {
+    recipeChipHtml = `
+      <span class="shapeCard-recipe unassigned" data-body-id="${bodyId}">
+        <span class="scr-name">unassigned</span>
+        <span class="scr-caret">▾</span>
+      </span>`;
+  }
+  const vis = b.visibility || VIS_DEFAULT;
+  const visIcon = vis === VIS_HIDDEN ? '◯' : vis === VIS_GHOST ? '◌' : '◉';
+  const visTitle = vis === VIS_HIDDEN
+    ? 'Hidden · click to cycle to inactive-solid'
+    : vis === VIS_GHOST
+    ? 'Ghost (translucent) · click to cycle to hidden'
+    : 'Inactive-solid (opaque) · click to cycle to ghost';
+  const visExtraClass = isActive ? ' sc-icon-muted' : '';
+  const paletteBtnHtml = `
+    <button class="sc-palette-btn${visExtraClass}" data-body-id="${bodyId}" title="Pick body color" style="color:${bodyCol}">
+      <span class="sc-palette-swatch" style="background:${bodyCol}"></span>
+    </button>`;
+  const visBtnHtml = `
+    <button class="sc-vis-btn${visExtraClass}" data-body-id="${bodyId}" title="${visTitle}">
+      ${visIcon}
+    </button>`;
+  return `
+    <div class="shapeCard${isActive?' active':''}" draggable="true" data-body-id="${bodyId}">
+      <button class="sc-x" data-body-id="${bodyId}" title="remove">&#10005;</button>
+      <span class="sc-name">${safeName}</span>
+      <div class="sc-chips">${chips}</div>
+      ${recipeChipHtml}
+      <div class="sc-card-controls">
+        ${visBtnHtml}
+        ${paletteBtnHtml}
+      </div>
+    </div>`;
+}
+
+// ── Weld-group UI helpers + drag-to-weld ops (v0.7.0) ───────────────────────
+const WELD_COLORS = ['#a78bfa','#2dd4bf','#fbbf24','#fb7185','#38bdf8'];
+let _weldColorSeq = 0;
+function weldGroupColor(gid){ const g=weldGroups.get(gid); const ci=(g&&g.colorIndex!=null)?g.colorIndex:0; return WELD_COLORS[ci%WELD_COLORS.length]; }
+function weldGroupLetter(gid){ const g=weldGroups.get(gid); const ci=(g&&g.colorIndex!=null)?g.colorIndex:0; return String.fromCharCode(65+(ci%26)); }
+function newWeldGroup(filletMm){ const used=new Set(); for(const g of weldGroups.values()) used.add(g.colorIndex); let ci=0; while(used.has(ci)) ci++; const gid='wg'+Date.now().toString(36)+ci; weldGroups.set(gid,{filletMm:(filletMm!=null?filletMm:0.4),colorIndex:ci}); return gid; }
+function _bodyOrderMoveAfter(id, afterId){ const i=bodyOrder.indexOf(id); if(i>=0) bodyOrder.splice(i,1); const j=bodyOrder.indexOf(afterId); bodyOrder.splice(j<0?bodyOrder.length:j+1,0,id); }
+function _bodyOrderMoveEnd(id){ const i=bodyOrder.indexOf(id); if(i>=0) bodyOrder.splice(i,1); bodyOrder.push(id); }
+// Signature of the ACTIVE body's preview-relevant state (its group + that
+// group's member count). If unchanged across a weld edit, the active body's
+// preview doesn't need rebuilding — so we don't thrash the raymarcher when the
+// user welds two OTHER bodies.
+function _weldActiveSig(){ const g=activeBodyId?(bodyGroup.get(activeBodyId)||null):null; const n=g?groupMembers(g).length:0; return g+'|'+n; }
+function _refreshAfterWeld(prevSig){
+  renderBodyCards();                       // also dissolves any sub-2 group
+  if(_weldActiveSig()===prevSig) return;   // active body's preview is unaffected
+  const ag=activeGroupId();
+  if(ag && groupMembers(ag).length>=2) triggerPreview(rm&&rm._quality||'draft');         // show the weld
+  else if(typeof reloadActiveRecipeIntoPreview==='function') reloadActiveRecipeIntoPreview(); // restore single body
+}
+function weldDropOnGroup(id, gid){
+  if(!weldGroups.has(gid) || bodyGroup.get(id)===gid) return;
+  const sig=_weldActiveSig();
+  bodyGroup.set(id,gid);
+  const others=groupMembers(gid).filter(x=>x!==id);
+  _bodyOrderMoveAfter(id, others.length?others[others.length-1]:id);
+  _refreshAfterWeld(sig);
+}
+function weldDropOnBody(id, targetId){
+  if(id===targetId) return;
+  const tgid=bodyGroup.get(targetId);
+  if(tgid){ weldDropOnGroup(id, tgid); return; }   // target already grouped → join it
+  const sig=_weldActiveSig();                        // both ungrouped → new weld group
+  const gid=newWeldGroup(0.4);
+  bodyGroup.set(targetId,gid); bodyGroup.set(id,gid);
+  _bodyOrderMoveAfter(id, targetId);
+  _refreshAfterWeld(sig);
+}
+function weldDetach(id){
+  if(!bodyGroup.has(id)) return;
+  const sig=_weldActiveSig();
+  bodyGroup.delete(id);
+  _bodyOrderMoveEnd(id);
+  _refreshAfterWeld(sig);
+}
+function weldSetFillet(gid, mm){
+  const g=weldGroups.get(gid); if(!g) return;
+  g.filletMm=Math.max(0, mm||0);
+  if(activeBodyId && bodyGroup.get(activeBodyId)===gid && groupMembers(gid).length>=2)
+    triggerPreview(rm&&rm._quality||'draft');
+}
+
 function renderBodyCards(){
   const row = document.getElementById('shapeCardRow');
   if(!row) return;
   // Close any open dropdown (will be re-attached fresh on next click).
   _closeRecipeDropdown();
+  // Dissolve any weld group that has fallen below 2 members.
+  for(const gid of [...weldGroups.keys()]){
+    const mem = groupMembers(gid);
+    if(mem.length < 2){ for(const id of mem) bodyGroup.delete(id); weldGroups.delete(gid); }
+  }
+  // Cell size is neutralized while the active body is welded (the union bakes at
+  // a fixed scale). Disable the input so it reads as inert rather than ignored.
+  const _cellInWeld = !!(activeBodyId && bodyGroup.get(activeBodyId) && groupMembers(bodyGroup.get(activeBodyId)).length>=2);
+  const _cellInp = document.getElementById('shapeCellSizeMm');
+  if(_cellInp){ _cellInp.disabled = _cellInWeld; _cellInp.title = _cellInWeld ? 'Cell size is locked while welded — un-weld this body to adjust' : ''; }
   const cards = [];
-  // One card per body in bodyOrder (left-to-right = oldest-to-newest).
+  const emitted = new Set();
+  // One card per body in bodyOrder; consecutive members of a weld group are
+  // wrapped in a .weldGroup container (rendered once, when first encountered).
   for(const bodyId of bodyOrder){
     const b = bodies.get(bodyId);
     if(!b) continue;
-    const isActive = (bodyId === activeBodyId);
-    const meta = b.meta || {};
-    const tris = (meta.tris != null) ? meta.tris.toLocaleString() : '?';
-    const chips = `
-      <span class="sc-chip">${meta.format||''}</span>
-      <span class="sc-chip">tris <b>${tris}</b></span>`;
-    const safeName = String(meta.name||'shape').replace(/</g,'&lt;');
-    // rc2.5: recipe chip showing assigned recipe (or "unassigned").
-    // rc3.5: also handles the solid sentinel — shows "solid" with neutral gray.
-    // rc3.6: chip color now uses per-body resolveBodyColor (palette override).
-    const rid = assignments.get(bodyId);
-    const r = (rid && rid !== SOLID_SENTINEL && recipes.has(rid)) ? recipes.get(rid) : null;
-    const bodyCol = resolveBodyColor(bodyId);
-    let recipeChipHtml;
-    if(isSolidAssignment(rid)){
-      recipeChipHtml = `
-        <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
-          <span class="scr-dot" style="background:${bodyCol}"></span>
-          <span class="scr-name">solid</span>
-          <span class="scr-caret">▾</span>
-        </span>`;
-    } else if(r){
-      const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
-      recipeChipHtml = `
-        <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
-          <span class="scr-dot" style="background:${bodyCol}"></span>
-          <span class="scr-name">${label}</span>
-          <span class="scr-caret">▾</span>
-        </span>`;
+    const gid = bodyGroup.get(bodyId);
+    if(gid && weldGroups.has(gid)){
+      if(emitted.has(gid)) continue;
+      emitted.add(gid);
+      const mem = groupMembers(gid);
+      const col = weldGroupColor(gid);
+      const letter = weldGroupLetter(gid);
+      const fillet = (groupFilletMm(gid)||0).toFixed(2);
+      const memHtml = mem.map(buildBodyCardHTML).join('');
+      cards.push(`
+        <div class="weldGroup" data-group="${gid}" style="--wg-rail:${col};--wg-bg:color-mix(in srgb, ${col} 7%, transparent);--wg-border:color-mix(in srgb, ${col} 30%, var(--border))">
+          <div class="wg-head">
+            <span class="wg-label"><span class="wg-lk">⛓</span>WELD ${letter}</span>
+            <span class="wg-count">${mem.length} → 1 part</span>
+            <span class="wg-fillet" data-group="${gid}"><span class="wg-arc">⌒</span><input type="text" value="${fillet}" data-group="${gid}"> mm</span>
+          </div>
+          <div class="wg-members">${memHtml}</div>
+        </div>`);
     } else {
-      recipeChipHtml = `
-        <span class="shapeCard-recipe unassigned" data-body-id="${bodyId}">
-          <span class="scr-name">unassigned</span>
-          <span class="scr-caret">▾</span>
-        </span>`;
+      cards.push(buildBodyCardHTML(bodyId));
     }
-    // rc3.6: visibility cycle button + color palette swatch. Only meaningful
-    // for non-active bodies (the active body's visibility is implicitly "full").
-    // Show them on all cards for layout consistency; the active card's icons
-    // are visible but visually muted (lower opacity).
-    const vis = b.visibility || VIS_DEFAULT;
-    const visIcon = vis === VIS_HIDDEN ? '◯' : vis === VIS_GHOST ? '◌' : '◉';
-    const visTitle = vis === VIS_HIDDEN
-      ? 'Hidden · click to cycle to inactive-solid'
-      : vis === VIS_GHOST
-      ? 'Ghost (translucent) · click to cycle to hidden'
-      : 'Inactive-solid (opaque) · click to cycle to ghost';
-    const visExtraClass = isActive ? ' sc-icon-muted' : '';
-    const paletteBtnHtml = `
-      <button class="sc-palette-btn${visExtraClass}" data-body-id="${bodyId}" title="Pick body color" style="color:${bodyCol}">
-        <span class="sc-palette-swatch" style="background:${bodyCol}"></span>
-      </button>`;
-    const visBtnHtml = `
-      <button class="sc-vis-btn${visExtraClass}" data-body-id="${bodyId}" title="${visTitle}">
-        ${visIcon}
-      </button>`;
-    cards.push(`
-      <div class="shapeCard${isActive?' active':''}" data-body-id="${bodyId}">
-        <button class="sc-x" data-body-id="${bodyId}" title="remove">&#10005;</button>
-        <span class="sc-name">${safeName}</span>
-        <div class="sc-chips">${chips}</div>
-        ${recipeChipHtml}
-        <div class="sc-card-controls">
-          ${visBtnHtml}
-          ${paletteBtnHtml}
-        </div>
-      </div>`);
   }
   // Optional "in progress" card for an import that's loading or errored.
   if(_pendingImport){
@@ -3211,6 +3406,10 @@ function renderBodyCards(){
         ${msg}
       </div>`);
   }
+  // Detach drop target — only present while at least one weld group exists.
+  if(weldGroups.size > 0){
+    cards.push(`<div class="weldDetach" id="weldDetachTile" title="Drag a body here to pull it out of its weld group">⇲ separate</div>`);
+  }
   // "Add another" tile — enabled if under cap, disabled otherwise.
   const atCap = !canAddBody();
   cards.push(`
@@ -3222,33 +3421,23 @@ function renderBodyCards(){
   row.innerHTML = cards.join('');
   row.style.display = (bodies.size > 0 || _pendingImport) ? 'flex' : 'none';
 
-  // Attach click handlers — card click → switchActiveBody, × → clearImportedShape,
-  // recipe chip → open dropdown, add-tile → opens the existing shape file input.
+  // ── Existing per-card handlers (work for grouped + standalone cards) ──
   for(const card of row.querySelectorAll('.shapeCard')){
     const bid = card.getAttribute('data-body-id');
     if(!bid) continue;  // pending/error cards have no bodyId
     card.addEventListener('click', e => {
-      // Ignore clicks on × button or recipe chip (each handled separately).
       if(e.target && e.target.closest && (e.target.closest('.sc-x') || e.target.closest('.shapeCard-recipe'))) return;
       switchActiveBody(bid);
     });
   }
   for(const xbtn of row.querySelectorAll('.sc-x')){
     const bid = xbtn.getAttribute('data-body-id');
-    xbtn.addEventListener('click', e => {
-      e.stopPropagation();
-      window.clearImportedShape(bid);
-    });
+    xbtn.addEventListener('click', e => { e.stopPropagation(); window.clearImportedShape(bid); });
   }
-  // rc2.5: recipe chip click → open dropdown menu.
   for(const chip of row.querySelectorAll('.shapeCard-recipe')){
     const bid = chip.getAttribute('data-body-id');
-    chip.addEventListener('click', e => {
-      e.stopPropagation();
-      _openRecipeDropdown(chip, bid);
-    });
+    chip.addEventListener('click', e => { e.stopPropagation(); _openRecipeDropdown(chip, bid); });
   }
-  // rc3.6: visibility cycle button. Cycles inactive-solid → ghost → hidden → inactive-solid.
   for(const vbtn of row.querySelectorAll('.sc-vis-btn')){
     const bid = vbtn.getAttribute('data-body-id');
     vbtn.addEventListener('click', e => {
@@ -3262,22 +3451,49 @@ function renderBodyCards(){
       setBodyVisibility(bid, next);
     });
   }
-  // rc3.6: palette popover.
   for(const pbtn of row.querySelectorAll('.sc-palette-btn')){
     const bid = pbtn.getAttribute('data-body-id');
-    pbtn.addEventListener('click', e => {
-      e.stopPropagation();
-      _openPalettePopover(pbtn, bid);
-    });
+    pbtn.addEventListener('click', e => { e.stopPropagation(); _openPalettePopover(pbtn, bid); });
   }
   const addTile = document.getElementById('addBodyTile');
   if(addTile && !atCap){
-    addTile.addEventListener('click', ()=>{
-      const inp = document.getElementById('shapeInput');
-      if(inp) inp.click();
-    });
+    addTile.addEventListener('click', ()=>{ const inp = document.getElementById('shapeInput'); if(inp) inp.click(); });
   } else if(addTile && atCap){
     addTile.addEventListener('click', ()=> showCapToast());
+  }
+
+  // ── Weld drag-and-drop ──
+  let _wdrag = null;
+  const _clearWeldHover = ()=> row.querySelectorAll('.drop-hover').forEach(el=>el.classList.remove('drop-hover'));
+  const _dragId = e => _wdrag || (e.dataTransfer && e.dataTransfer.getData('text/plain')) || null;
+  for(const card of row.querySelectorAll('.shapeCard[data-body-id]')){
+    card.addEventListener('dragstart', e => {
+      _wdrag = card.getAttribute('data-body-id');
+      card.classList.add('dragging');
+      if(e.dataTransfer){ e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain', _wdrag); }catch(_){ } }
+    });
+    card.addEventListener('dragend', ()=>{ card.classList.remove('dragging'); _clearWeldHover(); _wdrag=null; });
+  }
+  for(const g of row.querySelectorAll('.weldGroup')){
+    g.addEventListener('dragover', e => { e.preventDefault(); _clearWeldHover(); g.classList.add('drop-hover'); });
+    g.addEventListener('drop', e => { e.preventDefault(); const d=_dragId(e); if(d) weldDropOnGroup(d, g.getAttribute('data-group')); });
+  }
+  for(const c of Array.from(row.children).filter(el=>el.classList && el.classList.contains('shapeCard') && el.getAttribute('data-body-id'))){
+    c.addEventListener('dragover', e => { if(c.getAttribute('data-body-id')===_wdrag) return; e.preventDefault(); _clearWeldHover(); c.classList.add('drop-hover'); });
+    c.addEventListener('drop', e => { e.preventDefault(); const d=_dragId(e); if(d) weldDropOnBody(d, c.getAttribute('data-body-id')); });
+  }
+  const _det = document.getElementById('weldDetachTile');
+  if(_det){
+    _det.addEventListener('dragover', e => { e.preventDefault(); _clearWeldHover(); _det.classList.add('drop-hover'); });
+    _det.addEventListener('dragleave', ()=> _det.classList.remove('drop-hover'));
+    _det.addEventListener('drop', e => { e.preventDefault(); const d=_dragId(e); if(d) weldDetach(d); });
+  }
+  // Fillet badge editing (click/drag on the input must not start a card drag or select).
+  for(const inp of row.querySelectorAll('.wg-fillet input')){
+    const gid = inp.getAttribute('data-group');
+    inp.addEventListener('mousedown', e=> e.stopPropagation());
+    inp.addEventListener('click', e=> e.stopPropagation());
+    inp.addEventListener('change', ()=>{ const v=parseFloat(inp.value); if(!isNaN(v)&&v>=0){ weldSetFillet(gid, v); } renderBodyCards(); });
   }
 }
 
@@ -5276,6 +5492,83 @@ function buildWaveSDF(json){
     return cym;   // negative-inside (mesh canonical convention)
   };
 }
+function unionGradNorm(fn, p, h, cap){
+  var f0=fn(p);
+  var gx=(fn([p[0]+h,p[1],p[2]])-fn([p[0]-h,p[1],p[2]]))/(2*h);
+  var gy=(fn([p[0],p[1]+h,p[2]])-fn([p[0],p[1]-h,p[2]]))/(2*h);
+  var gz=(fn([p[0],p[1],p[2]+h])-fn([p[0],p[1],p[2]-h]))/(2*h);
+  var g=Math.sqrt(gx*gx+gy*gy+gz*gz), d=f0/Math.max(g,1e-3);
+  if(cap){ if(d>cap)d=cap; else if(d<-cap)d=-cap; } return d;
+}
+function unionSmin(a, b, k){ if(k<=1e-6)return Math.min(a,b); var hh=Math.max(k-Math.abs(a-b),0)/k; return Math.min(a,b)-hh*hh*k*0.25; }
+// -- Weld-group assembly (v0.7.0) --------------------------------------------
+// Composes the members of one weld group into a single canonical NEGATIVE-INSIDE
+// field in absolute mm, smin-unioned with the group fillet. Fed to levelSet via
+// p=>-assembly(p) (same neg->Manifold flip the cube path uses). v1 scope:
+// identity per-body structXform; rotation/iso/HU/trim per body are deferred.
+// Mirrors the single-body identity mapping: shape SDF trilinear-sampled over the
+// body bbox (mm, neg-inside); lattice scaffold at p*mmToWorld then *worldToMm,
+// intersected via max.
+function makeShapeSampler(buf, N, bbox){
+  var a=new Float32Array(buf);
+  var bx=bbox.mnx, by=bbox.mny, bz=bbox.mnz;
+  var sx=bbox.mxx-bbox.mnx, sy=bbox.mxy-bbox.mny, sz=bbox.mxz-bbox.mnz;
+  var xX=bbox.mxx, xY=bbox.mxy, xZ=bbox.mxz, NN=N*N;
+  return function(px,py,pz){
+    var u=(px-bx)/sx, v=(py-by)/sy, w=(pz-bz)/sz;
+    // v0.7.0: clamp-and-extend exterior. The old analytic box-distance fallback
+    // hit 0 on the bbox shell, leaving each body exterior field near zero; the
+    // group smin then dipped that to about -k/4 where two box shells met,
+    // rendering phantom box faces/edges between welded bodies. Instead clamp uvw
+    // into the grid (sampling the positive edge SDF, about the pad gap) and ADD
+    // the exterior box distance: continuous across the face, strictly positive
+    // outside the body, so no false zero-crossing. Interior (ext=0) unchanged.
+    var ext=0;
+    if(u<0||u>1||v<0||v>1||w<0||w>1){
+      var qx=Math.max(bx-px,px-xX,0), qy=Math.max(by-py,py-xY,0), qz=Math.max(bz-pz,pz-xZ,0);
+      ext=Math.sqrt(qx*qx+qy*qy+qz*qz);
+      u=u<0?0:(u>1?1:u); v=v<0?0:(v>1?1:v); w=w<0?0:(w>1?1:w);
+    }
+    var fu=u*(N-1), fv=v*(N-1), fw=w*(N-1);
+    var i0=Math.floor(fu)|0, j0=Math.floor(fv)|0, k0=Math.floor(fw)|0;
+    var i1=i0+1<N?i0+1:N-1, j1=j0+1<N?j0+1:N-1, k1=k0+1<N?k0+1:N-1;
+    var tu=fu-i0, tv=fv-j0, tw=fw-k0;
+    var c000=a[i0+j0*N+k0*NN],c100=a[i1+j0*N+k0*NN],c010=a[i0+j1*N+k0*NN],c110=a[i1+j1*N+k0*NN];
+    var c001=a[i0+j0*N+k1*NN],c101=a[i1+j0*N+k1*NN],c011=a[i0+j1*N+k1*NN],c111=a[i1+j1*N+k1*NN];
+    var c00=c000+(c100-c000)*tu,c10=c010+(c110-c010)*tu,c01=c001+(c101-c001)*tu,c11=c011+(c111-c011)*tu;
+    var c0=c00+(c10-c00)*tv,c1=c01+(c11-c01)*tv; return c0+(c1-c0)*tw+ext;
+  };
+}
+function composeBodyMM(spec){
+  var shp=makeShapeSampler(spec.shapeSdfData, spec.shapeN, spec.bbox);   // neg-inside mm
+  if(spec.solid || !spec.recipe){ return function(p){ return shp(p[0],p[1],p[2]); }; }
+  var sc=buildSDF(spec.recipe, null);                                    // neg-inside world
+  var mmToWorld=10/spec.cellSizeMm, worldToMm=spec.cellSizeMm/10;
+  return function(p){
+    var sh=shp(p[0],p[1],p[2]);
+    var scw=sc([p[0]*mmToWorld, p[1]*mmToWorld, p[2]*mmToWorld]);
+    if(!(scw>-1e20&&scw<1e20)) scw=1e3;
+    var sm=scw*worldToMm;
+    return sm>sh?sm:sh;          // intersection (neg-inside): inside BOTH lattice and shape
+  };
+}
+function buildAssemblySDF(specs, blendK, rawPreview){
+  var k=(blendK!=null)?blendK:0;
+  var h=Math.max(k*0.25, 0.05);  // mm central-diff step for the metric normalization
+  var cap=Math.max(6,12*k);
+  var comps=specs.map(composeBodyMM);
+  var islat=specs.map(function(s){ return !(s.solid||!s.recipe); });
+  // rawPreview: skip gradNorm so the implicit lattice renders crisply. gradNorm
+  // is only needed for the metric fillet on EXPORT; in preview it smears the field.
+  return function(p){
+    var acc=1e9;
+    for(var i=0;i<comps.length;i++){
+      var d = (islat[i] && !rawPreview) ? unionGradNorm(comps[i], p, h, cap) : comps[i](p);
+      acc = unionSmin(acc, d, k);
+    }
+    return acc;
+  };
+}
 function buildSDF(recipe,shapeCtx){
   // v0.5.0-rc14: if the preview cached fieldMin/Max on the recipe, forward
   // them as a normalization override. Builders use the cached range instead
@@ -5410,7 +5703,10 @@ self.onmessage=async function(e){
       const sx=(wMax[0]-wMin[0])/N, sy=(wMax[1]-wMin[1])/N, sz=(wMax[2]-wMin[2])/N;
       // Pass shapeCtx for HU domain-spanning kernels (stochastic with shape)
       const shapeCtx=d.shapeCtx||null;
-      const sdfFn=buildSDF(d.recipe,shapeCtx);
+      // W2b -- TEMPORARY DEBUG (remove before production)
+      if(d.bodies&&d.bodies.length){ try{ d.bodies.forEach(function(_b,_i){var _cx=(_b.bbox.mnx+_b.bbox.mxx)/2,_cy=(_b.bbox.mny+_b.bbox.mxy)/2,_cz=(_b.bbox.mnz+_b.bbox.mxz)/2;var _c=composeBodyMM(_b);console.log('[weld worker] body'+_i,(_b.solid?'SOLID':'lattice'),'comp@center='+_c([_cx,_cy,_cz]).toFixed(3),'centerMM',_cx.toFixed(1),_cy.toFixed(1),_cz.toFixed(1),'bbox',JSON.stringify(_b.bbox));});}catch(_e){console.log('[weld worker] diag err',_e);} }
+      // W2 -- preview hook: assembly when bodies[] present, scaled mm->world by mmScale
+      const sdfFn=(d.bodies&&d.bodies.length)?(function(){var _a=buildAssemblySDF(d.bodies,d.blendK,true),_s=d.mmScale||1;return function(p){return _a([p[0]/_s,p[1]/_s,p[2]/_s])*_s;};})():buildSDF(d.recipe,shapeCtx);
       const field=new Float32Array(N*N*N);
       let minV=Infinity,maxV=-Infinity;
       for(let iz=0;iz<N;iz++)for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
@@ -6433,7 +6729,47 @@ function computeBundleBakeBounds(recipe){
 }
 
 async function triggerPreview(quality){
-  if(!currentRecipe||!rm)return;
+  if(!rm)return;
+  // -- Weld-group preview: bake the active group merged over its bbox ----------
+  const _agid=activeGroupId();
+  if(_agid && groupMembers(_agid).length>=2){
+    currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
+    setBtns(false);showCancelBtn(false);
+    showComputing('building weld preview…','baking field…');
+    rm.setQuality(quality);
+    rm.setAssemblyMode(true);   // render the baked union field directly (no active-body clip)
+    try{
+      const gbb=computeGroupBbox(_agid);
+      const {specs}=await gatherGroupSpecs(_agid, 0, false);
+      const refCell=(bodies.get(activeBodyId)&&bodies.get(activeBodyId).cellSizeMm)||parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+      const s=10/refCell;
+      const N=PREVIEW_BAKE_N[quality]||64;
+      const wMin=[gbb.mnx*s,gbb.mny*s,gbb.mnz*s], wMax=[gbb.mxx*s,gbb.mxy*s,gbb.mxz*s];
+      console.log('[weld] members',specs.length,'· groupBbox(mm)',gbb,'· scale',s);                                  // TEMP DEBUG
+      specs.forEach((x,i)=>console.log('[weld]   spec'+i, x.solid?'SOLID':'lattice('+(x.recipe&&x.recipe.family)+')', '· cell',x.cellSizeMm, '· N',x.shapeN, '· bbox', JSON.stringify(x.bbox)));  // TEMP DEBUG
+      rm.setWorldBounds(wMin,wMax,false);
+      // Size the view cube to the WHOLE assembly (not just the group) so bodies
+      // outside the weld still fit; the field itself only spans the group bbox.
+      const _asm=computeAssemblyBbox();
+      const _rMin = _asm?[_asm.mnx*s,_asm.mny*s,_asm.mnz*s]:wMin;
+      const _rMax = _asm?[_asm.mxx*s,_asm.mxy*s,_asm.mxz*s]:wMax;
+      if(rm.fitReachBounds) rm.fitReachBounds(_rMin,_rMax);
+      const result=await bakeField(currentRecipe, N,
+        {isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)});
+      console.log('[weld] baked ·',{N:result.N,fieldMin:result.fieldMin,fieldMax:result.fieldMax,ms:result.ms});      // TEMP DEBUG
+      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+      // Bodies outside the group render as ghosts (syncGhosts skips group members);
+      // then set the lattice base color to the GROUP rail color so the welded mass
+      // reads as one part (overriding the active body's own color from selection).
+      syncGhostsToRaymarcher();
+      if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
+      clearStale(); triPill.style.display='block'; triPill.textContent='preview · '+result.ms+'ms';
+    }catch(e){ console.error('weld preview',e); }
+    hideComputing(); setBtns(true);
+    return;
+  }
+  if(!currentRecipe)return;
+  rm.setAssemblyMode(false);   // single-body path: ensure the active-body clip is restored
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
   setBtns(false);showCancelBtn(false);
   showComputing('building preview…','baking field…');
@@ -6566,11 +6902,26 @@ async function triggerPreview(quality){
   }
 }
 window.triggerPreview=triggerPreview;
+// Temporary hook to exercise weld groups before the drag-to-group card UI lands.
+// F13LD_weld.group([bodyId,...], filletMm) -- make sure the active body is one of
+// the members so the preview shows the merged result.
+window.F13LD_weld={
+  group:function(ids, filletMm){ const gid=newWeldGroup(filletMm); for(const id of ids) bodyGroup.set(id,gid); renderBodyCards(); triggerPreview(rm&&rm._quality||'draft'); return gid; },
+  all:function(filletMm){ return this.group([...bodies.keys()], filletMm); },
+  bodyIds:function(){ return [...bodies.keys()]; },
+  setFillet:function(gid,mm){ weldSetFillet(gid, +mm||0); renderBodyCards(); },
+  clear:function(){ bodyGroup.clear(); weldGroups.clear(); renderBodyCards(); triggerPreview(rm&&rm._quality||'draft'); },
+  list:function(){ return {groups:[...weldGroups.entries()], members:[...bodyGroup.entries()]}; }
+};
 // (v0.5.0-rc7) triggerMesh removed — was only invoked by clearImportedShape
 // to redraw the cube via Manifold.levelSet + Three.js. The raymarcher
 // preview, which is already running, handles the post-clear cube view.
 window.onCellSizeInput=function(){
   if(!importedShape)return;
+  // Neutralized in weld mode: cell size scales the per-body lattice, but the
+  // welded preview bakes one fixed union — live rescaling there blows up the
+  // whole group. Un-weld the body to adjust its cell size, then re-weld.
+  if(typeof activeGroupId==='function' && activeGroupId() && groupMembers(activeGroupId()).length>=2) return;
   var cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
   if(rm)rm.setCellSize(cellSizeMm);
   // Only mark stale for aperiodic recipes — those genuinely need a field re-bake

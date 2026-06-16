@@ -1975,20 +1975,19 @@ MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_3D,null);
   }else{
-    // Scaffold/assembly raw field. v0.7.x: R16F (half float) instead of R8. The
-    // value stored is the SAME normalized [0,1] the shader already reconstructs
-    // (sampleRaw: t*(max-min)+min), so no shader change — but ~2000 levels across
-    // the range instead of 256. R8 quantized a welded assembly's wide range (deep
-    // solid interiors to exterior) into ~0.16mm value bands, flattening the
-    // lattice's near-surface oscillation; R16F removes that banding. LINEAR
-    // filtering + REPEAT wrap of R16F are core WebGL 2.0.
+    // Scaffold raw field: R8. (A v0.7.x R16F experiment regressed cube/periodic
+    // previews — a filterable half-float 3D texture with REPEAT wrap at NPOT grid
+    // sizes tiles inconsistently across drivers, whereas R8 UNORM is reliable.
+    // Reverted. Field varies smoothly and topology is applied in shader, so 8-bit
+    // is fine here.) Any future precision bump must be scoped to the non-tiled
+    // assembly field only and validated in isolation.
     var range=Math.max(maxV-minV,1e-6);
-    var norm=new Float32Array(N*N*N);
-    for(var i=0;i<data.length;i++)norm[i]=Math.max(0,Math.min(1,(data[i]-minV)/range));
+    var bytes=new Uint8Array(N*N*N);
+    for(var i=0;i<data.length;i++)bytes[i]=Math.round(Math.max(0,Math.min(1,(data[i]-minV)/range))*255);
     if(!this.fieldTex)this.fieldTex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,norm);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     // REPEAT so hardware LINEAR filtering interpolates continuously across
@@ -5772,7 +5771,10 @@ self.onmessage=async function(e){
       huFieldMax: d.huFieldMax,
       huBbox: d.huBbox
     }:null;
-    const sdfFn=buildSDF(d.recipe,shapeCtx);
+    // Weld-group export carries no top-level recipe (each member has its own in
+    // d.bodies); the assembly branch builds its own SDF, so skip this single-
+    // recipe build to avoid buildSDF(undefined) dereferencing recipe._previewFieldMin.
+    const sdfFn=(d.bodies&&d.bodies.length)?null:buildSDF(d.recipe,shapeCtx);
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
     // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
@@ -5780,7 +5782,21 @@ self.onmessage=async function(e){
     // implicit max(scaffold,-shape) composition in mode:'export' replaced it.
     if(d.mode==='export'){
       // ── Export mode: pre-computed edge/simplify lengths, returns scale ───────
-      if(d.shapeSdfData){
+      if(d.bodies && d.bodies.length){
+        // ── Weld-group export (W3): union of members -> one watertight mesh ──
+        // d.bodies = per-member specs (shape grid + recipe + cell), d.bbox =
+        // group bbox (mm), d.blendK = fillet. buildAssemblySDF returns canonical
+        // NEGATIVE-INSIDE; flip to Manifold POSITIVE-INSIDE (NaN-guarded). Skips
+        // the coarse bbox-tightening pass — the group bbox is the union extent.
+        const asm=buildAssemblySDF(d.bodies,d.blendK,false);
+        const gbb=d.bbox;
+        const wrappedSDF=function(p){var v=-asm(p);return (v>-1e20&&v<1e20)?v:-1e3;};
+        self.postMessage({type:'progress',stage:'weld level set ('+(d.relEdgeMm||0).toFixed(3)+'mm)...'});
+        const tLevelSet=performance.now();
+        mfld=safeLevelSet(wrappedSDF,{min:[gbb.mnx,gbb.mny,gbb.mnz],max:[gbb.mxx,gbb.mxy,gbb.mxz]},d.relEdgeMm,'weld level set');
+        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty weld mesh — check group overlap.');}
+        msLevelSet=Math.round(performance.now()-tLevelSet);
+      } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
         const mmToWorld=10/d.cellSizeMm;
         const worldToMm=d.cellSizeMm/10;
@@ -7429,7 +7445,125 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   const estSec=Math.max(1,Math.round(estTris*0.00012));
   return{estTris,estSec};
 }
+// ── Weld-group export (W4, v0.7.x) ─────────────────────────────────────────
+// Active body in a >=2-member weld group: emit the group's union as ONE
+// watertight 3MF part. Re-bakes each member's shape SDF at export resolution,
+// bakes the union via Manifold.levelSet in the worker (buildAssemblySDF), and
+// restores CAD coordinates by +sceneCenter (shared across all members).
+async function _exportWeldGroup(gid){
+  const btn=document.getElementById('expBtn');
+  const report=document.getElementById('expReport');
+  if(meshWorker){meshWorker.terminate();meshWorker=null;}
+  const _tp=document.getElementById('timingsPill');if(_tp)_tp.classList.remove('show');
+  btn.disabled=true;btn.classList.add('sweeping');btn.textContent='computing weld...';report.innerHTML='';
+  const elapsedEl=document.getElementById('expElapsed');
+  let elapsedSec=0,elapsedTimer=null;
+  if(elapsedEl){elapsedEl.style.display='block';elapsedEl.textContent='elapsed: 0s';
+    elapsedTimer=setInterval(()=>{elapsedSec++;elapsedEl.textContent='elapsed: '+elapsedSec+'s';},1000);}
+  _exportElapsedTimer=elapsedTimer;
+  const letter=(typeof weldGroupLetter==='function')?weldGroupLetter(gid):'A';
+  try{
+    const gbb=computeGroupBbox(gid);
+    if(!gbb) throw new Error('weld group has no geometry');
+    const exportN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
+    coMain.textContent='preparing weld export...';
+    coSub.textContent='refining member SDFs ('+exportN+'\u00b3)...';
+    overlay.classList.remove('hidden');showCancelBtn(true);
+    if(window._orbStart)_orbStart();
+    const {specs}=await gatherGroupSpecs(gid, exportN, true);   // ensureN re-bake + clone for transfer
+    if(!specs.length) throw new Error('no exportable members in weld group');
+    showCancelBtn(false);
+    // Edge clamp against the GROUP bbox; protect the thinnest lattice wall across members.
+    const rawEdge=QUAL_EDGE_MM[currentExportQual]||0.10;
+    const {safeEdge:relEdgeMm}=clampEdgeMm(rawEdge, gbb, getMaxExportVoxels(currentRecipe||{family:'tpms'}));
+    let minFeatMm=Infinity;
+    for(const sp of specs){ if(!sp.solid && sp.recipe){ const f=getThinnestFeatureMm(sp.recipe, sp.cellSizeMm); if(f!=null && f>0 && f<minFeatMm) minFeatMm=f; } }
+    const edgeTol=relEdgeMm*0.15;
+    const cappedTol=(minFeatMm<Infinity)?minFeatMm*0.05:Infinity;
+    const simplifyTol=Math.min(edgeTol,cappedTol);
+    const simplifyCappedByFeature=cappedTol<edgeTol;
+    const featMm=(minFeatMm<Infinity)?minFeatMm:undefined;
+    // Thin-wall feature-ratio guard (mirror single-body): warn rather than mesh garbage.
+    if(minFeatMm<Infinity){
+      const ratio=minFeatMm/relEdgeMm;
+      if(ratio<FEATURE_EDGE_RATIO_MIN){
+        if(elapsedTimer)clearInterval(elapsedTimer);
+        if(elapsedEl)elapsedEl.style.display='none';
+        hideComputing();showCancelBtn(false);
+        report.innerHTML='<div class="exp-err">&#9888; Welded lattice walls are ~'+minFeatMm.toFixed(3)+'mm but '+currentExportQual+' quality uses a '+relEdgeMm.toFixed(3)+'mm edge ('+ratio.toFixed(1)+'\u00d7 \u2014 needs '+FEATURE_EDGE_RATIO_MIN+'\u00d7 or more). Increase cell size or lower export quality.</div>';
+        btn.disabled=false;btn.classList.remove('sweeping');btn.textContent='Export 3MF';
+        return;
+      }
+    }
+    coMain.textContent='exporting weld...';
+    coSub.textContent='union level set over group bbox...';
+    overlay.classList.remove('hidden');showCancelBtn(true);
+    const workerMsg={
+      mode:'export', bodies:specs, blendK:groupFilletMm(gid),
+      bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
+      relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0
+    };
+    const worker=new Worker(getWorkerBlobUrl());
+    meshWorker=worker;
+    const EXPORT_TIMEOUT_MS=180000;
+    let exportTimedOut=false, exportTimer=null;
+    const result=await new Promise((resolve,reject)=>{
+      exportTimer=setTimeout(()=>{ exportTimedOut=true; try{worker.terminate();}catch(_){} if(meshWorker===worker)meshWorker=null;
+        reject(new Error('Weld export exceeded '+(EXPORT_TIMEOUT_MS/1000)+'s and was stopped. The group is too dense at this quality \u2014 increase cell size or lower export quality.')); }, EXPORT_TIMEOUT_MS);
+      _exportTimeoutTimer=exportTimer;
+      worker.onmessage=e=>{ const dd=e.data; if(exportTimedOut)return;
+        if(dd.type==='progress')coSub.textContent=dd.stage;
+        else if(dd.type==='diag')console.log('[export][mem-guard]',dd.diag);
+        else if(dd.type==='done'){clearTimeout(exportTimer);resolve(dd);}
+        else if(dd.type==='error'){clearTimeout(exportTimer);reject(new Error(dd.message));} };
+      worker.onerror=e=>{ clearTimeout(exportTimer); reject(new Error(e.message||'Worker error')); };
+      worker.postMessage(workerMsg, specs.map(s=>s.shapeSdfData));
+    });
+    if(meshWorker===worker)meshWorker=null;
+    worker.terminate();
+    if(elapsedTimer)clearInterval(elapsedTimer);
+    _exportElapsedTimer=null;_exportTimeoutTimer=null;
+    hideComputing();showCancelBtn(false);
+    btn.textContent='building 3MF...';
+    const vertProps=new Float32Array(result.vertProperties);
+    const triVerts=new Uint32Array(result.triVerts);
+    // CAD-space restore: every member shares sceneCenter (== importCenter).
+    if(sceneCenter){ for(let i=0;i<vertProps.length;i+=3){ vertProps[i]+=sceneCenter.x; vertProps[i+1]+=sceneCenter.y; vertProps[i+2]+=sceneCenter.z; } }
+    const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??1.0);
+    const ts=new Date().toISOString().slice(0,10);
+    const filename='weld_'+letter+'_'+specs.length+'bodies_'+ts+'.3mf';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+    URL.revokeObjectURL(url);
+    report.innerHTML='<div class="exp-report">'+
+      expChip('part','weld '+letter)+
+      expChip('bodies',specs.length)+
+      expChip('triangles',result.triCount.toLocaleString())+
+      expChip('edge',relEdgeMm.toFixed(2)+'mm')+
+      expChip('file',(blob.size/1024).toFixed(1)+' KB')+
+      expChip('time',result.ms+'ms')+
+    '</div>';
+    if(elapsedEl)elapsedEl.style.display='none';
+    btn.classList.remove('sweeping');btn.textContent='Export 3MF';
+  }catch(e){
+    if(elapsedTimer)clearInterval(elapsedTimer);
+    if(_exportTimeoutTimer)clearTimeout(_exportTimeoutTimer);
+    _exportElapsedTimer=null;_exportTimeoutTimer=null;
+    if(elapsedEl)elapsedEl.style.display='none';
+    if(meshWorker){meshWorker.terminate();meshWorker=null;}
+    hideComputing();showCancelBtn(false);
+    report.innerHTML='<div class="exp-err">&#9888; '+(e.message||e)+'</div>';
+    btn.classList.remove('sweeping');btn.textContent='Export 3MF';
+    console.error('[weld export]',e);
+  }
+  btn.disabled=false;
+}
+
 window.triggerExport=async function(){
+  // ── Weld-group export (W4): active body in a >=2-member weld group emits the
+  //    group's union as ONE watertight 3MF part (mirrors active-body export). ──
+  const _wgid=(typeof activeGroupId==='function')?activeGroupId():null;
+  if(_wgid && groupMembers(_wgid).length>=2){ await _exportWeldGroup(_wgid); return; }
   // rc3.5: Solid-body fast path. If the active body is solid, the lattice
   // pipeline doesn't apply — we just emit the body's own watertight mesh as
   // a 3MF, restoring CAD-space vertex coordinates via importCenter.

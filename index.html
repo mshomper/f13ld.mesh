@@ -1697,7 +1697,7 @@ function jitteredGrid3D(N,rng){
 }
 function buildHUKernels(params){
   var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
-  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
+  var ell=params.huEll||1,sq=Math.sqrt(ell),a=bw*aspect*.5,b=bw*.5,b1=b/sq,b2=b*sq,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
   var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
   var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
   var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
@@ -1712,8 +1712,9 @@ function buildHUKernels(params){
     else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
     var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
     var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
-    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
+    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b1:b1*TP,b2:b2*TP});
   }
+  kernels.cross=params.huCross||2;kernels.sharp=params.huSharp||1;kernels.blend=params.huBlend||1;
   return kernels;
 }
 function buildHUKernelsMM(params,bbox,cellSizeMm){
@@ -1721,10 +1722,12 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   var TP=2*Math.PI,scale=cellSizeMm/TP;
   var aspect=params.huAspect||4,bw=params.huWidth||.04;
   var a_mm=designK.length>0?designK[0].a*scale:(bw*aspect*.5*cellSizeMm);
-  var b_mm=designK.length>0?designK[0].b*scale:(bw*.5*cellSizeMm);
+  var b1_mm=designK.length>0?designK[0].b1*scale:(bw*.5/Math.sqrt(params.huEll||1)*cellSizeMm);
+  var b2_mm=designK.length>0?designK[0].b2*scale:(bw*.5*Math.sqrt(params.huEll||1)*cellSizeMm);
+  var p_=designK.cross||2,m_=designK.sharp||1,Rc_=Math.pow(12.25,1/m_),reach=Math.max(a_mm*Math.sqrt(Rc_),b1_mm*Math.pow(Rc_,1/p_),b2_mm*Math.pow(Rc_,1/p_));
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
   var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
-  var pad=Math.max(2,Math.ceil(3.5*Math.max(a_mm,b_mm)/cellSizeMm));
+  var pad=Math.max(2,Math.ceil(reach/cellSizeMm));
   var kernels=[];
   for(var tz=-pad;tz<nTz+pad;tz++)for(var ty=-pad;ty<nTy+pad;ty++)for(var tx=-pad;tx<nTx+pad;tx++){
     for(var ki=0;ki<designK.length;ki++){
@@ -1736,10 +1739,10 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
         tx:dk.tx,ty:dk.ty,tz:dk.tz,
         n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
         n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
-        a:a_mm,b:b_mm});
+        a:a_mm,b1:b1_mm,b2:b2_mm});
     }
   }
-  var cutoff=3.5*Math.max(a_mm,b_mm);
+  var cutoff=reach;
   var cs=Math.max(cutoff,1e-6);
   var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
   var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
@@ -1756,19 +1759,19 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
     if(buckets[bIdx]===null)buckets[bIdx]=[];
     buckets[bIdx].push(ki2);
   }
-  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
+  kernels.cross=designK.cross;kernels.sharp=designK.sharp;kernels.blend=designK.blend;kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
   return kernels;
 }
 function evalHUFieldMM(kernels,x,y,z){
-  var h=kernels.hash;
+  var h=kernels.hash,p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);
   if(!h){
     var s=0;
     for(var i=0;i<kernels.length;i++){
       var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
       var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
-      s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+      var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);
     }
-    return s-0.3;
+    if(!bl)s=Math.pow(s,1/P);return s-0.3;
   }
   var cs=h.cs,nx=h.nx,ny=h.ny,nz=h.nz,nxny=nx*ny;
   var ix=Math.floor((x-h.mnx)/cs),iy=Math.floor((y-h.mny)/cs),iz=Math.floor((z-h.mnz)/cs);
@@ -1784,10 +1787,10 @@ function evalHUFieldMM(kernels,x,y,z){
       var k=kernels[bucket[bi]];
       var dx=x-k.px,dy=y-k.py,dz=z-k.pz;
       var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
-      sum+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+      var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);sum+=bl?Math.exp(-Rm):Math.exp(-P*Rm);
     }
   }
-  return sum-0.3;
+  if(!bl)sum=Math.pow(sum,1/P);return sum-0.3;
 }
 self.onmessage=function(e){
   try{
@@ -4000,7 +4003,7 @@ function jitteredGrid3D(N,rng){
 }
 function buildHUKernels(params){
   var rng=mulberry32(params.rngSeed),N=params.huN||80,aspect=params.huAspect||4,bw=params.huWidth||.04;
-  var a=bw*aspect*.5,b=bw*.5,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
+  var ell=params.huEll||1,sq=Math.sqrt(ell),a=bw*aspect*.5,b=bw*.5,b1=b/sq,b2=b*sq,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
   var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
   var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
   var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
@@ -4015,15 +4018,17 @@ function buildHUKernels(params){
     else{var r=rng()*totalW,cum=0,ch=0;for(var ax=0;ax<3;ax++){cum+=weights[ax];if(r<=cum){ch=ax;break;}}t2=rotateTo(sampleVMF(rng,kappa),axes[ch][0],axes[ch][1],axes[ch][2]);}
     var arb=(Math.abs(t2[0])<.9)?[1,0,0]:[0,1,0];
     var n1=norm3(cross3(t2,arb)),n2=norm3(cross3(t2,n1));
-    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b:b*TP});
+    kernels.push({px:pts[i][0]*TP-Math.PI,py:pts[i][1]*TP-Math.PI,pz:pts[i][2]*TP-Math.PI,tx:t2[0],ty:t2[1],tz:t2[2],n1x:n1[0],n1y:n1[1],n1z:n1[2],n2x:n2[0],n2y:n2[1],n2z:n2[2],a:a*TP,b1:b1*TP,b2:b2*TP});
   }
+  kernels.cross=params.huCross||2;kernels.sharp=params.huSharp||1;kernels.blend=params.huBlend||1;
   return kernels;
 }
 function evalHUField(kernels,x,y,z){
   x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
+  var p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);
   var s=0;
-  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
-  return s-.3;
+  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
+  if(!bl)s=Math.pow(s,1/P);return s-.3;
 }
 // Periodic variant: wraps each displacement component to the nearest cell image
 // via min-image convention. Kernels near cell boundaries "see" query points on
@@ -4031,9 +4036,9 @@ function evalHUField(kernels,x,y,z){
 // (negligible). Used for HU+shape preview where shader tiles via GL_REPEAT.
 function evalHUFieldPeriodic(kernels,x,y,z){
   x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
-  var s=0,TP=2*Math.PI;
-  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;dx-=Math.round(dx/TP)*TP;dy-=Math.round(dy/TP)*TP;dz-=Math.round(dz/TP)*TP;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));}
-  return s-.3;
+  var p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);var s=0,TP=2*Math.PI;
+  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;dx-=Math.round(dx/TP)*TP;dy-=Math.round(dy/TP)*TP;dz-=Math.round(dz/TP)*TP;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
+  if(!bl)s=Math.pow(s,1/P);return s-.3;
 }
 function evalField(waves,x,y,z,kernels){
   if(kernels)return evalHUField(kernels,x,y,z);
@@ -4900,14 +4905,16 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   var aspect=params.huAspect||4,bw=params.huWidth||.04;
   // Scale kernel Gaussian widths from design-cell→mm
   var a_mm=designK.length>0?designK[0].a*scale:(bw*aspect*.5*cellSizeMm);
-  var b_mm=designK.length>0?designK[0].b*scale:(bw*.5*cellSizeMm);
+  var b1_mm=designK.length>0?designK[0].b1*scale:(bw*.5/Math.sqrt(params.huEll||1)*cellSizeMm);
+  var b2_mm=designK.length>0?designK[0].b2*scale:(bw*.5*Math.sqrt(params.huEll||1)*cellSizeMm);
+  var p_=designK.cross||2,m_=designK.sharp||1,Rc_=Math.pow(12.25,1/m_),reach=Math.max(a_mm*Math.sqrt(Rc_),b1_mm*Math.pow(Rc_,1/p_),b2_mm*Math.pow(Rc_,1/p_));
   // Tile grid: how many cells span the bbox, +1 cell padding per side
   // for Gaussian bleed across cell boundaries
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
   var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
   // Padding: 2 cell minimum for Gaussian bleed across periodic cell boundaries
   // (preview) and export margin; more if kernel reach exceeds cell size
-  var pad=Math.max(2,Math.ceil(3.5*Math.max(a_mm,b_mm)/cellSizeMm));
+  var pad=Math.max(2,Math.ceil(reach/cellSizeMm));
   var kernels=[];
   for(var tz=-pad;tz<nTz+pad;tz++){
     for(var ty=-pad;ty<nTy+pad;ty++){
@@ -4922,13 +4929,13 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
             tx:dk.tx,ty:dk.ty,tz:dk.tz,
             n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
             n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
-            a:a_mm,b:b_mm});
+            a:a_mm,b1:b1_mm,b2:b2_mm});
         }
       }
     }
   }
   // ── Spatial hash for O(1) kernel queries ────────────────────────────────
-  var cutoff=3.5*Math.max(a_mm,b_mm);
+  var cutoff=reach;
   var cs=Math.max(cutoff,1e-6);
   var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
   var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
@@ -4945,20 +4952,20 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
     if(buckets[bIdx]===null)buckets[bIdx]=[];
     buckets[bIdx].push(ki2);
   }
-  kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
+  kernels.cross=designK.cross;kernels.sharp=designK.sharp;kernels.blend=designK.blend;kernels.hash={buckets:buckets,nx:nx,ny:ny,nz:nz,mnx:hmnx,mny:hmny,mnz:hmnz,cs:cs};
   return kernels;
 }
 function evalHUFieldMM(kernels,x,y,z){
-  var h=kernels.hash;
+  var h=kernels.hash,p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);
   // Fallback to linear scan if hash missing (defensive; buildHUKernelsMM always attaches).
   if(!h){
     var s=0;
     for(var i=0;i<kernels.length;i++){
       var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;
       var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
-      s+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+      var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);
     }
-    return s-0.3;
+    if(!bl)s=Math.pow(s,1/P);return s-0.3;
   }
   // Hashed path: 3×3×3 neighborhood of the query's hash cell covers all
   // kernels within cutoff distance (since cs = cutoff).
@@ -4976,10 +4983,10 @@ function evalHUFieldMM(kernels,x,y,z){
       var k=kernels[bucket[bi]];
       var dx=x-k.px,dy=y-k.py,dz=z-k.pz;
       var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;
-      sum+=Math.exp(-(dt*dt)/(k.a*k.a)-(dn1*dn1+dn2*dn2)/(k.b*k.b));
+      var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);sum+=bl?Math.exp(-Rm):Math.exp(-P*Rm);
     }
   }
-  return sum-0.3;
+  if(!bl)sum=Math.pow(sum,1/P);return sum-0.3;
 }
 function bakeGridMM(evalFn,N,bbox){
   var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
@@ -5064,7 +5071,7 @@ function buildGrainSDF(json,shapeCtx,normOverride){
     dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
     dirPhi=Math.atan2(my,mx)*180/Math.PI;
   }
-  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
+  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};
   const isHU=f.type==='hyperuniform';
 
   // ── HU shape mode: full-domain kernel field baked to a grid ───────────
@@ -5633,7 +5640,7 @@ self.onmessage=async function(e){
           frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',
           dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,
           wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,
-          huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04};
+          huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};
         const isHU=f.type==='hyperuniform';
         // HU preview uses cube-mode evaluation (100 kernels, linear scan).
         // When a shape is imported, evalHUFieldPeriodic wraps kernel distances
@@ -5658,12 +5665,14 @@ self.onmessage=async function(e){
           topoMode:geom.mode||'sheet',halfInvert:geom.half_invert||false};
       }
       if(evalRaw){
-        const field=new Float32Array(N*N*N);
+        const zS=d.zStart||0, zE=(d.zEnd!=null)?d.zEnd:N, slabN=zE-zS;
+        const field=new Float32Array(N*N*slabN);
         let minV=Infinity,maxV=-Infinity;
-        for(let iz=0;iz<N;iz++)for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
+        for(let iz=zS;iz<zE;iz++)for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
           const v=evalRaw([wMin[0]+sx*(ix+0.5),wMin[1]+sy*(iy+0.5),wMin[2]+sz*(iz+0.5)]);
-          field[ix+iy*N+iz*N*N]=v;if(v<minV)minV=v;if(v>maxV)maxV=v;
+          field[ix+iy*N+(iz-zS)*N*N]=v;if(v<minV)minV=v;if(v>maxV)maxV=v;
         }
+        if(d.zEnd!=null){const sbuf=field.buffer;self.postMessage({type:'slab',slab:sbuf,zStart:zS,zEnd:zE,N,partialMin:minV,partialMax:maxV,worldMin:wMin,worldMax:wMax,topology},[sbuf]);return;}
         let maxG=0;
         for(let iz=1;iz<N-1;iz++)for(let iy=1;iy<N-1;iy++)for(let ix=1;ix<N-1;ix++){
           const i=ix+iy*N+iz*N*N;
@@ -6425,7 +6434,7 @@ function recipeIsPeriodic(recipe){
   }
   return false; // noise, spinodoid, GRF, HU all stochastic
 }
-function bakeField(recipe, N, opts){
+function _bakeFieldSingle(recipe, N, opts){
   return new Promise((resolve,reject)=>{
     const worker=new Worker(getWorkerBlobUrl());
     const t0=performance.now();
@@ -6441,6 +6450,55 @@ function bakeField(recipe, N, opts){
     };
     worker.onerror=e=>{worker.terminate();reject(new Error(e.message||'Bake error'));};
     worker.postMessage({mode:'bake',recipe,N,...(opts||{})});
+  });
+}
+// Slab-parallel raw-field bake (HU/noise). Z is the contiguous outer grid axis,
+// so each worker bakes a [zStart,zEnd) block that stitches by a single set() at
+// offset zStart*N*N. min/max reduce across slabs; the gradient Lipschitz and
+// noise pad are computed once on the stitched grid (no kernel evals — cheap),
+// reproducing the serial bakeRaw result exactly. Non-raw/SDF bakes and single-
+// core machines fall through to _bakeFieldSingle unchanged.
+function bakeField(recipe, N, opts){
+  opts=opts||{};
+  const hc=navigator.hardwareConcurrency||2;
+  const K=Math.max(1,Math.min(12,hc-1,N));
+  if(!opts.bakeRaw || K<=1) return _bakeFieldSingle(recipe,N,opts);
+  return new Promise((resolve,reject)=>{
+    const t0=performance.now();
+    const per=Math.floor(N/K), extra=N-per*K, slabs=[]; let z=0;
+    for(let w=0;w<K;w++){const len=per+(w<extra?1:0); if(len>0)slabs.push({zStart:z,zEnd:z+len}); z+=len;}
+    const field=new Float32Array(N*N*N);
+    let done=0,minV=Infinity,maxV=-Infinity,topology=null,wMin=null,wMax=null,failed=false;
+    const workers=[];
+    function cleanup(){workers.forEach(w=>{try{w.terminate();}catch(e){}});}
+    function finalize(){
+      const sx=(wMax[0]-wMin[0])/N, sy=(wMax[1]-wMin[1])/N, sz=(wMax[2]-wMin[2])/N;
+      let maxG=0;
+      for(let iz=1;iz<N-1;iz++)for(let iy=1;iy<N-1;iy++)for(let ix=1;ix<N-1;ix++){
+        const i=ix+iy*N+iz*N*N;
+        const gx=(field[i+1]-field[i-1])/(2*sx),gy=(field[i+N]-field[i-N])/(2*sy),gz=(field[i+N*N]-field[i-N*N])/(2*sz);
+        const g=Math.sqrt(gx*gx+gy*gy+gz*gz); if(g>maxG)maxG=g;
+      }
+      const halfR=Math.max((maxV-minV)*0.5,0.001), lip=Math.max(maxG/halfR*1.1,0.05);
+      let postMin=minV, postMax=maxV;
+      if(recipe.family==='noise'){const range=maxV-minV; postMin=minV-range*0.05; postMax=maxV+range*0.05;}
+      resolve({data:field,N,fieldMin:postMin,fieldMax:postMax,lipschitz:lip,
+        ms:Math.round(performance.now()-t0),worldMin:wMin,worldMax:wMax,isPeriodic:false,topology});
+    }
+    slabs.forEach(sl=>{
+      const wk=new Worker(getWorkerBlobUrl()); workers.push(wk);
+      wk.onmessage=e=>{
+        const d=e.data;
+        if(d.type==='slab'){
+          field.set(new Float32Array(d.slab), d.zStart*N*N);
+          if(d.partialMin<minV)minV=d.partialMin; if(d.partialMax>maxV)maxV=d.partialMax;
+          topology=d.topology; wMin=d.worldMin; wMax=d.worldMax;
+          wk.terminate(); if(++done===slabs.length && !failed) finalize();
+        }else if(d.type==='error'){ if(!failed){failed=true; cleanup(); reject(new Error(d.message));} }
+      };
+      wk.onerror=e=>{ if(!failed){failed=true; cleanup(); reject(new Error(e.message||'Bake error'));} };
+      wk.postMessage({mode:'bake',recipe,N,...opts,zStart:sl.zStart,zEnd:sl.zEnd});
+    });
   });
 }
 // ── Preview via Raymarcher (no Manifold, instant) ────────────────────────────
@@ -7713,7 +7771,8 @@ window.triggerExport=async function(){
         kappa:f.kappa||6, rngSeed:f.rng_seed||42,
         dirMode:f.dir_mode||'single', dirTheta, dirPhi,
         wX:f.ortho_weights?.[0]??.33, wY:f.ortho_weights?.[1]??.33, wZ:f.ortho_weights?.[2]??.34,
-        huN:f.hu_n||80, huAspect:f.hu_aspect||4, huWidth:f.hu_width||.04
+        huN:f.hu_n||80, huAspect:f.hu_aspect||4, huWidth:f.hu_width||.04,
+        huCross:f.hu_cross||2, huSharp:f.hu_sharp||1, huBlend:f.hu_blend||1, huEll:f.hu_ell||1
       };
       // Bake bbox = AABB of structure-transformed shape bbox corners (mm).
       // The export worker queries the grid at xform(p) = R^T·(p - pivot - off) + pivot

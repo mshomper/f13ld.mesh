@@ -3914,13 +3914,19 @@ const Noise=(()=>{
                m2*m2*(g2[0]*x2x+g2[1]*x2y+g2[2]*x2z)+m3*m3*(g3[0]*x3x+g3[1]*x3y+g3[2]*x3z));
   }
   function frac(x){return x-Math.floor(x);}
-  function cellular(px,py,pz,metric){
+  // Dave Hoskins hash33 — even, trig-free seed jitter (verbatim port from
+  // F13LD.noise v0.9.1). Identical to that tool's JS + GLSL hash33 so geometry agrees.
+  function hash33(px,py,pz){
+    var qx=frac(px*0.1031),qy=frac(py*0.1030),qz=frac(pz*0.0973);
+    var d=qx*(qy+33.33)+qy*(qx+33.33)+qz*(qz+33.33);
+    qx+=d;qy+=d;qz+=d;
+    return [frac((qx+qy)*qz),frac((qx+qx)*qy),frac((qx+qy)*qx)];
+  }
+  function cellular(px,py,pz,metric,jitter){
     var pix=Math.floor(px),piy=Math.floor(py),piz=Math.floor(pz),pfx=px-pix,pfy=py-piy,pfz=pz-piz,d1=10,d2=10;
     for(var oz=-1;oz<=1;oz++)for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
       var cx=pix+ox,cy=piy+oy,cz=piz+oz;
-      var rpx=frac(Math.sin(cx*127.1+cy*311.7+cz*74.7)*43758.5453);
-      var rpy=frac(Math.sin(cx*269.5+cy*183.3+cz*246.1)*43758.5453);
-      var rpz=frac(Math.sin(cx*113.5+cy*271.9+cz*124.6)*43758.5453);
+      var rp=hash33(cx,cy,cz);var rpx=0.5+jitter*(rp[0]-0.5),rpy=0.5+jitter*(rp[1]-0.5),rpz=0.5+jitter*(rp[2]-0.5);
       var dx=ox+rpx-pfx,dy=oy+rpy-pfy,dz=oz+rpz-pfz;
       var d=metric==='euclidean'?Math.sqrt(dx*dx+dy*dy+dz*dz):metric==='manhattan'?Math.abs(dx)+Math.abs(dy)+Math.abs(dz):Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
       if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
@@ -3932,7 +3938,45 @@ const Noise=(()=>{
   function billow(px,py,pz,o,l,g){var v=0,a=1,f=1,mx=0;for(var i=0;i<o;i++){v+=Math.abs(snoise(px*f,py*f,pz*f))*a;mx+=a;a*=g;f*=l;}return(v/mx)*2-1;}
   function warp(px,py,pz,strength,o,l,g){var qx=fbm(px,py,pz,o,l,g),qy=fbm(px+5.2,py+1.3,pz+8.1,o,l,g),qz=fbm(px+3.7,py+9.4,pz+2.8,o,l,g);return fbm(px+strength*qx,py+strength*qy,pz+strength*qz,o,l,g);}
   function curl(px,py,pz,step,ps){var s=ps,e=step,psi_x=snoise(px*s,py*s,pz*s),psi_y=snoise(px*s+3.7,py*s+1.5,pz*s+2.8),psi_z=snoise(px*s+1.2,py*s+4.6,pz*s+0.9);var pzy=snoise(px*s+1.2,(py+e)*s+4.6,pz*s+0.9),pyz=snoise(px*s+3.7,py*s+1.5,(pz+e)*s+2.8),pxz=snoise(px*s,py*s,(pz+e)*s),pzx=snoise((px+e)*s+1.2,py*s+4.6,pz*s+0.9),pyx=snoise((px+e)*s+3.7,py*s+1.5,pz*s+2.8),pxy=snoise(px*s,(py+e)*s,pz*s);var cx=(pzy-psi_z)/e-(pyz-psi_y)/e,cy=(pxz-psi_x)/e-(pzx-psi_z)/e,cz=(pyx-psi_y)/e-(pxy-psi_x)/e;return Math.sqrt(cx*cx+cy*cy+cz*cz);}
-  return{snoise,cellular,fbm,ridged,billow,warp,curl};
+  // ── New noise types (verbatim port from F13LD.noise v0.9.1) ──────────────
+  // Foam — Worley F2 (raw 2nd-nearest). Rounded closed-cell morphology.
+  function foam(px, py, pz, metric, jitter) {
+    var pix=Math.floor(px), piy=Math.floor(py), piz=Math.floor(pz);
+    var pfx=px-pix, pfy=py-piy, pfz=pz-piz;
+    var d1=10, d2=10;
+    for(var oz=-1;oz<=1;oz++) for(var oy=-1;oy<=1;oy++) for(var ox=-1;ox<=1;ox++){
+      var cx=pix+ox, cy=piy+oy, cz=piz+oz;
+      var rp=hash33(cx,cy,cz);var rpx=0.5+jitter*(rp[0]-0.5),rpy=0.5+jitter*(rp[1]-0.5),rpz=0.5+jitter*(rp[2]-0.5);
+      var dx=ox+rpx-pfx, dy=oy+rpy-pfy, dz=oz+rpz-pfz;
+      var d = metric==='euclidean' ? Math.sqrt(dx*dx+dy*dy+dz*dz) :
+              metric==='manhattan' ? Math.abs(dx)+Math.abs(dy)+Math.abs(dz) :
+              Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
+      if(d<d1){d2=d1;d1=d;}else if(d<d2)d2=d;
+    }
+    return d2;
+  }
+  // Strut Network — Worley F3-F1. ~0 along Voronoi edges → connected struts
+  // (open-cell / trabecular rod morphology).
+  function strut(px, py, pz, metric, jitter) {
+    var pix=Math.floor(px), piy=Math.floor(py), piz=Math.floor(pz);
+    var pfx=px-pix, pfy=py-piy, pfz=pz-piz;
+    var d1=10, d2=10, d3=10;
+    for(var oz=-1;oz<=1;oz++) for(var oy=-1;oy<=1;oy++) for(var ox=-1;ox<=1;ox++){
+      var cx=pix+ox, cy=piy+oy, cz=piz+oz;
+      var rp=hash33(cx,cy,cz);var rpx=0.5+jitter*(rp[0]-0.5),rpy=0.5+jitter*(rp[1]-0.5),rpz=0.5+jitter*(rp[2]-0.5);
+      var dx=ox+rpx-pfx, dy=oy+rpy-pfy, dz=oz+rpz-pfz;
+      var d = metric==='euclidean' ? Math.sqrt(dx*dx+dy*dy+dz*dz) :
+              metric==='manhattan' ? Math.abs(dx)+Math.abs(dy)+Math.abs(dz) :
+              Math.max(Math.abs(dx),Math.max(Math.abs(dy),Math.abs(dz)));
+      if(d<d1){d3=d2;d2=d1;d1=d;}else if(d<d2){d3=d2;d2=d;}else if(d<d3){d3=d;}
+    }
+    return d3-d1;
+  }
+  // Veined — turbulence-warped periodic banding (laminar striated sheets).
+  function veined(px, py, pz, turb, freq, octaves, lacunarity, gain) {
+    return Math.sin(px*freq + turb*fbm(px,py,pz,octaves,lacunarity,gain));
+  }
+  return{snoise,cellular,fbm,ridged,billow,warp,curl,foam,strut,veined};
 })();
 
 // ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
@@ -4193,13 +4237,28 @@ function evalRDField(grid, N, u, v, w) {
 
 // ── SDF closures — all return positive-inside (Manifold convention) ───────
 
+// seed -> coordinate-offset (verbatim port from F13LD.noise v0.9.1). Added in
+// noise-input space before type dispatch, matching the canonical tool's sample().
+function seedToOffset(s){
+  if(!s) return [0,0,0];                  // seed 0 / absent = unchanged (back-compat)
+  function h(n){var x=Math.sin(n)*43758.5453;return (x-Math.floor(x))*64.0;}
+  return [h(s*127.1+11.7), h(s*269.5+53.3), h(s*113.5+97.1)];
+}
+const _seedOffCache=new WeakMap();       // memoize per-surf: computed once, not per-voxel
 function evalNoiseRaw(surf,nx,ny,nz){
   const t=surf.noise_type||'simplex',o=surf.octaves||4,l=surf.lacunarity||2,g=surf.gain||.5;
+  const j=surf.jitter??0.6,dm=surf.distance_metric||'euclidean';
+  let so=_seedOffCache.get(surf);
+  if(!so){so=seedToOffset(surf.seed||0);_seedOffCache.set(surf,so);}
+  nx+=so[0];ny+=so[1];nz+=so[2];
   if(t==='simplex') return Noise.snoise(nx,ny,nz);
-  if(t==='cellular')return Noise.cellular(nx,ny,nz,surf.distance_metric||'euclidean');
+  if(t==='cellular')return Noise.cellular(nx,ny,nz,dm,j);
   if(t==='fbm')     return Noise.fbm(nx,ny,nz,o,l,g);
   if(t==='ridged')  return Noise.ridged(nx,ny,nz,o,l,g);
   if(t==='billow')  return Noise.billow(nx,ny,nz,o,l,g);
+  if(t==='foam')    return Noise.foam(nx,ny,nz,dm,j);
+  if(t==='strut')   return Noise.strut(nx,ny,nz,dm,j);
+  if(t==='veined')  return Noise.veined(nx,ny,nz,surf.vein_turbulence??3.0,surf.vein_frequency??3.0,o,l,g);
   if(t==='curl')    return Noise.curl(nx,ny,nz,surf.curl_step||.1,surf.potential_scale||1);
   return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
 }
@@ -7243,7 +7302,7 @@ function exportPanel(){
 
 <div id="expElapsed"></div>
 <div id="expReport"></div>`;}
-function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}</div>${exportPanel()}`;}
+function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}${s.distance_metric?card('distance metric',s.distance_metric):''}${s.jitter!=null?card('jitter',s.jitter):''}${s.vein_turbulence!=null?card('vein turb',s.vein_turbulence):''}${s.vein_frequency!=null?card('vein freq',s.vein_frequency):''}${s.seed?card('seed',s.seed):''}</div>${exportPanel()}`;}
 function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;
   // Anisotropic-tiling spec v1.0: show per-axis cell scale when the recipe
   // ships cell_scale_x/y/z and they aren't all equal; fall back to scalar.

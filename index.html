@@ -4278,7 +4278,13 @@ function buildNoiseSDF(json,normOverride){
   // effect was most pronounced in half/solid topology modes for ridged: lower
   // mid → larger fraction of field above threshold → thicker-looking solid.
   let mid,halfR;
-  if(normOverride){
+  if(surf.norm_min!=null&&surf.norm_max!=null){
+    // v0.5.1: carried normalization from F13LD.noise export. Identical mid/halfR
+    // to the design tool's preview prepass, so the iso surface sits in the exact
+    // same place regardless of bake resolution or shape AABB. No drift.
+    mid=(surf.norm_min+surf.norm_max)*0.5;
+    halfR=Math.max((surf.norm_max-surf.norm_min)*0.5,.001);
+  } else if(normOverride){
     // v0.5.0-rc14: use preview's fieldMin/Max — zero drift, zero pre-scan cost.
     // v0.5.0-rc27: cached fieldMin/Max are now already +5% padded at bake time
     // (see worker post-message in this file), matching the canonical noise tool's
@@ -5750,9 +5756,14 @@ self.onmessage=async function(e){
         // on the main thread, used by buildSDF's normOverride path on export.
         let postMin=minV, postMax=maxV;
         if(fam==='noise'){
-          const range=maxV-minV;
-          postMin=minV-range*0.05;
-          postMax=maxV+range*0.05;
+          const _ns=json.surface;
+          if(_ns&&_ns.norm_min!=null&&_ns.norm_max!=null){
+            postMin=_ns.norm_min; postMax=_ns.norm_max;
+          } else {
+            const range=maxV-minV;
+            postMin=minV-range*0.05;
+            postMax=maxV+range*0.05;
+          }
         }
         const buf=field.buffer;
         self.postMessage({type:'baked',field:buf,N,fieldMin:postMin,fieldMax:postMax,
@@ -6540,7 +6551,7 @@ function bakeField(recipe, N, opts){
       }
       const halfR=Math.max((maxV-minV)*0.5,0.001), lip=Math.max(maxG/halfR*1.1,0.05);
       let postMin=minV, postMax=maxV;
-      if(recipe.family==='noise'){const range=maxV-minV; postMin=minV-range*0.05; postMax=maxV+range*0.05;}
+      if(recipe.family==='noise'){const _ns=recipe.json&&recipe.json.surface; if(_ns&&_ns.norm_min!=null&&_ns.norm_max!=null){postMin=_ns.norm_min; postMax=_ns.norm_max;} else {const range=maxV-minV; postMin=minV-range*0.05; postMax=maxV+range*0.05;}}
       resolve({data:field,N,fieldMin:postMin,fieldMax:postMax,lipschitz:lip,
         ms:Math.round(performance.now()-t0),worldMin:wMin,worldMax:wMax,isPeriodic:false,topology});
     }
@@ -7481,6 +7492,14 @@ window.setQual=function(q){
 // from a 2-world-unit slice of [-5,5]).
 function getThinnestFeatureMm(recipe, cellSizeMm){
   if(!recipe) return null;
+  // v0.5.1: stochastic fields (noise, grain/spinodoid/GRF/HU/RD) define their
+  // wall band as a threshold on a NORMALIZED field, not a physical length, so
+  // half_width x cellSizeMm/10 is dimensionally meaningless for them (same
+  // reasoning as the rc20 thin-wall-warning removal). Return null: the
+  // feature-ratio export guard skips them (the 180s wall-clock timeout is the
+  // real runaway backstop), and meshopt simplify falls back to its normal
+  // edge-based tolerance instead of an over-conservative cap from a fake size.
+  if(recipe.family==='noise' || recipe.family==='grain') return null;
   const g = recipe.json?.geometry || {};
   const s = recipe.json?.surface  || {};
   const w2mm = cellSizeMm / 10;

@@ -978,10 +978,20 @@ async function gatherGroupSpecs(gid, ensureN, cloneBuffers){
     const cellSizeMm=(b.cellSizeMm!=null)?b.cellSizeMm
       :((id===activeBodyId)?(parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3):3);
     const buf=cloneBuffers?b.sdfGrid.data.buffer.slice(0):b.sdfGrid.data.buffer;
-    specs.push({solid:isSolid, recipe:isSolid?null:recipes.get(rid),
+    // v0.5.1-rc4.1: carry the display name + recipe label (same strings the body
+    // card shows) so the feature-ratio guard can name the offending member
+    // instead of blaming the whole group. Two short strings per member; the
+    // worker ignores them.
+    const memRecipe=isSolid?null:recipes.get(rid);
+    const memName=String((b.meta&&b.meta.name)||'shape');
+    const memRecipeLabel=memRecipe
+      ? ((FAMILY_LABEL[memRecipe.family]||memRecipe.family).toLowerCase()+
+         (memRecipe.subtype?' \u00b7 '+String(memRecipe.subtype).toLowerCase():''))
+      : 'solid';
+    specs.push({solid:isSolid, recipe:memRecipe,
       shapeSdfData:buf, shapeN:b.sdfGrid.N,
       bbox:{mnx:b.bbox.mnx,mny:b.bbox.mny,mnz:b.bbox.mnz,mxx:b.bbox.mxx,mxy:b.bbox.mxy,mxz:b.bbox.mxz},
-      cellSizeMm});
+      cellSizeMm, name:memName, recipeLabel:memRecipeLabel});
   }
   return {specs};
 }
@@ -7527,6 +7537,75 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
   return null;
 }
 
+// ── Feature/edge ratio guard — shared (v0.5.1-rc4.1) ───────────────────
+// Used by BOTH export paths: single-body (triggerExport) and weld-group
+// (_exportWeldGroup). Previously the floor was a function-scoped const inside
+// triggerExport while _exportWeldGroup referenced it by name across scopes — a
+// ReferenceError that broke EVERY weld export containing a deterministic
+// lattice member (beam/TPMS/bundle/wave). Single source of truth now lives
+// here at module scope so the two paths cannot drift apart again.
+//
+// The real predictor of export blow-up is NOT triangle count (the coarse pass
+// undersamples thin walls and cannot tell a safe export from a runaway one).
+// It is the ratio of the thinnest physical feature to the marching-cubes voxel
+// edge. The fine edge is fixed by QUALITY; cell size sets feature thickness.
+// When walls get thin relative to a fixed edge, marching cubes produces
+// sliver-dense surfaces that OOM or grind for minutes. Below this floor we stop
+// BEFORE any level set and surface an actionable error.
+//
+// Floor = 0.5: the thinnest wall must be at least half a voxel edge thick.
+// Calibrated against the spinodoid repro (half_width 0.15): 2mm cell gives
+// 0.03mm walls (0.33x the 0.09mm High edge) and fails; 4mm gives 0.06mm walls
+// (0.67x) and exports cleanly (user-verified); 8mm gives 0.12mm walls (1.33x).
+// A 0.5 floor rejects the failing 2mm case and passes 4mm with margin. This sits
+// below a strict one-voxel-per-wall limit because marching cubes resolves
+// sub-voxel walls down to ~half an edge before sliver density blows up. The
+// 180s wall-clock timeout (Layer 2) backstops anything that slips through near
+// the floor and still grinds. Raise toward 0.6 for more safety margin; lower
+// only with a verified passing run.
+const FEATURE_EDGE_RATIO_MIN = 0.5;
+
+// Evaluate one feature/edge pair against the floor. Returns a verdict object;
+// never throws, never touches the DOM, so either path can call it before it has
+// committed to any UI teardown.
+//   featMm      thinnest feature half-thickness in mm (null => nothing to check)
+//   edgeMm      the clamped marching-cubes voxel edge in mm
+//   cellSizeMm  the cell size that produced featMm (drives the suggestion)
+function checkFeatureEdgeRatio(featMm, edgeMm, cellSizeMm){
+  const out={ok:true, ratio:null, floor:FEATURE_EDGE_RATIO_MIN, suggestCell:null};
+  // null feature => stochastic field (noise/grain) or raw preset: not checkable.
+  if(featMm==null || !(featMm>0) || !(edgeMm>0)) return out;
+  out.ratio = featMm/edgeMm;
+  out.ok    = (out.ratio >= FEATURE_EDGE_RATIO_MIN);
+  // Features scale ~linearly with cell size for a fixed recipe, so the cell size
+  // that lifts the ratio to the floor is cell x (floor/ratio), rounded up.
+  if(!out.ok && cellSizeMm>0) out.suggestCell = Math.ceil(cellSizeMm*(FEATURE_EDGE_RATIO_MIN/out.ratio));
+  return out;
+}
+
+// Shared error markup for both export paths. bodyLabel names the offending
+// member in a weld group; pass null for single-body export, where the subject
+// is unambiguous.
+function featureRatioErrorHtml(chk, featMm, edgeMm, qual, bodyLabel){
+  const subject = bodyLabel
+    ? 'The thinnest features on <b>'+bodyLabel+'</b> are ~'+featMm.toFixed(3)+'mm'
+    : 'The thinnest features are ~'+featMm.toFixed(3)+'mm';
+  const fix = (chk.suggestCell!=null)
+    ? (bodyLabel?'Increase its cell size to ~':'Increase cell size to ~')+chk.suggestCell+'mm, or lower export quality.'
+    : 'Increase cell size, or lower export quality.';
+  return '<div class="exp-err">&#9888; '+
+    'Walls too thin for this quality. '+subject+', but '+qual+' quality uses a '+
+    edgeMm.toFixed(3)+'mm voxel edge ('+chk.ratio.toFixed(1)+'\u00d7 \u2014 needs '+
+    chk.floor+'\u00d7 or more). '+fix+'</div>';
+}
+
+// Human-readable label for a weld member, matching what the body card shows.
+function memberLabel(spec, idx){
+  if(!spec) return 'member '+(idx+1);
+  const nm = spec.name || ('member '+(idx+1));
+  return spec.recipeLabel ? nm+' \u2014 '+spec.recipeLabel : nm;
+}
+
 // ── Voxel size estimator for the export quality dropdown (v0.5.0) ─────────
 // Returns the actual voxel size in mm a given quality would produce for the
 // current recipe + shape combination. Mirrors the calc inside triggerExport
@@ -7612,24 +7691,47 @@ async function _exportWeldGroup(gid){
     // Edge clamp against the GROUP bbox; protect the thinnest lattice wall across members.
     const rawEdge=QUAL_EDGE_MM[currentExportQual]||0.10;
     const {safeEdge:relEdgeMm}=clampEdgeMm(rawEdge, gbb, getMaxExportVoxels(currentRecipe||{family:'tpms'}));
-    let minFeatMm=Infinity;
-    for(const sp of specs){ if(!sp.solid && sp.recipe){ const f=getThinnestFeatureMm(sp.recipe, sp.cellSizeMm); if(f!=null && f>0 && f<minFeatMm) minFeatMm=f; } }
+    // Track WHICH member is thinnest, not just the value: the suggested cell
+    // size has to come from that member's own cellSizeMm, since members in a
+    // weld group can each carry a different cell size.
+    let minFeatMm=Infinity, minFeatSpec=null, minFeatIdx=-1;
+    for(let i=0;i<specs.length;i++){
+      const sp=specs[i];
+      if(sp.solid || !sp.recipe) continue;
+      const f=getThinnestFeatureMm(sp.recipe, sp.cellSizeMm);
+      if(f!=null && f>0 && f<minFeatMm){ minFeatMm=f; minFeatSpec=sp; minFeatIdx=i; }
+    }
     const edgeTol=relEdgeMm*0.15;
     const cappedTol=(minFeatMm<Infinity)?minFeatMm*0.05:Infinity;
     const simplifyTol=Math.min(edgeTol,cappedTol);
     const simplifyCappedByFeature=cappedTol<edgeTol;
     const featMm=(minFeatMm<Infinity)?minFeatMm:undefined;
-    // Thin-wall feature-ratio guard (mirror single-body): warn rather than mesh garbage.
-    if(minFeatMm<Infinity){
-      const ratio=minFeatMm/relEdgeMm;
-      if(ratio<FEATURE_EDGE_RATIO_MIN){
-        if(elapsedTimer)clearInterval(elapsedTimer);
-        if(elapsedEl)elapsedEl.style.display='none';
-        hideComputing();showCancelBtn(false);
-        report.innerHTML='<div class="exp-err">&#9888; Welded lattice walls are ~'+minFeatMm.toFixed(3)+'mm but '+currentExportQual+' quality uses a '+relEdgeMm.toFixed(3)+'mm edge ('+ratio.toFixed(1)+'\u00d7 \u2014 needs '+FEATURE_EDGE_RATIO_MIN+'\u00d7 or more). Increase cell size or lower export quality.</div>';
-        btn.disabled=false;btn.classList.remove('sweeping');btn.textContent='Export 3MF';
-        return;
-      }
+    // ── Feature-ratio guard (shared helper; see FEATURE_EDGE_RATIO_MIN) ─────
+    const weldChk=checkFeatureEdgeRatio(
+      (minFeatMm<Infinity)?minFeatMm:null,
+      relEdgeMm,
+      minFeatSpec?minFeatSpec.cellSizeMm:0);
+    console.log('[export][feature-guard][weld]', {
+      group: letter, members: specs.length,
+      thinnestMember: minFeatSpec?memberLabel(minFeatSpec,minFeatIdx):null,
+      thinnestFeatureMm: (minFeatMm<Infinity)?+minFeatMm.toFixed(4):null,
+      memberCellSizeMm: minFeatSpec?minFeatSpec.cellSizeMm:null,
+      fineEdgeMm: +relEdgeMm.toFixed(4),
+      featureEdgeRatio: weldChk.ratio!=null?+weldChk.ratio.toFixed(2):null,
+      ratioFloor: weldChk.floor, quality: currentExportQual
+    });
+    if(!weldChk.ok){
+      // Same teardown contract as the single-body path: this runs before the
+      // worker dispatch, so tear the UI down explicitly and return rather than
+      // throwing into an uncaught rejection that strands the overlay.
+      if(elapsedTimer)clearInterval(elapsedTimer);
+      _exportElapsedTimer=null;_exportTimeoutTimer=null;
+      if(elapsedEl)elapsedEl.style.display='none';
+      hideComputing();showCancelBtn(false);
+      report.innerHTML=featureRatioErrorHtml(weldChk, minFeatMm, relEdgeMm, currentExportQual,
+        memberLabel(minFeatSpec,minFeatIdx));
+      btn.disabled=false;btn.classList.remove('sweeping');btn.textContent='Export 3MF';
+      return;
     }
     coMain.textContent='exporting weld...';
     coSub.textContent='union level set over group bbox...';
@@ -7919,45 +8021,19 @@ window.triggerExport=async function(){
     }
     const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
     if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
-    // ── Layer 1: feature-ratio guard (v0.5.1-rc4.0b) ──────────────────────────
-    // The real predictor of export blow-up is NOT triangle count (the coarse
-    // pass undersamples thin walls and can't see the difference between a safe
-    // and a runaway export). It's the ratio of the thinnest physical feature to
-    // the marching-cubes voxel edge. The fine edge is fixed by QUALITY; cell
-    // size sets feature thickness. When walls get thin relative to a fixed edge,
-    // marching cubes produces sliver-dense surfaces that OOM or grind for
-    // minutes. getThinnestFeatureMm already depends on cell size, so this
-    // distinguishes the exact two cases the triangle-count approach could not.
-    //
-    // Below FEATURE_EDGE_RATIO_MIN voxels per half-feature, we stop BEFORE any
-    // level set and surface an actionable error. Tunable — calibrate from the
-    // diagnostic ratios on real safe-vs-broken runs.
-    // Floor = 0.5: the thinnest wall must be at least half a voxel edge thick.
-    // Calibrated against the spinodoid repro (half_width 0.15): 2mm cell gives
-    // 0.03mm walls (0.33× the 0.09mm High edge) and genuinely fails; 4mm gives
-    // 0.06mm walls (0.67×) and exports cleanly (user-verified); 8mm gives
-    // 0.12mm walls (1.33×). A 0.5 floor rejects the failing 2mm case and passes
-    // 4mm with margin. This is below a strict one-voxel-per-wall limit because
-    // marching cubes resolves sub-voxel walls down to ~half an edge before
-    // sliver density blows up. The 180s wall-clock timeout (Layer 2) backstops
-    // any geometry that slips through near the floor and still grinds. Raise
-    // toward 0.6 for more safety margin; lower only with a verified passing run.
-    const FEATURE_EDGE_RATIO_MIN = 0.5;
+    // ── Layer 1: feature-ratio guard (v0.5.1-rc4.1) ────────────────────
+    // Floor, rationale, and message text now live at module scope alongside
+    // checkFeatureEdgeRatio / featureRatioErrorHtml, shared with the weld path.
     const thinnestFeatureMm = getThinnestFeatureMm(currentRecipe, cellSizeMm);
-    const featureEdgeRatio = (thinnestFeatureMm != null && thinnestFeatureMm > 0)
-      ? thinnestFeatureMm / relEdgeMm : null;
+    const chk = checkFeatureEdgeRatio(thinnestFeatureMm, relEdgeMm, cellSizeMm);
     console.log('[export][feature-guard]', {
       thinnestFeatureMm: thinnestFeatureMm != null ? +thinnestFeatureMm.toFixed(4) : null,
       fineEdgeMm: +relEdgeMm.toFixed(4),
-      featureEdgeRatio: featureEdgeRatio != null ? +featureEdgeRatio.toFixed(2) : null,
-      ratioFloor: FEATURE_EDGE_RATIO_MIN,
+      featureEdgeRatio: chk.ratio != null ? +chk.ratio.toFixed(2) : null,
+      ratioFloor: chk.floor,
       cellSizeMm, quality: currentExportQual
     });
-    if(featureEdgeRatio != null && featureEdgeRatio < FEATURE_EDGE_RATIO_MIN){
-      const fMm=thinnestFeatureMm.toFixed(3), eMm=relEdgeMm.toFixed(3);
-      // Cell size that would lift the ratio to the floor (features scale ~linearly
-      // with cell size for a fixed recipe), rounded up to a friendly value.
-      const suggestCell=Math.ceil(cellSizeMm*(FEATURE_EDGE_RATIO_MIN/featureEdgeRatio));
+    if(!chk.ok){
       // This guard runs BEFORE the main export try/catch opens (which starts at
       // the worker dispatch). Throwing here escapes as an uncaught promise
       // rejection and leaves the overlay stuck on "preparing export". So we tear
@@ -7967,12 +8043,7 @@ window.triggerExport=async function(){
       _exportElapsedTimer=null; _exportTimeoutTimer=null;
       if(elapsedEl)elapsedEl.style.display='none';
       hideComputing(); showCancelBtn(false);
-      report.innerHTML='<div class="exp-err">&#9888; '+
-        'Walls too thin for this quality. The thinnest features are ~'+fMm+'mm, '+
-        'but '+currentExportQual+' quality uses a '+eMm+'mm voxel edge ('+
-        featureEdgeRatio.toFixed(1)+'\u00d7 — needs '+FEATURE_EDGE_RATIO_MIN+'\u00d7 or more). '+
-        'Increase cell size to ~'+suggestCell+'mm, or lower export quality.'+
-        '</div>';
+      report.innerHTML=featureRatioErrorHtml(chk, thinnestFeatureMm, relEdgeMm, currentExportQual, null);
       btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
       return;
     }

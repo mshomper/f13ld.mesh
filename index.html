@@ -319,7 +319,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.7.0</span>
+      <span class="fh-version">v0.7.1</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -4428,13 +4428,13 @@ function buildTPMSSDF(json){
     if(t.startsWith('cos'))return Math.cos(val);
     return 1;
   }
-  function evalTerms(tx,ty,tz){
+  function evalTermsList(list,tx,ty,tz){
     let sum=0;
     // Per-term phase_shift is in field-coord radians (sweep v0.13.1+).
     // Constant additive offset per term — preserves the term's period, so the
     // integer-period bake fix downstream is unaffected. Spec section 5 mandates
     // this for fidelity to what F13LD.sweep's solver characterized.
-    for(const term of terms){
+    for(const term of list){
       if(!term.on)continue;
       const tps=term.phase_shift;
       const ttx=tps?tx+(tps.x||0):tx;
@@ -4447,8 +4447,46 @@ function buildTPMSSDF(json){
     return sum;
   }
 
+  function evalTerms(tx,ty,tz){ return evalTermsList(terms,tx,ty,tz); }
+
   function evalPhi(tx,ty,tz){
     return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
+  }
+
+  // v0.7.1: field-pair PI-TPMS (F13LD.tpms v1.1.0+).
+  //   surface_b       independent field B (null/absent → B is a copy of A)
+  //   field_b_freq    whole-number frequency multiple of A (keeps one A cell
+  //                   periodic, so GL_REPEAT preview tiling stays seamless)
+  //   field_b_scale   amplitude match rms(A)/rms(B); recomputed on the same
+  //                   16³ cell-centred grid as F13LD.tpms when absent
+  // Field B as used: φB_eff(t) = ampB · φB(kB·t + shift). With no surface_b,
+  // kB=1 and ampB=1 this is exactly the legacy self-pair φA(t + shift).
+  const sB=(mode==='pi-tpms'&&json.surface_b)?json.surface_b:null;
+  const kB=Math.max(1,Math.round(g.field_b_freq||1));
+  const rawFnB=sB?(sB.type==='raw_preset'?(RAW_PRESETS[sB.preset]||null):null):rawFn;
+  if(sB&&sB.type==='raw_preset'&&!rawFnB)
+    throw new Error('Unknown field B raw preset: '+sB.preset+'. Supported: '+Object.keys(RAW_PRESETS).join(', '));
+  const termsB=sB?(sB.terms||[]):terms;
+  function phiBBase(x,y,z){ return rawFnB ? rawFnB(x,y,z) : evalTermsList(termsB,x,y,z); }
+  function fieldRMS(fn){
+    const M=16,H=Math.PI,st=2*H/M; let acc=0;
+    for(let i=0;i<M;i++){const x=-H+(i+.5)*st;
+      for(let j=0;j<M;j++){const y=-H+(j+.5)*st;
+        for(let k=0;k<M;k++){const z=-H+(k+.5)*st; const v=fn(x,y,z); acc+=v*v;}}}
+    return Math.sqrt(acc/(M*M*M));
+  }
+  let ampB=1;
+  if(typeof g.field_b_scale==='number'&&isFinite(g.field_b_scale)&&g.field_b_scale>0) ampB=g.field_b_scale;
+  else if(sB){ const ra=fieldRMS(evalPhi), rb=fieldRMS(phiBBase); if(ra>1e-9&&rb>1e-9) ampB=ra/rb; }
+  function evalPhiB(tx,ty,tz,sx,sy,sz){
+    return ampB*phiBBase(kB*tx+sx,kB*ty+sy,kB*tz+sz);
+  }
+  // Field-coord gradient of φB_eff (same NORM_E step as gradPhiFieldCoord).
+  function gradPhiB(tx,ty,tz,sx,sy,sz){
+    const gx=(evalPhiB(tx+NORM_E,ty,tz,sx,sy,sz)-evalPhiB(tx-NORM_E,ty,tz,sx,sy,sz))*NORM_INV_2E;
+    const gy=(evalPhiB(tx,ty+NORM_E,tz,sx,sy,sz)-evalPhiB(tx,ty-NORM_E,tz,sx,sy,sz))*NORM_INV_2E;
+    const gz=(evalPhiB(tx,ty,tz+NORM_E,sx,sy,sz)-evalPhiB(tx,ty,tz-NORM_E,sx,sy,sz))*NORM_INV_2E;
+    return {gx,gy,gz,mag:Math.sqrt(gx*gx+gy*gy+gz*gz)};
   }
 
   // v0.5.0-rc22: Field-coord central-difference gradient of phi.
@@ -4521,14 +4559,12 @@ function buildTPMSSDF(json){
       const gyF=gyLo+(gyHi-gyLo)*t01y;
       const gzF=gzLo+(gzHi-gzLo)*t01z;
       if(mode==='pi-tpms'){
-        const bx=tx+(ps.x||0)*TP*gxF;
-        const by=ty+(ps.y||0)*TP*gyF;
-        const bz=tz+(ps.z||0)*TP*gzF;
+        const sx=(ps.x||0)*TP*gxF, sy=(ps.y||0)*TP*gyF, sz=(ps.z||0)*TP*gzF;
         const phiA=evalPhi(tx,ty,tz);
-        const phiB=evalPhi(bx,by,bz);
+        const phiB=evalPhiB(tx,ty,tz,sx,sy,sz);
         if(piNorm){
           const grA=gradPhiFieldCoord(tx,ty,tz);
-          const grB=gradPhiFieldCoord(bx,by,bz);
+          const grB=gradPhiB(tx,ty,tz,sx,sy,sz);
           const pipeR=(g.pipe_radius||.18);
           const d=piDistance(phiA,phiB,grA,grB);
           const dClipped=d<NORM_CLIP_MULT*pipeR?d:NORM_CLIP_MULT*pipeR;
@@ -4552,11 +4588,11 @@ function buildTPMSSDF(json){
     }
     const phiA=evalPhi(tx,ty,tz);
     if(mode==='pi-tpms'){
-      const bx=tx+(ps.x||0)*TP, by=ty+(ps.y||0)*TP, bz=tz+(ps.z||0)*TP;
-      const phiB=evalPhi(bx,by,bz);
+      const sx=(ps.x||0)*TP, sy=(ps.y||0)*TP, sz=(ps.z||0)*TP;
+      const phiB=evalPhiB(tx,ty,tz,sx,sy,sz);
       if(piNorm){
         const grA=gradPhiFieldCoord(tx,ty,tz);
-        const grB=gradPhiFieldCoord(bx,by,bz);
+        const grB=gradPhiB(tx,ty,tz,sx,sy,sz);
         const pipeR=(g.pipe_radius||.18);
         const d=piDistance(phiA,phiB,grA,grB);
         const dClipped=d<NORM_CLIP_MULT*pipeR?d:NORM_CLIP_MULT*pipeR;
@@ -7331,7 +7367,7 @@ function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.js
   const hasPerAxis=(cx!=null||cy!=null||cz!=null);
   const aniso=hasPerAxis&&!(cx===cy&&cy===cz);
   const cellLbl=aniso?`${cx??g.cell_scale}·${cy??g.cell_scale}·${cz??g.cell_scale}`:g.cell_scale;
-  return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',cellLbl)}${card('wall thickness',g.wall_thickness)}${g.shell_normalize?card('shell-normalize','on'):''}${card('pipe radius',g.pipe_radius)}${g.pi_normalize?card('pi-normalize','on'):''}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
+  return`<div class="sec-lbl">tpms scaffold</div><div class="meta-grid">${card('preset',(s.preset||'custom').toUpperCase())}${card('mode',g.mode)}${card('active terms',nOn)}${card('cell scale',cellLbl)}${card('wall thickness',g.wall_thickness)}${g.shell_normalize?card('shell-normalize','on'):''}${card('pipe radius',g.pipe_radius)}${g.pi_normalize?card('pi-normalize','on'):''}${card('offset',g.offset)}${ps?card('phase shift',`${ps.x}·${ps.y}·${ps.z}`):''}${g.mode==='pi-tpms'?card('field B',r.json.surface_b?String(r.json.surface_b.preset||r.json.surface_b.label||'custom').toUpperCase():'same as A'):''}${(g.mode==='pi-tpms'&&g.field_b_freq>1)?card('B frequency',g.field_b_freq+'×'):''}${card('gradient',g.gradient?.enabled?'on':'off')}</div>${exportPanel()}`;}
 function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.json.homogenization;
   if(f.type==='reactiondiffusion'){
     // v0.5.0-rc15: system-aware labels. Wire fields rd_F / rd_k mean F/k for

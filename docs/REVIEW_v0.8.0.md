@@ -198,4 +198,27 @@ Fixed in v0.8.1, each checked in the browser against v0.8.0:
 
 Regression: all 14 shared test cases (every family, plus shape mode) produce byte-identical meshes in v0.8.0 and v0.8.1.
 
-Still open from this review: section A (geometry accuracy), B7–B9, D1–D3, D5–D6, quick wins, and the plug-in registry.
+Still open after v0.8.1: section A (geometry accuracy) — see section 8 — plus B7–B9, D1–D3, D5–D6, quick wins, and the plug-in registry.
+
+---
+
+## 8. Status — v0.8.2 (geometry accuracy)
+
+All of section A is fixed. Each fix was measured before and after on a known shape or checked directly on the field.
+
+| # | Fix | Measurement (v0.8.1 → v0.8.2) |
+|---|---|---|
+| A1 | Shape grid read at voxel centres, matching how it is baked and how the preview reads it (export sampler, weld sampler, hyperuniform grid) | 50 × 14 × 6 mm box, Draft: **+0.397 / +0.111 / +0.048 mm per side → 0.000**. Ø20 × 20 mm cylinder, Draft: radial error **+0.157 mm → 0.001 mm RMS** |
+| A2 | Reaction-diffusion grid read as periodic, so the last sample blends into the first at the tile face | Largest field jump at a tile face: **0.143 → 0.011** (largest jump inside a cell: 0.016) |
+| A3 | Reaction-diffusion and hyperuniform tiles anchored at the preview's cell origin (−cell/2), not the part's bounding-box corner — independent of rotation/offset | Preview-vs-export field correlation in shape mode: hyperuniform **−0.04 → 1.000**, reaction-diffusion **−0.08 → 1.000** |
+| A4 | Weld-group members evaluate hyperuniform periodically (same evaluator as the shape-mode preview) | Points 2–3 cells from the first cell matching their in-cell twin: **7/500 → 500/500** |
+| A5 | Trim-to-nodes uses the strut's physical radius at the chosen cell size (new `beamStrutRadiusMm` helper) | Measured strut radius vs radius used: 0.750 vs **0.500 → 0.750**; 0.250 vs **0.500 → 0.250** mm |
+| A6 | Coarse pass no longer decides emptiness; falls back to the full box, and pads by a whole coarse voxel | 0.36 mm BCC struts in a 12 mm cylinder, Draft: **"Empty mesh" → exports** |
+| A7 | 3MF imports apply build-item/component transforms and the model's unit | Inch-unit box placed at +100 mm: imported at **0.08–2.05 → 102–152 mm** |
+| A8 | Imported meshes weld on position only | STL box with real normals, solid export: **24 verts / 24 open edges → 8 verts / 0 open edges** |
+
+**Regression vs v0.8.1:** every open-cube family the fixes don't touch (TPMS ×3, noise ×2, spinodoid, hyperuniform, beam, bundle, wave) is byte-identical. Reaction-diffusion and all shape-mode exports change, as intended.
+
+**Expected visible changes for users:** shape-clipped parts come out at their CAD size (slightly smaller than before); reaction-diffusion patterns shift slightly and lose their tile seams; hyperuniform and reaction-diffusion patterns in shape mode now match the preview and stay put when rotating/offsetting.
+
+Also removed: `main-names.json`, a test-script scratch file accidentally committed in v0.8.1.

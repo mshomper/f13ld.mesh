@@ -56,6 +56,28 @@
 // distance is in cell-local-isotropic units; we return d · geomean(L2W_x/y/z).
 // Geomean equals 5 by construction (since geomean(cellScale)=1), so isotropic
 // recipes are bit-identical to v0.5.0-rc21.
+// v0.8.2: worst-case physical strut radius in mm at the user's cell size.
+// Derived from buildBeamSDF's own unit chain: cell-local radius r spans a
+// [-1,1] cell, world = local·5/cellScale, mm = world·cellSizeMm/10, so
+// r_mm = r·cellSizeMm/(2·cellScale). New schema: r = 2·radius_x/scale_x and
+// cellScale = cell/scale_x, giving radius_x·cellSizeMm/cell. Old schema:
+// radius·cellSizeMm/(2·cell_scale). Used by trim-to-nodes for its inset.
+function beamStrutRadiusMm(geom, cellSizeMm){
+  geom=geom||{};
+  let sxyz=null;
+  if(Array.isArray(geom.scale_xyz)&&geom.scale_xyz.length===3&&geom.scale_xyz.every(v=>isFinite(v)&&v>0)) sxyz=geom.scale_xyz;
+  else if([geom.cell_scale_x,geom.cell_scale_y,geom.cell_scale_z].every(v=>typeof v==='number'&&v>0)) sxyz=[geom.cell_scale_x,geom.cell_scale_y,geom.cell_scale_z];
+  const cell=geom.cell, isNew=sxyz!==null&&typeof cell==='number'&&isFinite(cell)&&cell>0;
+  if(isNew&&typeof geom.radius_x==='number'&&geom.radius_x>=0){
+    const rx=geom.radius_x;
+    const ry=(typeof geom.radius_y==='number'&&geom.radius_y>=0)?geom.radius_y:rx;
+    const rz=(typeof geom.radius_z==='number'&&geom.radius_z>=0)?geom.radius_z:rx;
+    return Math.max(rx,ry,rz)*cellSizeMm/cell;
+  }
+  const r=(typeof geom.radius==='number'&&geom.radius>=0)?geom.radius:0.1;
+  const cs=isNew?1:((typeof geom.cell_scale==='number'&&geom.cell_scale>0)?geom.cell_scale:1);
+  return r*cellSizeMm/(2*cs);
+}
 function buildBeamSDF(json, pruneCtx){
   const beams=json.beams||[];
   const geom=json.geometry||{};

@@ -60,17 +60,23 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   var b1_mm=designK.length>0?designK[0].b1*scale:(bw*.5/Math.sqrt(params.huEll||1)*cellSizeMm);
   var b2_mm=designK.length>0?designK[0].b2*scale:(bw*.5*Math.sqrt(params.huEll||1)*cellSizeMm);
   var p_=designK.cross||2,m_=designK.sharp||1,Rc_=Math.pow(12.25,1/m_),reach=Math.max(a_mm*Math.sqrt(Rc_),b1_mm*Math.pow(Rc_,1/p_),b2_mm*Math.pow(Rc_,1/p_));
-  var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
-  var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
+  // v0.8.2: tiles are anchored at -cellSizeMm/2 — the preview cell's origin
+  // (world -5) — not at the bake box corner. The old bbox anchor shifted the
+  // pattern relative to preview, and moved it again whenever rotation or
+  // offset changed the rotation-aware bake box.
+  var A0=-cellSizeMm*0.5;
+  var t0x=Math.floor((bbox.mnx-A0)/cellSizeMm),t0y=Math.floor((bbox.mny-A0)/cellSizeMm),t0z=Math.floor((bbox.mnz-A0)/cellSizeMm);
+  var nTx=Math.ceil((bbox.mxx-A0)/cellSizeMm)-t0x,nTy=Math.ceil((bbox.mxy-A0)/cellSizeMm)-t0y,nTz=Math.ceil((bbox.mxz-A0)/cellSizeMm)-t0z;
+  var ox=A0+t0x*cellSizeMm,oy=A0+t0y*cellSizeMm,oz=A0+t0z*cellSizeMm;
   var pad=Math.max(2,Math.ceil(reach/cellSizeMm));
   var kernels=[];
   for(var tz=-pad;tz<nTz+pad;tz++)for(var ty=-pad;ty<nTy+pad;ty++)for(var tx=-pad;tx<nTx+pad;tx++){
     for(var ki=0;ki<designK.length;ki++){
       var dk=designK[ki];
       kernels.push({
-        px:bbox.mnx+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
-        py:bbox.mny+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
-        pz:bbox.mnz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
+        px:ox+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
+        py:oy+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
+        pz:oz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
         tx:dk.tx,ty:dk.ty,tz:dk.tz,
         n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
         n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
@@ -79,8 +85,8 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   }
   var cutoff=reach;
   var cs=Math.max(cutoff,1e-6);
-  var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
-  var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
+  var hmnx=ox-pad*cellSizeMm,hmny=oy-pad*cellSizeMm,hmnz=oz-pad*cellSizeMm;
+  var hmxx=ox+(nTx+pad)*cellSizeMm,hmxy=oy+(nTy+pad)*cellSizeMm,hmxz=oz+(nTz+pad)*cellSizeMm;
   var hddx=hmxx-hmnx,hddy=hmxy-hmny,hddz=hmxz-hmnz;
   var nx=Math.max(1,Math.ceil(hddx/cs)),ny=Math.max(1,Math.ceil(hddy/cs)),nz=Math.max(1,Math.ceil(hddz/cs));
   var buckets=new Array(nx*ny*nz);

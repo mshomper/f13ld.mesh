@@ -266,7 +266,11 @@ self.onmessage=async function(e){
             const qz=Math.max(bminZ-pz, pz-bmaxZ, 0);
             return Math.sqrt(qx*qx+qy*qy+qz*qz);
           }
-          const fu=u*(N-1), fv=v*(N-1), fw=w*(N-1);
+          // v0.8.2: the grid is baked at voxel CENTRES ((i+0.5)/N), the same
+          // convention the preview's texture lookup uses. Reading it as if
+          // values sat on voxel corners (u*(N-1)) scaled the shape by N/(N-1)
+          // about its centre — ~0.4 mm too big per side on a 50 mm part at Draft.
+          const fu=Math.min(Math.max(u*N-0.5,0),N-1), fv=Math.min(Math.max(v*N-0.5,0),N-1), fw=Math.min(Math.max(w*N-0.5,0),N-1);
           const i0=Math.floor(fu)|0, j0=Math.floor(fv)|0, k0=Math.floor(fw)|0;
           const i1=i0+1<N?i0+1:N-1, j1=j0+1<N?j0+1:N-1, k1=k0+1<N?k0+1:N-1;
           const tu=fu-i0, tv=fv-j0, tw=fw-k0;
@@ -334,16 +338,9 @@ self.onmessage=async function(e){
           // Effective worst-case radius in mm — used for inset auto-clamping.
           // New schema: max over per-axis radii (already in mm).
           // Old schema: scalar radius (cell-local) × cellSizeMm/2.
-          let radiusMm;
-          if(isNewP && typeof geomP.radius_x==='number'){
-            const rxP = geomP.radius_x;
-            const ryP = (typeof geomP.radius_y==='number') ? geomP.radius_y : rxP;
-            const rzP = (typeof geomP.radius_z==='number') ? geomP.radius_z : rxP;
-            radiusMm = Math.max(rxP, ryP, rzP);
-          } else {
-            const radiusLocal = (typeof geomP.radius==='number' && geomP.radius>=0) ? geomP.radius : 0.1;
-            radiusMm = radiusLocal * d.cellSizeMm / 2;
-          }
+          // v0.8.2: physical radius at the user's cell size (was: new-schema
+          // radius_x not scaled by cellSizeMm/cell; old schema ignored cell_scale).
+          const radiusMm = beamStrutRadiusMm(geomP, d.cellSizeMm);
           // v0.5.0-rc18: auto-clamp the inset so it's never tighter than the
           // shape SDF discretization. Trilinear interpolation can mis-classify
           // endpoints by up to ~½ voxel; using full voxel size as the floor
@@ -528,45 +525,58 @@ self.onmessage=async function(e){
       self.postMessage({type:'progress',stage:lastStage+'...'});
       currentVoxelEdge = eCoarseEdge; // v0.5.0-rc19: short-circuit threshold tracks pass edge
       let eCoarseMfld=safeLevelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},eCoarseEdge,'coarse pass');
-      if(eCoarseMfld.isEmpty()){eCoarseMfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
-      lastStage='extracting coarse bbox';
-      const ecm=eCoarseMfld.getMesh(),evp=ecm.vertProperties;
-      let emnx=Infinity,emny=Infinity,emnz=Infinity,emxx=-Infinity,emxy=-Infinity,emxz=-Infinity;
-      for(let i=0;i<evp.length;i+=3){
-        if(evp[i  ]<emnx)emnx=evp[i  ]; if(evp[i  ]>emxx)emxx=evp[i  ];
-        if(evp[i+1]<emny)emny=evp[i+1]; if(evp[i+1]>emxy)emxy=evp[i+1];
-        if(evp[i+2]<emnz)emnz=evp[i+2]; if(evp[i+2]>emxz)emxz=evp[i+2];
+      // v0.8.2: the coarse pass samples at 4× the fine edge, so struts or walls
+      // thinner than that can fall between its samples. An empty coarse result
+      // therefore no longer means "empty part" — fall back to meshing the full
+      // box, and only the fine pass decides emptiness. When the coarse pass does
+      // find surface, pad its box by a whole coarse voxel (was 2 fine voxels,
+      // smaller than the coarse voxel itself, so missed features near the
+      // extremes could be cut off).
+      let eInner;
+      if(eCoarseMfld.isEmpty()){
+        eCoarseMfld.delete();
+        self.postMessage({type:'progress',stage:'coarse pass found no surface (features thinner than '+eCoarseEdge.toFixed(2)+' mm) — meshing full box...'});
+        eInner={mnx:bbox.mnx,mxx:bbox.mxx,mny:bbox.mny,mxy:bbox.mxy,mnz:bbox.mnz,mxz:bbox.mxz};
+      } else {
+        lastStage='extracting coarse bbox';
+        const ecm=eCoarseMfld.getMesh(),evp=ecm.vertProperties;
+        let emnx=Infinity,emny=Infinity,emnz=Infinity,emxx=-Infinity,emxy=-Infinity,emxz=-Infinity;
+        for(let i=0;i<evp.length;i+=3){
+          if(evp[i  ]<emnx)emnx=evp[i  ]; if(evp[i  ]>emxx)emxx=evp[i  ];
+          if(evp[i+1]<emny)emny=evp[i+1]; if(evp[i+1]>emxy)emxy=evp[i+1];
+          if(evp[i+2]<emnz)emnz=evp[i+2]; if(evp[i+2]>emxz)emxz=evp[i+2];
+        }
+        // ── Coarse-pass diagnostic (v0.5.1-rc4.0b) ────────────────────────────
+        // The earlier rc4.0a memory-projection/auto-coarsen guard lived here. It
+        // was removed: the coarse pass undersamples thin walls, so its triangle
+        // count cannot distinguish a safe export from a runaway one (a dense 2mm
+        // spinodoid and a sparse 8mm one produce near-identical coarse tris). The
+        // real guard now runs on the MAIN THREAD before dispatch — a feature-to-
+        // voxel-edge ratio check (Layer 1), backed by a wall-clock timeout
+        // (Layer 2). We keep a console-only coarse-tris log purely for calibration
+        // reference; it drives no decision. coarseVox now reports ACTUAL voxels
+        // (the old /1e6 rounding made it read 0 for small parts).
+        const coarseTris = ecm.triVerts.length/3;
+        const coarseVoxActual = Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3));
+        self.postMessage({type:'diag',diag:{
+          coarseTris, coarseVox: coarseVoxActual, eCoarseEdge,
+          fineEdgeMm: relEdgeMm
+        }});
+        eCoarseMfld.delete();
+        const ePad=eCoarseEdge+relEdgeMm*2;
+        eInner={
+          mnx:Math.max(bbox.mnx,emnx-ePad),mxx:Math.min(bbox.mxx,emxx+ePad),
+          mny:Math.max(bbox.mny,emny-ePad),mxy:Math.min(bbox.mxy,emxy+ePad),
+          mnz:Math.max(bbox.mnz,emnz-ePad),mxz:Math.min(bbox.mxz,emxz+ePad)
+        };
       }
-      // ── Coarse-pass diagnostic (v0.5.1-rc4.0b) ────────────────────────────
-      // The earlier rc4.0a memory-projection/auto-coarsen guard lived here. It
-      // was removed: the coarse pass undersamples thin walls, so its triangle
-      // count cannot distinguish a safe export from a runaway one (a dense 2mm
-      // spinodoid and a sparse 8mm one produce near-identical coarse tris). The
-      // real guard now runs on the MAIN THREAD before dispatch — a feature-to-
-      // voxel-edge ratio check (Layer 1), backed by a wall-clock timeout
-      // (Layer 2). We keep a console-only coarse-tris log purely for calibration
-      // reference; it drives no decision. coarseVox now reports ACTUAL voxels
-      // (the old /1e6 rounding made it read 0 for small parts).
-      const coarseTris = ecm.triVerts.length/3;
-      const coarseVoxActual = Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3));
-      self.postMessage({type:'diag',diag:{
-        coarseTris, coarseVox: coarseVoxActual, eCoarseEdge,
-        fineEdgeMm: relEdgeMm
-      }});
-      eCoarseMfld.delete();
-      const ePad=relEdgeMm*2;
-      const eInner={
-        mnx:Math.max(bbox.mnx,emnx-ePad),mxx:Math.min(bbox.mxx,emxx+ePad),
-        mny:Math.max(bbox.mny,emny-ePad),mxy:Math.min(bbox.mxy,emxy+ePad),
-        mnz:Math.max(bbox.mnz,emnz-ePad),mxz:Math.min(bbox.mxz,emxz+ePad)
-      };
       const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
       self.postMessage({type:'progress',stage:lastStage+'...'});
       const tLevelSet=performance.now();
       currentVoxelEdge = relEdgeMm; // v0.5.0-rc19: short-circuit threshold tracks pass edge
       mfld=safeLevelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
-      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh in fine pass.');}
+      if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
       // Shape-sdf export mode falls through to the unified extract+simplify+done
       // block below. msLevelSet captured here so timings-pill stays accurate.

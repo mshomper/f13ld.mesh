@@ -6,25 +6,11 @@
 
 // ── Field baking via worker ──────────────────────────────────────────────────
 
+// v0.9.0: each family descriptor decides (families/fam-*.js → isPeriodic).
 function recipeIsPeriodic(recipe){
   if(!recipe) return false;
-  if(recipe.family==='tpms') return true;
-  if(recipe.family==='wave') return true;  // cosine sums are 2pi-periodic; one seamless cell across [-5,5]
-  if(recipe.family==='beam') return true;  // v0.5.0-rc16: cubic tile via wrap+halo neighbors
-  if(recipe.family==='bundle'){
-    // v0.6.5: tile only when a small exact Z period exists — i.e. no warp. Warp
-    // is generally incommensurate with the twist, so no small period exists;
-    // tiling a giant 'period' cell drops the shape at the cell center (twist~0,
-    // mirror-symmetric) and under-resolves Z. Warped bundles bake continuously
-    // over the shape bbox instead (matches the export's continuous evaluation).
-    const wm=(recipe.json.geometry&&recipe.json.geometry.warp_mode)||0;
-    return wm===0;
-  }
-  if(recipe.family==='grain'){
-    const ft=recipe.json.field&&recipe.json.field.type;
-    return ft==='reactiondiffusion';
-  }
-  return false; // noise, spinodoid, GRF, HU all stochastic
+  const d=familyOf(recipe);
+  return !!(d && typeof d.isPeriodic==='function' && d.isPeriodic(recipe));
 }
 function _bakeFieldSingle(recipe, N, opts){
   return new Promise((resolve,reject)=>{
@@ -73,7 +59,8 @@ function bakeField(recipe, N, opts){
       }
       const halfR=Math.max((maxV-minV)*0.5,0.001), lip=Math.max(maxG/halfR*1.1,0.05);
       let postMin=minV, postMax=maxV;
-      if(recipe.family==='noise'){const _ns=recipe.json&&recipe.json.surface; if(_ns&&_ns.norm_min!=null&&_ns.norm_max!=null){postMin=_ns.norm_min; postMax=_ns.norm_max;} else {const range=maxV-minV; postMin=minV-range*0.05; postMax=maxV+range*0.05;}}
+      const _fd=familyOf(recipe);
+      if(_fd && typeof _fd.rawRange==='function'){const rr=_fd.rawRange(recipe,minV,maxV); postMin=rr.min; postMax=rr.max;}
       resolve({data:field,N,fieldMin:postMin,fieldMax:postMax,lipschitz:lip,
         ms:Math.round(performance.now()-t0),worldMin:wMin,worldMax:wMax,isPeriodic:false,topology});
     }
@@ -88,7 +75,7 @@ function bakeField(recipe, N, opts){
           wk.terminate(); if(++done===slabs.length && !failed) finalize();
         }else if(d.type==='error'){ if(!failed){failed=true; cleanup(); reject(new Error(d.message));} }
         else if(d.type==='baked'){
-          // v0.8.1: the worker only slab-bakes noise/grain; any other family
+          // v0.8.1: the worker only slab-bakes stochastic families; any other family
           // answers with a whole grid. Fail loudly instead of waiting forever.
           if(!failed){failed=true; cleanup(); reject(new Error('Slab bake not supported for '+recipe.family+' recipes.'));}
         }
@@ -231,14 +218,15 @@ function waveSeamTooltip(a){
   if(a.extra>0) head+=' (+'+a.extra+' more)';
   return head+'\nThe exported 3MF samples the field directly and is seam-free.';
 }
-// Show/hide the badge for the current recipe (wave + inexact only).
+// Show/hide the seam badge for the current recipe (v0.9.0: the family's
+// seamWarning decides; today only wave with inexact mode ratios shows it).
 function updateSeamPill(recipe){
   if(!seamPill) return;
-  if(!recipe || recipe.family!=='wave'){ seamPill.style.display='none'; return; }
-  const a=analyzeWaveTiling(recipe);
-  if(a.exact){ seamPill.style.display='none'; return; }
-  seamPill.textContent='\u26a0 tiles with seams';
-  seamPill.title=waveSeamTooltip(a);
+  const d=familyOf(recipe);
+  const w=(d && typeof d.seamWarning==='function') ? d.seamWarning(recipe) : null;
+  if(!w){ seamPill.style.display='none'; return; }
+  seamPill.textContent=w.text;
+  seamPill.title=w.title;
   seamPill.style.display='block';
 }
 

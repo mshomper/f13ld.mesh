@@ -63,14 +63,17 @@ async function triggerPreview(quality){
   // v0.8.1: only stochastic fields (noise, grain) get the raw normalized bake.
   // A warped bundle is non-periodic but is a true SDF; routing it here made the
   // slab-parallel bake wait forever for slabs the worker never sends.
-  const needsRawBake=!periodic && (currentRecipe.family==='noise' || currentRecipe.family==='grain');
+  // v0.9.0: "stochastic" is a family descriptor flag.
+  const famDesc=familyOf(currentRecipe);
+  const isStochastic=!!(famDesc && famDesc.stochastic);
+  const needsRawBake=!periodic && isStochastic;
   let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
   if(!periodic&&importedShape){
     // Stochastic field + shape: bake strategy depends on field type.
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     const s=10/cellSizeMm;
     const b=importedShape.bbox;
-    const isHUField=currentRecipe.json?.field?.type==='hyperuniform';
+    const isHUField=!!(famDesc && typeof famDesc.hyperuniform==='function' && famDesc.hyperuniform(currentRecipe));
     if(isHUField){
       // HU fields: bake ONE periodic design cell, shader tiles via GL_REPEAT.
       // Orders of magnitude faster than baking the full bbox — cost is fixed
@@ -113,9 +116,8 @@ async function triggerPreview(quality){
       // v0.6.5: bundle is a true SDF (not a stochastic field), so bake it raw —
       // no [0,1] normalization — continuously over the shape AABB. twist/warp
       // accumulate up the shape exactly as in the export; no tiling, no mirror.
-      const isBundle=currentRecipe.family==='bundle';
-      bakeOpts={isPeriodic:false,bakeRaw:!isBundle,worldMin:wMin,worldMax:wMax};
-      if(!isBundle) bakeOpts.shapeCtx={cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}};
+      bakeOpts={isPeriodic:false,bakeRaw:isStochastic,worldMin:wMin,worldMax:wMax};
+      if(isStochastic) bakeOpts.shapeCtx={cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}};
       rm.setWorldBounds(wMin,wMax,false);
     }
     await new Promise(r=>setTimeout(r,0));
@@ -155,28 +157,17 @@ async function triggerPreview(quality){
   // period along an axis. Noise and grain don't have a periodic cell with a
   // well-defined period, so they keep [-5,5]³.
   let pMin=[-5,-5,-5], pMax=[5,5,5];
-  if(currentRecipe.family==='tpms'){
-    const b=computeTPMSBakeBounds(currentRecipe);
-    pMin=b.wMin; pMax=b.wMax;
-    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
-  } else if(currentRecipe.family==='beam'){
-    const b=computeBeamBakeBounds(currentRecipe);
-    pMin=b.wMin; pMax=b.wMax;
-    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
-  } else if(currentRecipe.family==='bundle'){
-    const b=computeBundleBakeBounds(currentRecipe);
-    pMin=b.wMin; pMax=b.wMax;
-    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
-  } else if(currentRecipe.family==='wave'){
-    // Non-integer mode indices make the true period a 2x2x2 (or larger)
-    // supercell. Bake that whole supercell so GL_REPEAT tiles seamlessly;
-    // integer recipes return S=1 → [±5,±5,±5] (unchanged fast path). Scale
-    // the bake grid by S (capped at the ultra tier, 192) so each sub-cell
-    // keeps its preview voxel density instead of getting S× coarser.
-    const b=computeWaveBakeBounds(currentRecipe);
-    pMin=b.wMin; pMax=b.wMax;
-    bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
-    if(b.S>1) N=Math.min(192, N*b.S);
+  // v0.9.0: the family's bakeBounds gives the tile (integer cell periods per
+  // axis for anisotropic TPMS/beam, the bundle twist period, the wave
+  // supercell). A supercell (S > 1) scales the bake grid by S, capped at the
+  // ultra tier (192), so each sub-cell keeps its preview voxel density.
+  if(famDesc && typeof famDesc.bakeBounds==='function'){
+    const b=famDesc.bakeBounds(currentRecipe);
+    if(b){
+      pMin=b.wMin; pMax=b.wMax;
+      bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+      if(b.S>1) N=Math.min(192, N*b.S);
+    }
   }
   rm.setWorldBounds(pMin,pMax,periodic);
   if(!importedShape) rm.fitPeriodicBounds(pMin,pMax); // frame the full cell on import; preserves zoom on re-preview

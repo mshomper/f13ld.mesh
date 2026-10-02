@@ -317,7 +317,8 @@ async function _triggerExportImpl(){
     // params, bbox/cellSizeMm, AND structure rotation+offset all change the
     // bake bbox so they DO invalidate).
     let huGridForExport = null;
-    const isHURecipe = currentRecipe.family==='grain' && currentRecipe.json.field?.type==='hyperuniform';
+    const _hd = familyOf(currentRecipe);
+    const isHURecipe = !!(_hd && typeof _hd.hyperuniform==='function' && _hd.hyperuniform(currentRecipe));
     if(isHURecipe){
       const f=currentRecipe.json.field;
       let dirTheta=0, dirPhi=0;
@@ -461,7 +462,8 @@ async function _triggerExportImpl(){
       // v0.5.0-rc18: pruneInsetMult scales the auto-clamped inset (default 1.0,
       // range 1.0–2.0). Worker uses max(beam_radius, voxel_size × multiplier).
       pruneToNodes: (function(){
-        if(currentRecipe.family!=='beam') return false;
+        const _td=familyOf(currentRecipe);
+        if(!(_td && _td.options && _td.options.trimToNodes)) return false;
         const el=document.getElementById('trimToNodes');
         return el ? !!el.checked : true;
       })(),

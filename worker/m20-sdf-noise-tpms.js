@@ -369,3 +369,30 @@ function buildTPMSSDF(json){
   };
 }
 
+// ── Registry (v0.9.0) ───────────────────────────────────────────────────────
+registerSDF('noise', {
+  build(recipe, shapeCtx, normOverride){ return buildNoiseSDF(recipe.json, normOverride); },
+  // Raw noise for the preview bake (moved from m90 in v0.9.0).
+  rawEval(d){
+    const json=d.recipe.json;
+    const surf=json.surface,geom=json.geometry||{};
+    const freq=surf.frequency||.3,ex=surf.scale_x??1,ey=surf.scale_y??1,ez=surf.scale_z??1;
+    // v0.5.0-rc27: noise input = world * freq * scale (was world * SCALE2 * freq * scale;
+    // SCALE2 = 5/π applied to world coords was double-scaling — see buildNoiseSDF
+    // header comment for full rationale).
+    const evalRaw=p=>evalNoiseRaw(surf,p[0]*freq*ex,p[1]*freq*ey,p[2]*freq*ez);
+    const topology={bakeRaw:true,halfW:surf.half_width??0.15,center:surf.center??0,
+      topoMode:geom.mode||'sheet',halfInvert:geom.half_invert||false};
+    return {evalRaw, topology};
+  },
+  // v0.5.0-rc27: pad the empirical [minV, maxV] by ±5% to match F13LD.noise's
+  // prepass convention, unless the recipe carries norm_min/norm_max. The padded
+  // values are cached as recipe._previewFieldMin/Max and reused on export.
+  rawRange(json, minV, maxV){
+    const ns=json.surface;
+    if(ns&&ns.norm_min!=null&&ns.norm_max!=null) return {min: ns.norm_min, max: ns.norm_max};
+    const range=maxV-minV;
+    return {min: minV-range*0.05, max: maxV+range*0.05};
+  },
+});
+registerSDF('tpms', { build(recipe){ return buildTPMSSDF(recipe.json); } });

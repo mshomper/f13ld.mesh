@@ -537,19 +537,10 @@ function assignRecipeToBody(bodyId, recipeId){
 function reloadActiveRecipeIntoPreview(){
   if(!currentRecipe) return;
   const recipe = currentRecipe;
-  // Auto-default cell-size for beam recipes (same as showRecipe).
-  if(recipe.family==='beam'){
-    const cellMm=recipe.json&&recipe.json.geometry&&recipe.json.geometry.cell;
-    if(typeof cellMm==='number'&&isFinite(cellMm)&&cellMm>0){
-      const cellInp=document.getElementById('shapeCellSizeMm');
-      if(cellInp) cellInp.value=parseFloat(cellMm.toPrecision(4));
-    }
-  }
+  // Auto-default cell-size from the family (beam; same as showRecipe).
+  applyFamilyDefaultCellMm(recipe);
   // Update the type badge above the canvas.
-  if(typeof typeBadge !== 'undefined' && typeBadge){
-    typeBadge.className=recipe.family;
-    typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+String(recipe.subtype).toUpperCase();
-  }
+  if(typeof typeBadge !== 'undefined' && typeBadge) applyTypeBadge(typeBadge, recipe);
   // Update the summary panel.
   if(typeof summaryEl !== 'undefined' && summaryEl && typeof renderSummary === 'function'){
     summaryEl.innerHTML=renderSummary(recipe);
@@ -559,10 +550,10 @@ function reloadActiveRecipeIntoPreview(){
   if(trimWrap){
     const cellOv=document.getElementById('cellOverlay');
     const shapeLoaded=cellOv&&cellOv.style.display!=='none';
-    trimWrap.style.display=(shapeLoaded&&recipe.family==='beam')?'inline':'none';
+    trimWrap.style.display=(shapeLoaded&&familyHasTrim(recipe))?'inline':'none';
     const trimMul=document.getElementById('trimInsetWrap');
     const trimTg=document.getElementById('trimToNodes');
-    if(trimMul) trimMul.style.display=(shapeLoaded&&recipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+    if(trimMul) trimMul.style.display=(shapeLoaded&&familyHasTrim(recipe)&&trimTg&&trimTg.checked)?'inline-flex':'none';
   }
   // Trigger preview at current quality.
   if(typeof triggerPreview === 'function'){
@@ -611,7 +602,7 @@ function removeRecipe(recipeId){
 // v0.8.1: recipe library emptied while bodies remain. Bodies stay (solid),
 // the panel explains how to continue, and solid bodies can still be exported.
 function showNoRecipeState(){
-  if(typeof typeBadge !== 'undefined' && typeBadge){ typeBadge.className=''; typeBadge.textContent='NO RECIPE'; }
+  if(typeof typeBadge !== 'undefined' && typeBadge){ typeBadge.className=''; typeBadge.style.cssText=''; typeBadge.textContent='NO RECIPE'; }
   if(typeof summaryEl !== 'undefined' && summaryEl){
     summaryEl.innerHTML='<div class="sec-lbl">no recipe loaded</div>'+
       '<div class="norecipe-note">Your bodies are kept and shown as solid. '+

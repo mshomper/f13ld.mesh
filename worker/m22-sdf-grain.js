@@ -305,3 +305,30 @@ function buildGrainSDF(json,shapeCtx,normOverride,opts){
     return Math.abs(norm-cN)-hN;
   };
 }
+
+// ── Registry (v0.9.0) ───────────────────────────────────────────────────────
+registerSDF('grain', {
+  build(recipe, shapeCtx, normOverride, opts){ return buildGrainSDF(recipe.json, shapeCtx, normOverride, opts); },
+  // Raw field for the preview bake (moved from m90 in v0.9.0). Grain bounds
+  // come from cosine sums under a different convention and stay unpadded.
+  rawEval(d){
+    const json=d.recipe.json;
+    const PI5=Math.PI/5;
+    const f=json.field,g=json.geometry||{};
+    const params=grainParamsFromField(f);
+    const isHU=f.type==='hyperuniform';
+    // HU preview uses cube-mode evaluation (100 kernels, linear scan).
+    // When a shape is imported, evalHUFieldPeriodic wraps kernel distances
+    // to the nearest periodic image for seamless GL_REPEAT tiling.
+    // Full-bbox tiled kernels are only needed for export (buildGrainSDF).
+    const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
+    const kernels=isHU?buildHUKernels(params):null;
+    const huEval=isHU&&d.shapeCtx?evalHUFieldPeriodic:evalHUField;
+    const evalRaw=p=>isHU
+      ?huEval(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10)
+      :evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
+    const topology={bakeRaw:true,rawUnits:true,halfW:g.half_width??0.15,center:g.center??0,
+      topoMode:g.topology||'sheet',halfInvert:g.half_invert||false};
+    return {evalRaw, topology};
+  },
+});

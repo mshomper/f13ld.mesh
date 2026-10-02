@@ -1,6 +1,6 @@
 /* ============================================================
    F13LD.mesh · 99-init.js
-   Boot: ?r= and ?queue= URL ingestion, file drop, shape strip events.
+   Boot: runs the URL loaders (loaders/ld-*.js), file drop, shape strip events.
    ============================================================ */
 'use strict';
 
@@ -12,60 +12,9 @@ function openRecipe(recipe){
     .catch(e=>{ console.error(e); showError('Could not display this recipe — '+(e.message||e)); });
 }
 
-// ── URL ingestion — auto-load recipe from ?r= parameter ──────────────────
-// v0.8.1: URLSearchParams already decodes the value once. Decoding again broke
-// any recipe containing a "%" character; that second decode is now only a
-// fallback for links that were double-encoded.
-(function(){
-  const p=new URLSearchParams(location.search);
-  if(!p.has('r') || p.has('queue')) return;
-  const raw=p.get('r');
-  let json;
-  try{ json=JSON.parse(raw); }
-  catch(e1){
-    try{ json=JSON.parse(decodeURIComponent(raw)); }
-    catch(e2){ setTimeout(()=>showError('Could not read the recipe in this link — '+e1.message),0); return; }
-  }
-  setTimeout(()=>{
-    try{ openRecipe(parseRecipe(json,'Link recipe')); }
-    catch(e){ showError(e.message); }
-  },0);
-})();
-
-// ── URL ingestion — load a saved queue from F13LD.queue via ?queue=CODE ──
-// Stocks the recipe library with up to MAX_RECIPES items. Takes priority over ?r=.
-// v0.8.1: every item is checked before anything is added; unreadable items are
-// skipped and reported instead of stopping the load part-way with no message.
-(function(){
-  const code=new URLSearchParams(location.search).get('queue');
-  if(!code) return;
-  const URL='https://axinljpecycnvfncyhfs.supabase.co/rest/v1/rpc/queue_fetch';
-  const KEY='sb_publishable_DAlrNLqbUZiwkaA6wPSMIw_YUNY85LX';
-  fetch(URL,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json'},body:JSON.stringify({p_code:code})})
-    .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
-    .then(res=>{
-      const items=(res&&res.items)||[];
-      if(!items.length){showError('Queue "'+code+'" is empty or not found.');return;}
-      const good=[], bad=[];
-      items.forEach((it,i)=>{
-        try{ good.push(parseRecipe(it&&it.recipe,'Queue item '+(i+1))); }
-        catch(e){ bad.push(e.message); }
-      });
-      if(!good.length){showError('None of the recipes in queue "'+code+'" could be read. '+bad[0]);return;}
-      const load=good.slice(0, Math.max(0, MAX_RECIPES-recipes.size));
-      if(!load.length){showError('Recipe library is full — clear a recipe before loading a queue.');return;}
-      setTimeout(()=>{
-        for(let i=0;i<load.length-1;i++) setActiveRecipe(load[i]);
-        openRecipe(load[load.length-1]);
-        const notes=[];
-        if(good.length>load.length) notes.push('Loaded '+load.length+' of '+good.length+' — limit is '+MAX_RECIPES+'.');
-        if(bad.length) notes.push(bad.length+' item'+(bad.length>1?'s':'')+' skipped (unreadable).');
-        if(notes.length) showCapToast(notes.join(' '));
-        if(bad.length) console.warn('[queue] skipped items:',bad);
-      },0);
-    })
-    .catch(e=>showError('Could not load queue — '+e.message));
-})();
+// ── URL ingestion (v0.9.0: loaders/ld-*.js register themselves) ─────────────
+// ?queue= (loaders/ld-queue.js) takes priority over ?r= (loaders/ld-link.js).
+runUrlLoaders();
 
 // ── File handling ─────────────────────────────────────────────────────────
 function handleJSON(text,filename){let json;try{json=JSON.parse(text);}catch(e){showError('Invalid JSON in '+(filename||'file')+' — '+e.message);return;}let recipe;try{recipe=parseRecipe(json,filename);}catch(e){showError(e.message);return;}if(filename) recipe.filename=filename;openRecipe(recipe);}

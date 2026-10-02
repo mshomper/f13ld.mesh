@@ -106,6 +106,37 @@ function bakeGridMM(evalFn,N,bbox){
   return grid;
 }
 
+// v0.8.3: one place that turns a grain recipe's field block into kernel/wave
+// parameters (was duplicated here and in m90's raw preview bake). Explicit
+// zeros are kept (κ = 0 isotropic, seed 0) as in F13LD.grain.
+function grainParamsFromField(f){
+  let dirTheta=0,dirPhi=0;
+  if(f.dir_mode==='single'&&f.principal_direction){
+    const[mx,my,mz]=f.principal_direction;
+    dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
+    dirPhi=Math.atan2(my,mx)*180/Math.PI;
+  }
+  return {fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa??6,frequency:f.frequency||.27,rngSeed:f.rng_seed??42,
+    dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,
+    grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,
+    huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};
+}
+// v0.8.3: reaction-diffusion grids are deterministic in their parameters, so
+// keep the last few per worker (weld groups with several RD members, repeated
+// builds) instead of re-running the 48³ simulation each time.
+const _rdGridCache=new Map();
+function cachedRDGrid(rdSys,rdParams,N){
+  const key=rdSys+'|'+N+'|'+JSON.stringify(rdParams);
+  let g=_rdGridCache.get(key);
+  if(!g){
+    g = rdSys==='brusselator'  ? buildBrusselator(rdParams,N)
+      : rdSys==='schnakenberg' ? buildSchnakenberg(rdParams,N)
+      :                          buildGrayScott(rdParams,N);
+    _rdGridCache.set(key,g);
+    if(_rdGridCache.size>4) _rdGridCache.delete(_rdGridCache.keys().next().value);
+  }
+  return g;
+}
 function buildGrainSDF(json,shapeCtx,normOverride,opts){
   const f=json.field,g=json.geometry||{};
   const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
@@ -155,9 +186,7 @@ function buildGrainSDF(json,shapeCtx,normOverride,opts){
     N_rd=48;
     const frac=x=>x-Math.floor(x);
     getUVW=p=>[frac((p[0]/10+0.5)*tile),frac((p[1]/10+0.5)*tile),frac((p[2]/10+0.5)*tile)];
-    const grid = rdSys==='brusselator'  ? buildBrusselator(rdParams,N_rd)
-               : rdSys==='schnakenberg' ? buildSchnakenberg(rdParams,N_rd)
-               :                          buildGrayScott(rdParams,N_rd);
+    const grid = cachedRDGrid(rdSys,rdParams,N_rd);
     return p=>{
       const[u,v,w]=getUVW(p);
       const raw=evalRDField(grid,N_rd,u,v,w);
@@ -166,13 +195,7 @@ function buildGrainSDF(json,shapeCtx,normOverride,opts){
   }
 
   // ── Wave / kernel branch ──────────────────────────────────────────────
-  let dirTheta=0,dirPhi=0;
-  if(f.dir_mode==='single'&&f.principal_direction){
-    const[mx,my,mz]=f.principal_direction;
-    dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
-    dirPhi=Math.atan2(my,mx)*180/Math.PI;
-  }
-  const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa??6,frequency:f.frequency||.27,rngSeed:f.rng_seed??42,dirMode:f.dir_mode||'single',dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};
+  const params=grainParamsFromField(f);
   const isHU=f.type==='hyperuniform';
 
   // ── HU shape mode: full-domain kernel field baked to a grid ───────────

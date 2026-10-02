@@ -201,10 +201,12 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
     const vol=(bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz);
     estTris=Math.round(vol*wallFrac*1.5/(cellSizeMm*edgeMm*edgeMm));
   } else {
-    // Cube mode: small fixed domain, simpler estimate
-    const vol=1000; // 10^3 world units
-    const surfFactor=Math.min(0.3, wallFrac*0.3);
-    estTris=Math.round(vol/Math.pow(edgeMm,3)*surfFactor);
+    // Cube mode (edge in world units; the 10-unit cube is one design cell).
+    // v0.8.3: triangles scale with surface area / edge², not volume / edge³ —
+    // the old form overestimated ~100× at large domains. Constant calibrated
+    // to post-simplify counts (gyroid sheet, 10 mm, Draft ≈ 3.1k tris).
+    const cs=(typeof g.cell_scale==='number'&&g.cell_scale>0)?g.cell_scale:1;
+    estTris=Math.round(500*wallFrac*cs/(edgeMm*edgeMm));
   }
   estTris=Math.max(1000, estTris);
   // Empirical: ~0.12ms per triangle for the full export pipeline. Was 0.08

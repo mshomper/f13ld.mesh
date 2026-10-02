@@ -1,5 +1,6 @@
 /* F13LD.mesh · worker/m20-sdf-noise-tpms.js — Noise + TPMS SDF builders (incl. PI-TPMS, field pairs). */
-// ── SDF closures — all return positive-inside (Manifold convention) ───────
+// ── SDF closures — all return canonical NEGATIVE-inside (see m23 header); the
+//    single flip to Manifold's positive-inside happens in m90's export path ──
 
 // seed -> coordinate-offset (verbatim port from F13LD.noise v0.9.1). Added in
 // noise-input space before type dispatch, matching the canonical tool's sample().
@@ -368,35 +369,3 @@ function buildTPMSSDF(json){
   };
 }
 
-// Compute integer-period bake bounds for a TPMS recipe — preview-only fix
-// for non-integer cell_scale_x/y/z. The raymarcher's R8 field texture uses
-// GL_REPEAT wrap, which only produces seamless tiling when the bake span is
-// an integer multiple of the field's period per axis. The field's period in
-// world units is 10/cs_axis (because freqScale = π·cs_axis/5 maps world
-// [-5,+5] to field [-π·cs_axis,+π·cs_axis]). When cs_axis is non-integer,
-// the default [-5,+5] bake span doesn't span integer periods → the field
-// values at the +5 face don't match the -5 face → REPEAT creates visible
-// diagonal seams.
-//
-// Fix: per axis, choose K = max(1, round(cs_axis)) periods to bake, and set
-// bake half-span = 5·K/cs_axis. K is chosen to keep the bake span close to
-// 10 world units (preserves preview voxel density). For integer cs_axis,
-// K = cs_axis exactly → returns [±5,±5,±5] (identical to current behaviour).
-//
-// Export path is unaffected: Manifold.levelSet evaluates the analytic SDF
-// directly at every voxel — no texture, no wrap, no seams.
-function computeTPMSBakeBounds(recipe){
-  const g=recipe?.json?.geometry||{};
-  const csX=g.cell_scale_x??g.cell_scale??1;
-  const csY=g.cell_scale_y??g.cell_scale??1;
-  const csZ=g.cell_scale_z??g.cell_scale??1;
-  // Defensive — if anything's invalid, fall back to default cube bounds.
-  // buildTPMSSDF will throw the loud error when the SDF is actually called.
-  if(!(csX>0)||!(csY>0)||!(csZ>0))
-    return {wMin:[-5,-5,-5],wMax:[5,5,5]};
-  const Kx=Math.max(1,Math.round(csX));
-  const Ky=Math.max(1,Math.round(csY));
-  const Kz=Math.max(1,Math.round(csZ));
-  const halfX=5*Kx/csX, halfY=5*Ky/csY, halfZ=5*Kz/csZ;
-  return {wMin:[-halfX,-halfY,-halfZ],wMax:[+halfX,+halfY,+halfZ]};
-}

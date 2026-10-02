@@ -32,21 +32,11 @@ self.onmessage=async function(e){
       const wMin=d.worldMin||[-5,-5,-5],wMax=d.worldMax||[5,5,5];
       const sx=(wMax[0]-wMin[0])/N,sy=(wMax[1]-wMin[1])/N,sz=(wMax[2]-wMin[2])/N;
       const fam=d.recipe.family,json=d.recipe.json;
-      const PI5=Math.PI/5,SCALE2=5.0/Math.PI;
+      const PI5=Math.PI/5;
       let evalRaw=null,topology=null;
       if(fam==='grain'){
         const f=json.field,g=json.geometry||{};
-        let dirTheta=0,dirPhi=0;
-        if(f.dir_mode==='single'&&f.principal_direction){
-          const[mx,my,mz]=f.principal_direction;
-          dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
-          dirPhi=Math.atan2(my,mx)*180/Math.PI;
-        }
-        const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa??6,
-          frequency:f.frequency||.27,rngSeed:f.rng_seed??42,dirMode:f.dir_mode||'single',
-          dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,
-          wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,
-          huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};
+        const params=grainParamsFromField(f);
         const isHU=f.type==='hyperuniform';
         // HU preview uses cube-mode evaluation (100 kernels, linear scan).
         // When a shape is imported, evalHUFieldPeriodic wraps kernel distances
@@ -122,8 +112,6 @@ self.onmessage=async function(e){
       const sx=(wMax[0]-wMin[0])/N, sy=(wMax[1]-wMin[1])/N, sz=(wMax[2]-wMin[2])/N;
       // Pass shapeCtx for HU domain-spanning kernels (stochastic with shape)
       const shapeCtx=d.shapeCtx||null;
-      // W2b -- TEMPORARY DEBUG (remove before production)
-      if(d.bodies&&d.bodies.length){ try{ d.bodies.forEach(function(_b,_i){var _cx=(_b.bbox.mnx+_b.bbox.mxx)/2,_cy=(_b.bbox.mny+_b.bbox.mxy)/2,_cz=(_b.bbox.mnz+_b.bbox.mxz)/2;var _c=composeBodyMM(_b);console.log('[weld worker] body'+_i,(_b.solid?'SOLID':'lattice'),'comp@center='+_c([_cx,_cy,_cz]).toFixed(3),'centerMM',_cx.toFixed(1),_cy.toFixed(1),_cz.toFixed(1),'bbox',JSON.stringify(_b.bbox));});}catch(_e){console.log('[weld worker] diag err',_e);} }
       // W2 -- preview hook: assembly when bodies[] present, scaled mm->world by mmScale
       const sdfFn=(d.bodies&&d.bodies.length)?(function(){var _a=buildAssemblySDF(d.bodies,d.blendK,true),_s=d.mmScale||1;return function(p){return _a([p[0]/_s,p[1]/_s,p[2]/_s])*_s;};})():buildSDF(d.recipe,shapeCtx);
       const field=new Float32Array(N*N*N);
@@ -599,8 +587,7 @@ self.onmessage=async function(e){
       throw new Error('unknown worker mode: '+d.mode);
     }
     // ── Unified extract + meshopt simplify + done ─────────────────────────────
-    // All paths (shape CSG, cube-export, cube-preview) funnel here with mfld set.
-    // Shape-sdf export path returned early above with its own done message.
+    // All export paths (shape CSG, weld group, cube) funnel here with mfld set.
     lastStage='extracting mesh';
     self.postMessage({type:'progress',stage:'extracting mesh...'});
     const extractedMesh=mfld.getMesh();

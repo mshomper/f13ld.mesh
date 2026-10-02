@@ -101,11 +101,12 @@ function bakeField(recipe, N, opts){
 // ── Preview via Raymarcher (no Manifold, instant) ────────────────────────────
 const PREVIEW_BAKE_N={draft:48,low:64,med:96,high:128,ultra:192};
 
-// Main-thread copy of computeTPMSBakeBounds — see the identical helper inside
-// the worker template literal at ~line 2200 for full rationale. Triggered from
-// triggerPreview before it sends the bake job to the worker. The function must
-// live here (outside the worker template) because triggerPreview runs in the
-// main thread and needs to populate bakeOpts.worldMin/worldMax before postMessage.
+// Integer-period preview bake bounds for a TPMS recipe — preview-only fix for
+// non-integer cell_scale_x/y/z. The raymarcher's field texture uses GL_REPEAT,
+// which only tiles seamlessly when the bake span along each axis is a whole
+// number of periods: per axis, K = max(1, round(cs)) periods, half-span 5·K/cs.
+// Integer cs → [±5,±5,±5]. Export is unaffected (analytic SDF, no texture).
+// Called by triggerPreview to set bakeOpts.worldMin/worldMax.
 function computeTPMSBakeBounds(recipe){
   const g=recipe?.json?.geometry||{};
   const csX=g.cell_scale_x??g.cell_scale??1;

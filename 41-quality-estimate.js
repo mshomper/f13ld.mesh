@@ -79,7 +79,7 @@ function updateExportEstimate(){
     } else {
       const domainEl=document.getElementById('expDomainMm');
       const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
-      edgeMm=(QUAL_EDGE_MM[currentExportQual]||.10)*10/domainMm;
+      edgeMm=clampEdgeWorld((QUAL_EDGE_MM[currentExportQual]||.10)*10/domainMm, getMaxExportVoxels(currentRecipe)).safeEdge;
     }
     const{estTris,estSec}=estimateMeshStats(currentRecipe,edgeMm,bbox,cellSizeMm);
     // Rough bake time estimate: empirically ~4µs per voxel on typical meshes;

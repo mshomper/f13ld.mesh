@@ -36,7 +36,8 @@ function makeShapeSampler(buf, N, bbox){
       ext=Math.sqrt(qx*qx+qy*qy+qz*qz);
       u=u<0?0:(u>1?1:u); v=v<0?0:(v>1?1:v); w=w<0?0:(w>1?1:w);
     }
-    var fu=u*(N-1), fv=v*(N-1), fw=w*(N-1);
+    // v0.8.2: voxel-centre convention (grid baked at (i+0.5)/N) — see m90.
+    var fu=Math.min(Math.max(u*N-0.5,0),N-1), fv=Math.min(Math.max(v*N-0.5,0),N-1), fw=Math.min(Math.max(w*N-0.5,0),N-1);
     var i0=Math.floor(fu)|0, j0=Math.floor(fv)|0, k0=Math.floor(fw)|0;
     var i1=i0+1<N?i0+1:N-1, j1=j0+1<N?j0+1:N-1, k1=k0+1<N?k0+1:N-1;
     var tu=fu-i0, tv=fv-j0, tw=fw-k0;
@@ -49,7 +50,10 @@ function makeShapeSampler(buf, N, bbox){
 function composeBodyMM(spec){
   var shp=makeShapeSampler(spec.shapeSdfData, spec.shapeN, spec.bbox);   // neg-inside mm
   if(spec.solid || !spec.recipe){ return function(p){ return shp(p[0],p[1],p[2]); }; }
-  var sc=buildSDF(spec.recipe, null);                                    // neg-inside world
+  // v0.8.2: {periodic:true} — a weld member tiles its lattice through the whole
+  // body. Hyperuniform otherwise used the single-cell evaluator and was all
+  // void/solid outside world [-5,5].
+  var sc=buildSDF(spec.recipe, null, {periodic:true});                   // neg-inside world
   var mmToWorld=10/spec.cellSizeMm, worldToMm=spec.cellSizeMm/10;
   return function(p){
     var sh=shp(p[0],p[1],p[2]);
@@ -76,7 +80,7 @@ function buildAssemblySDF(specs, blendK, rawPreview){
     return acc;
   };
 }
-function buildSDF(recipe,shapeCtx){
+function buildSDF(recipe,shapeCtx,opts){
   // v0.5.0-rc14: if the preview cached fieldMin/Max on the recipe, forward
   // them as a normalization override. Builders use the cached range instead
   // of their own pre-scan — guarantees preview/export agreement by
@@ -87,7 +91,7 @@ function buildSDF(recipe,shapeCtx){
     : null;
   if(recipe.family==='noise')return buildNoiseSDF(recipe.json,normOverride);
   if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
-  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride);
+  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride,opts);
   if(recipe.family==='beam') return buildBeamSDF(recipe.json);
   if(recipe.family==='bundle')return buildBundleSDF(recipe.json);
   if(recipe.family==='wave')  return buildWaveSDF(recipe.json);

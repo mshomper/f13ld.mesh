@@ -13,8 +13,14 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   var p_=designK.cross||2,m_=designK.sharp||1,Rc_=Math.pow(12.25,1/m_),reach=Math.max(a_mm*Math.sqrt(Rc_),b1_mm*Math.pow(Rc_,1/p_),b2_mm*Math.pow(Rc_,1/p_));
   // Tile grid: how many cells span the bbox, +1 cell padding per side
   // for Gaussian bleed across cell boundaries
-  var ddx=bbox.mxx-bbox.mnx,ddy=bbox.mxy-bbox.mny,ddz=bbox.mxz-bbox.mnz;
-  var nTx=Math.ceil(ddx/cellSizeMm),nTy=Math.ceil(ddy/cellSizeMm),nTz=Math.ceil(ddz/cellSizeMm);
+  // v0.8.2: tiles are anchored at -cellSizeMm/2 — the preview cell's origin
+  // (world -5) — not at the bake box corner. The old bbox anchor shifted the
+  // pattern relative to preview, and moved it again whenever rotation or
+  // offset changed the rotation-aware bake box.
+  var A0=-cellSizeMm*0.5;
+  var t0x=Math.floor((bbox.mnx-A0)/cellSizeMm),t0y=Math.floor((bbox.mny-A0)/cellSizeMm),t0z=Math.floor((bbox.mnz-A0)/cellSizeMm);
+  var nTx=Math.ceil((bbox.mxx-A0)/cellSizeMm)-t0x,nTy=Math.ceil((bbox.mxy-A0)/cellSizeMm)-t0y,nTz=Math.ceil((bbox.mxz-A0)/cellSizeMm)-t0z;
+  var ox=A0+t0x*cellSizeMm,oy=A0+t0y*cellSizeMm,oz=A0+t0z*cellSizeMm;
   // Padding: 2 cell minimum for Gaussian bleed across periodic cell boundaries
   // (preview) and export margin; more if kernel reach exceeds cell size
   var pad=Math.max(2,Math.ceil(reach/cellSizeMm));
@@ -26,9 +32,9 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
           var dk=designK[ki];
           // Map kernel position from [-π,π] → [0,cellSizeMm] then offset by tile
           kernels.push({
-            px:bbox.mnx+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
-            py:bbox.mny+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
-            pz:bbox.mnz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
+            px:ox+(dk.px+Math.PI)/TP*cellSizeMm+tx*cellSizeMm,
+            py:oy+(dk.py+Math.PI)/TP*cellSizeMm+ty*cellSizeMm,
+            pz:oz+(dk.pz+Math.PI)/TP*cellSizeMm+tz*cellSizeMm,
             tx:dk.tx,ty:dk.ty,tz:dk.tz,
             n1x:dk.n1x,n1y:dk.n1y,n1z:dk.n1z,
             n2x:dk.n2x,n2y:dk.n2y,n2z:dk.n2z,
@@ -40,8 +46,8 @@ function buildHUKernelsMM(params,bbox,cellSizeMm){
   // ── Spatial hash for O(1) kernel queries ────────────────────────────────
   var cutoff=reach;
   var cs=Math.max(cutoff,1e-6);
-  var hmnx=bbox.mnx-pad*cellSizeMm,hmny=bbox.mny-pad*cellSizeMm,hmnz=bbox.mnz-pad*cellSizeMm;
-  var hmxx=bbox.mnx+(nTx+pad)*cellSizeMm,hmxy=bbox.mny+(nTy+pad)*cellSizeMm,hmxz=bbox.mnz+(nTz+pad)*cellSizeMm;
+  var hmnx=ox-pad*cellSizeMm,hmny=oy-pad*cellSizeMm,hmnz=oz-pad*cellSizeMm;
+  var hmxx=ox+(nTx+pad)*cellSizeMm,hmxy=oy+(nTy+pad)*cellSizeMm,hmxz=oz+(nTz+pad)*cellSizeMm;
   var hddx=hmxx-hmnx,hddy=hmxy-hmny,hddz=hmxz-hmnz;
   var nx=Math.max(1,Math.ceil(hddx/cs)),ny=Math.max(1,Math.ceil(hddy/cs)),nz=Math.max(1,Math.ceil(hddz/cs));
   var buckets=new Array(nx*ny*nz);
@@ -100,7 +106,7 @@ function bakeGridMM(evalFn,N,bbox){
   return grid;
 }
 
-function buildGrainSDF(json,shapeCtx,normOverride){
+function buildGrainSDF(json,shapeCtx,normOverride,opts){
   const f=json.field,g=json.geometry||{};
   const center=g.center??0,halfW=g.half_width??.15,topo=g.topology||'sheet';
   // Canonical SDF topology application — used by RD path (which has no
@@ -140,23 +146,15 @@ function buildGrainSDF(json,shapeCtx,normOverride){
     };
     const tile=f.rd_tile||1;
     let N_rd,getUVW;
-    if(shapeCtx){
-      // Shape mode: same 48³ simulation as cube preview.
-      // Period = cellSizeMm so every tile in the domain matches the user's designed cell.
-      // Seamless tiling is guaranteed by the periodic BCs in all three RD builders.
-      const {cellSizeMm,bbox}=shapeCtx;
-      N_rd=48;
-      const frac=x=>x-Math.floor(x);
-      getUVW=p=>{
-        const mmx=p[0]*cellSizeMm/10,mmy=p[1]*cellSizeMm/10,mmz=p[2]*cellSizeMm/10;
-        return[frac((mmx-bbox.mnx)/cellSizeMm*tile),frac((mmy-bbox.mny)/cellSizeMm*tile),frac((mmz-bbox.mnz)/cellSizeMm*tile)];
-      };
-    }else{
-      // Cube preview: standard 48³ grid mapped to [-5,5] world space
-      N_rd=48;
-      const frac=x=>x-Math.floor(x);
-      getUVW=p=>[frac((p[0]/10+0.5)*tile),frac((p[1]/10+0.5)*tile),frac((p[2]/10+0.5)*tile)];
-    }
+    // v0.8.2: one cell mapping for cube and shape mode. The preview tiles the
+    // world [-5,5] cell (GL_REPEAT), i.e. cells start at -cellSizeMm/2 in mm.
+    // Shape-mode export used to start cells at the part's bounding-box corner,
+    // shifting the pattern by (bbox.min + cell/2) mod cell relative to preview.
+    // p is in world units (mm·10/cellSizeMm) in both modes, so the cube mapping
+    // is exactly the preview's.
+    N_rd=48;
+    const frac=x=>x-Math.floor(x);
+    getUVW=p=>[frac((p[0]/10+0.5)*tile),frac((p[1]/10+0.5)*tile),frac((p[2]/10+0.5)*tile)];
     const grid = rdSys==='brusselator'  ? buildBrusselator(rdParams,N_rd)
                : rdSys==='schnakenberg' ? buildSchnakenberg(rdParams,N_rd)
                :                          buildGrayScott(rdParams,N_rd);
@@ -234,7 +232,7 @@ function buildGrainSDF(json,shapeCtx,normOverride){
       const u=c01((p[0]*cellSizeMm/10-gridBbox.mnx)/gddx);
       const v=c01((p[1]*cellSizeMm/10-gridBbox.mny)/gddy);
       const w=c01((p[2]*cellSizeMm/10-gridBbox.mnz)/gddz);
-      const raw=evalRDField(huGrid,N_hu,u,v,w);
+      const raw=sampleCenteredGrid(huGrid,N_hu,u,v,w);   // v0.8.2: centre convention, no wrap
       const norm=(raw-hfMid)/hfHalfR;
       if(topo==='half') return hi?(norm-cN):(cN-norm);
       if(topo==='solid') return hN-Math.abs(norm-cN);
@@ -252,8 +250,11 @@ function buildGrainSDF(json,shapeCtx,normOverride){
   // Fallback: 16³ pre-scan over world [-5,5] (matches runtime query domain).
   // No padding — design tools don't pad, and the rc10 5% padding was a
   // compensation for an earlier mis-sampled grid that rc14 supersedes.
+  // v0.8.2: periodic HU for weld members (min-image wrap, same evaluator the
+  // shape-mode preview bakes with); cube mode keeps the single-cell field.
+  const huEvalFn = (opts&&opts.periodic) ? evalHUFieldPeriodic : evalHUField;
   const evalRaw = isHU
-    ? (px,py,pz)=>evalHUField(kernels,0.5+px/10,0.5+py/10,0.5+pz/10)
+    ? (px,py,pz)=>huEvalFn(kernels,0.5+px/10,0.5+py/10,0.5+pz/10)
     : (px,py,pz)=>evalField(waves,px*PI5,py*PI5,pz*PI5,null);
   let fieldMid,fieldHalfR;
   if(normOverride){

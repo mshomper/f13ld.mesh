@@ -26,7 +26,14 @@ function geometryToArrays(geo){
   // STL (and some OBJ) files have unwelded vertices — every triangle owns 3 unique
   // verts with no sharing. Manifold requires welded topology or it throws ManifoldError.
   // mergeVertices() welds coincident vertices and produces a proper indexed geometry.
-  const welded = mergeVertices(geo, 1e-6); // 1 micron tolerance
+  // v0.8.2: weld on position only. mergeVertices compares EVERY attribute, and
+  // STL/OBJ loaders emit per-face normals (and OBJ may carry uvs), so corners
+  // shared by non-coplanar faces never merged — solid-body exports came out
+  // with open edges. Copy just position (+index) before welding.
+  const posOnly = new THREE.BufferGeometry();
+  posOnly.setAttribute('position', geo.attributes.position);
+  if(geo.index) posOnly.setIndex(geo.index);
+  const welded = mergeVertices(posOnly, 1e-6); // 1 micron tolerance
   console.log(`[F13LD.mesh] mergeVertices: ${geo.attributes.position.count} → ${welded.attributes.position.count} verts`);
   const pos = Array.from(welded.attributes.position.array);
   const idx = welded.index ? Array.from(welded.index.array)
@@ -47,11 +54,43 @@ function mergeArrays(list){
   return {pos:allPos, idx:allIdx};
 }
 
+// v0.8.2: 3MF length unit → mm. three's 3MF loader reads the model's unit
+// attribute but never scales by it, so an inch model came in 25.4× too small.
+const THREEMF_UNIT_MM={micron:0.001,millimeter:1,centimeter:10,inch:25.4,foot:304.8,meter:1000};
+function threeMFUnitScale(buf){
+  try{
+    const z=fflate.unzipSync(new Uint8Array(buf));
+    let modelPath='3D/3dmodel.model';
+    const rels=z['_rels/.rels'];
+    if(rels){
+      const m=/Target="\/?([^"]+\.model)"/i.exec(fflate.strFromU8(rels));
+      if(m) modelPath=m[1];
+    }
+    const model=z[modelPath]||z[Object.keys(z).find(k=>/\.model$/i.test(k))];
+    if(!model) return 1;
+    const head=fflate.strFromU8(model.subarray(0,Math.min(model.length,4096)));
+    const u=/<model[^>]*\sunit="([^"]+)"/.exec(head);
+    const unit=u?u[1].toLowerCase():'millimeter';
+    if(!(unit in THREEMF_UNIT_MM)) throw new Error('Unknown 3MF unit "'+u[1]+'"');
+    return THREEMF_UNIT_MM[unit];
+  }catch(e){
+    if(/Unknown 3MF unit/.test(e.message)) throw e;
+    console.warn('[F13LD.mesh] could not read 3MF unit, assuming millimeters:',e);
+    return 1;
+  }
+}
+
 function groupToArrays(obj){
   const list=[];
+  // v0.8.2: bake each mesh's world transform into its vertices. three's 3MF
+  // loader applies build-item and component transforms to the Object3D, not
+  // the geometry, so positioned / multi-object 3MFs imported at the wrong place.
+  obj.updateMatrixWorld(true);
   obj.traverse(child=>{
     if(child.isMesh && child.geometry){
-      const r=geometryToArrays(child.geometry);
+      const g=child.geometry.clone();
+      g.applyMatrix4(child.matrixWorld);
+      const r=geometryToArrays(g);
       if(r) list.push(r);
     }
   });
@@ -126,6 +165,8 @@ async function handleShapeFile(file){
         group=new ThreeMFLoader().parse(buf);
       }
       ({pos,idx}=groupToArrays(group));
+      const unitMm=threeMFUnitScale(buf);
+      if(unitMm!==1){ for(let k=0;k<pos.length;k++) pos[k]*=unitMm; console.log('[F13LD.mesh] 3MF unit scale ×'+unitMm); }
     } else if(['step','stp'].includes(ext)){
       format='STEP';
       ({pos,idx}=await loadCADFormat(file,'step'));

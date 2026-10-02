@@ -130,11 +130,16 @@ function buildSchnakenberg(params, N) {
 }
 
 function evalRDField(grid, N, u, v, w) {
-  // u,v,w already in [0,1] (post-tile fract applied by caller)
-  var fx=u*(N-1), fy=v*(N-1), fz=w*(N-1);
+  // u,v,w already in [0,1) (post-tile fract applied by caller). The RD grid is
+  // periodic: sample i sits at u=i/N and the last sample blends back into the
+  // first across the tile face.
+  // v0.8.2: was u*(N-1), which never interpolated the N-1 → 0 wrap, leaving a
+  // one-cell jump (visible seam) at every tile face.
+  var fx=u*N, fy=v*N, fz=w*N;
   var x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
-  var x1=(x0+1)%N, y1=(y0+1)%N, z1=(z0+1)%N;
   var dx=fx-x0, dy=fy-y0, dz=fz-z0;
+  x0=((x0%N)+N)%N; y0=((y0%N)+N)%N; z0=((z0%N)+N)%N;
+  var x1=(x0+1)%N, y1=(y0+1)%N, z1=(z0+1)%N;
   return grid[x0+y0*N+z0*N*N]*(1-dx)*(1-dy)*(1-dz)
         +grid[x1+y0*N+z0*N*N]*dx*(1-dy)*(1-dz)
         +grid[x0+y1*N+z0*N*N]*(1-dx)*dy*(1-dz)
@@ -143,4 +148,20 @@ function evalRDField(grid, N, u, v, w) {
         +grid[x1+y0*N+z1*N*N]*dx*(1-dy)*dz
         +grid[x0+y1*N+z1*N*N]*(1-dx)*dy*dz
         +grid[x1+y1*N+z1*N*N]*dx*dy*dz;
+}
+
+// v0.8.2: trilinear read of a NON-periodic grid baked at voxel centres
+// ((i+0.5)/N across the bake box), e.g. the shape-mode hyperuniform field.
+// u,v,w in [0,1] across the bake box; reads clamp at the outer half-voxel.
+function sampleCenteredGrid(grid, N, u, v, w) {
+  var fx=Math.min(Math.max(u*N-0.5,0),N-1), fy=Math.min(Math.max(v*N-0.5,0),N-1), fz=Math.min(Math.max(w*N-0.5,0),N-1);
+  var x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
+  var x1=x0+1<N?x0+1:N-1, y1=y0+1<N?y0+1:N-1, z1=z0+1<N?z0+1:N-1;
+  var dx=fx-x0, dy=fy-y0, dz=fz-z0, NN=N*N;
+  var c00=grid[x0+y0*N+z0*NN]+(grid[x1+y0*N+z0*NN]-grid[x0+y0*N+z0*NN])*dx;
+  var c10=grid[x0+y1*N+z0*NN]+(grid[x1+y1*N+z0*NN]-grid[x0+y1*N+z0*NN])*dx;
+  var c01=grid[x0+y0*N+z1*NN]+(grid[x1+y0*N+z1*NN]-grid[x0+y0*N+z1*NN])*dx;
+  var c11=grid[x0+y1*N+z1*NN]+(grid[x1+y1*N+z1*NN]-grid[x0+y1*N+z1*NN])*dx;
+  var c0=c00+(c10-c00)*dy, c1=c01+(c11-c01)*dy;
+  return c0+(c1-c0)*dz;
 }

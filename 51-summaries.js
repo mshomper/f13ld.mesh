@@ -156,4 +156,5 @@ function buildBundleSummary(r){
     </div>${homoSection(h)}${exportPanel()}`;
 }
 function buildWaveSummary(r){const f=r.json.field||{},h=r.json.homogenization;const nModes=Array.isArray(f.modes)?f.modes.length:0;const phase=f.phase||(f.signFlip?'B':'A');return `<div class="sec-lbl">wave scaffold</div><div class="meta-grid">${card('symmetry',(f.symmetry||'pure'))}${card('topology',f.mode||'solid')}${card('modes',nModes)}${card('iso',f.iso)}${f.mode==='sheet'?card('thickness',f.thickness):''}${card('phase',phase)}${card('cell scale',f.cellScale)}</div>${homoSection(h)}${exportPanel()}`;}
-function renderSummary(r){if(r.family==='noise')return buildNoiseSummary(r);if(r.family==='tpms')return buildTPMSSummary(r);if(r.family==='grain')return buildGrainSummary(r);if(r.family==='beam')return buildBeamSummary(r);if(r.family==='bundle')return buildBundleSummary(r);if(r.family==='wave')return buildWaveSummary(r);}
+// v0.9.0: each family descriptor names its summary builder.
+function renderSummary(r){const d=familyOf(r);return d&&typeof d.summary==='function'?d.summary(r):undefined;}

@@ -5,7 +5,8 @@ const fs = require('fs'), vm = require('vm'), path = require('path');
 const [ROOT, LABEL] = process.argv.slice(2);
 const ctx = { self: { postMessage() {} }, console, Math, Float32Array, Uint32Array, Int32Array, Array, Object, JSON, Error, WeakMap, Map, Set, Number, isFinite, performance: { now: () => 0 } };
 vm.createContext(ctx);
-for (const f of ['m10-noise.js', 'm11-grain-fields.js', 'm12-reaction-diffusion.js', 'm20-sdf-noise-tpms.js', 'm21-sdf-beam.js', 'm22-sdf-grain.js', 'm23-sdf-bundle.js', 'm24-sdf-wave.js', 'm30-sdf-assembly.js'])
+// v0.9.0+: worker files register with m05-sdf-registry.js (absent in older builds).
+for (const f of [...(fs.existsSync(path.join(ROOT, 'worker', 'm05-sdf-registry.js')) ? ['m05-sdf-registry.js'] : []), 'm10-noise.js', 'm11-grain-fields.js', 'm12-reaction-diffusion.js', 'm20-sdf-noise-tpms.js', 'm21-sdf-beam.js', 'm22-sdf-grain.js', 'm23-sdf-bundle.js', 'm24-sdf-wave.js', 'm30-sdf-assembly.js'])
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'worker', f), 'utf8'), ctx, { filename: f });
 const R = s => { let x = s; return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; }; };
 const corr = (a, b) => { const n = a.length, ma = a.reduce((s, v) => s + v, 0) / n, mb = b.reduce((s, v) => s + v, 0) / n; let c = 0, va = 0, vb = 0; for (let i = 0; i < n; i++) { c += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; } return c / Math.sqrt(va * vb); };

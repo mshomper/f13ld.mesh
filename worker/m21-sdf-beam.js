@@ -381,3 +381,6 @@ function buildBeamSDF(json, pruneCtx){
     return d*L2Wgeo;
   };
 }
+
+// ── Registry (v0.9.0) ───────────────────────────────────────────────────────
+registerSDF('beam', { build(recipe){ return buildBeamSDF(recipe.json); }, trimToNodes: true });

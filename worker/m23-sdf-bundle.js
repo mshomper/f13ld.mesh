@@ -279,3 +279,6 @@ function buildBundleSDF(json){
 // cellScale is a PHYSICAL size in wave (domain.size mm), intentionally NOT
 // a frequency multiplier here -- the mesh cell-size input owns physical
 // scale, exactly as on the analytic TPMS path.
+
+// ── Registry (v0.9.0) ───────────────────────────────────────────────────────
+registerSDF('bundle', { build(recipe){ return buildBundleSDF(recipe.json); } });

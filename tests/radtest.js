@@ -3,6 +3,8 @@
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const ROOT=process.argv[2];
 const ctx={self:{postMessage(){}},console,Math,Float64Array,Float32Array,Array,Object,isFinite,Number};vm.createContext(ctx);
+// v0.9.0+: worker files register with m05-sdf-registry.js (absent in older builds).
+if(fs.existsSync(path.join(ROOT,'worker/m05-sdf-registry.js'))) vm.runInContext(fs.readFileSync(path.join(ROOT,'worker/m05-sdf-registry.js'),'utf8'),ctx);
 vm.runInContext(fs.readFileSync(path.join(ROOT,'worker/m21-sdf-beam.js'),'utf8'),ctx);
 const cases=[
  ['new schema, cell 4 mm used at 6 mm', {beams:[[-1,0,0,1,0,0,1]],geometry:{scale_xyz:[4,4,4],cell:4,radius_x:0.5}}, 6],

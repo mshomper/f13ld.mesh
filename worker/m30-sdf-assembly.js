@@ -91,11 +91,8 @@ function buildSDF(recipe,shapeCtx,opts){
   const normOverride = (recipe._previewFieldMin!==undefined && recipe._previewFieldMax!==undefined)
     ? {fieldMin:recipe._previewFieldMin, fieldMax:recipe._previewFieldMax}
     : null;
-  if(recipe.family==='noise')return buildNoiseSDF(recipe.json,normOverride);
-  if(recipe.family==='tpms') return buildTPMSSDF(recipe.json);
-  if(recipe.family==='grain')return buildGrainSDF(recipe.json,shapeCtx,normOverride,opts);
-  if(recipe.family==='beam') return buildBeamSDF(recipe.json);
-  if(recipe.family==='bundle')return buildBundleSDF(recipe.json);
-  if(recipe.family==='wave')  return buildWaveSDF(recipe.json);
-  throw new Error('No evaluator for family: '+recipe.family);
+  // v0.9.0: each m2x-sdf-*.js registers its builder (m05-sdf-registry.js).
+  const fam=SDF_FAMILIES[recipe.family];
+  if(!fam) throw new Error('No evaluator for family: '+recipe.family);
+  return fam.build(recipe,shapeCtx,normOverride,opts);
 }

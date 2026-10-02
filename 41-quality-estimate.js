@@ -42,16 +42,11 @@ const MAX_PREVIEW_VOXELS=8e6;
 //   grain     40M — similar to noise
 //   tpms      50M — shells, moderate SA/V (what the original cap was tuned for)
 //   default   40M — conservative for unknown families
-const MAX_EXPORT_VOXELS_BY_FAMILY = {
-  beam: 30e6,
-  noise: 40e6,
-  grain: 40e6,
-  tpms: 50e6
-};
+// v0.9.0: each family descriptor carries its cap (maxExportVoxels).
 const MAX_EXPORT_VOXELS_DEFAULT = 40e6;
 function getMaxExportVoxels(recipe){
-  const fam = recipe?.family;
-  if(fam && MAX_EXPORT_VOXELS_BY_FAMILY[fam] != null) return MAX_EXPORT_VOXELS_BY_FAMILY[fam];
+  const d = familyOf(recipe);
+  if(d && d.maxExportVoxels != null) return d.maxExportVoxels;
   return MAX_EXPORT_VOXELS_DEFAULT;
 }
 // Legacy alias kept for any inadvertent reference; new code uses
@@ -100,7 +95,8 @@ function updateExportEstimate(){
       // HU pre-bake (rc20) — fires for grain+HU recipes when grid isn't cached.
       // Same worker formula as shape SDF; per-voxel cost ~6µs (hashed kernel
       // eval pulls 3³ buckets per query).
-      const isHU = currentRecipe.family==='grain' && currentRecipe.json.field?.type==='hyperuniform';
+      const _hd = familyOf(currentRecipe);
+      const isHU = !!(_hd && typeof _hd.hyperuniform==='function' && _hd.hyperuniform(currentRecipe));
       if(isHU){
         const ddx=bbox.mxx-bbox.mnx, ddy=bbox.mxy-bbox.mny, ddz=bbox.mxz-bbox.mnz;
         const maxCells=Math.max(ddx,ddy,ddz)/cellSizeMm;

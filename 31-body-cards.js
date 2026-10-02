@@ -43,10 +43,10 @@ function setShapeUI(state, name, meta, errMsg, suggestedCell){
       if(inp&&suggestedCell) inp.value=suggestedCell;
       // Beam-family-only trim toggle visibility (unchanged from rc1).
       const trimWrap=document.getElementById('trimNodesWrap');
-      if(trimWrap) trimWrap.style.display=(currentRecipe&&currentRecipe.family==='beam')?'inline':'none';
+      if(trimWrap) trimWrap.style.display=familyHasTrim(currentRecipe)?'inline':'none';
       const trimMul=document.getElementById('trimInsetWrap');
       const trimTg=document.getElementById('trimToNodes');
-      if(trimMul) trimMul.style.display=(currentRecipe&&currentRecipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+      if(trimMul) trimMul.style.display=(familyHasTrim(currentRecipe)&&trimTg&&trimTg.checked)?'inline-flex':'none';
     }
   } else if(!anyBody){
     if(cellOv) cellOv.style.display='none';

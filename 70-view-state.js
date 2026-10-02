@@ -63,19 +63,11 @@ async function showRecipe(recipe){
   // (geometric mean) cell size in mm; matching the UI to it on load shows
   // the lattice at the absolute scale sweep designed it for. User can
   // still adjust cellSizeMm after load to rescale; we only set on ingest.
-  if(recipe.family==='beam'){
-    const cellMm=recipe.json&&recipe.json.geometry&&recipe.json.geometry.cell;
-    if(typeof cellMm==='number'&&isFinite(cellMm)&&cellMm>0){
-      const cellInp=document.getElementById('shapeCellSizeMm');
-      if(cellInp){
-        // Format to a sensible precision for the input field. 4 sig figs.
-        cellInp.value=parseFloat(cellMm.toPrecision(4));
-      }
-    }
-  }
+  // v0.9.0: the family descriptor supplies the default (defaultCellMm).
+  applyFamilyDefaultCellMm(recipe);
   dropzone.style.display='none';recipeView.style.display='flex';
   document.getElementById('shapeStrip').style.display='block';
-  typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+String(recipe.subtype).toUpperCase();
+  applyTypeBadge(typeBadge, recipe);
   summaryEl.innerHTML=renderSummary(recipe);
   // v0.5.0-rc17: refresh trim-to-nodes toggle visibility for the new family.
   // setShapeUI only fires on shape state changes, so if a shape was already
@@ -85,10 +77,10 @@ async function showRecipe(recipe){
   if(trimWrap){
     const cellOv=document.getElementById('cellOverlay');
     const shapeLoaded=cellOv&&cellOv.style.display!=='none';
-    trimWrap.style.display=(shapeLoaded&&recipe.family==='beam')?'inline':'none';
+    trimWrap.style.display=(shapeLoaded&&familyHasTrim(recipe))?'inline':'none';
     const trimMul=document.getElementById('trimInsetWrap');
     const trimTg=document.getElementById('trimToNodes');
-    if(trimMul) trimMul.style.display=(shapeLoaded&&recipe.family==='beam'&&trimTg&&trimTg.checked)?'inline-flex':'none';
+    if(trimMul) trimMul.style.display=(shapeLoaded&&familyHasTrim(recipe)&&trimTg&&trimTg.checked)?'inline-flex':'none';
   }
   setActivBtn(PREVIEW_BTN_ID[initialPreviewQ]||'btnLow');
   triggerPreview(initialPreviewQ);

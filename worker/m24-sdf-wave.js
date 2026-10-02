@@ -38,3 +38,6 @@ function buildWaveSDF(json){
     return cym;   // negative-inside (mesh canonical convention)
   };
 }
+
+// ── Registry (v0.9.0) ───────────────────────────────────────────────────────
+registerSDF('wave', { build(recipe){ return buildWaveSDF(recipe.json); } });

@@ -32,34 +32,10 @@ self.onmessage=async function(e){
       const wMin=d.worldMin||[-5,-5,-5],wMax=d.worldMax||[5,5,5];
       const sx=(wMax[0]-wMin[0])/N,sy=(wMax[1]-wMin[1])/N,sz=(wMax[2]-wMin[2])/N;
       const fam=d.recipe.family,json=d.recipe.json;
-      const PI5=Math.PI/5;
-      let evalRaw=null,topology=null;
-      if(fam==='grain'){
-        const f=json.field,g=json.geometry||{};
-        const params=grainParamsFromField(f);
-        const isHU=f.type==='hyperuniform';
-        // HU preview uses cube-mode evaluation (100 kernels, linear scan).
-        // When a shape is imported, evalHUFieldPeriodic wraps kernel distances
-        // to the nearest periodic image for seamless GL_REPEAT tiling.
-        // Full-bbox tiled kernels are only needed for export (buildGrainSDF).
-        const waves=isHU?null:(f.type==='gaussian'?buildGRFWaves(params):buildSpinodoidWaves(params));
-        const kernels=isHU?buildHUKernels(params):null;
-        const huEval=isHU&&d.shapeCtx?evalHUFieldPeriodic:evalHUField;
-        evalRaw=p=>isHU
-          ?huEval(kernels,0.5+p[0]/10,0.5+p[1]/10,0.5+p[2]/10)
-          :evalField(waves,p[0]*PI5,p[1]*PI5,p[2]*PI5,null);
-        topology={bakeRaw:true,rawUnits:true,halfW:g.half_width??0.15,center:g.center??0,
-          topoMode:g.topology||'sheet',halfInvert:g.half_invert||false};
-      }else if(fam==='noise'){
-        const surf=json.surface,geom=json.geometry||{};
-        const freq=surf.frequency||.3,ex=surf.scale_x??1,ey=surf.scale_y??1,ez=surf.scale_z??1;
-        // v0.5.0-rc27: noise input = world * freq * scale (was world * SCALE2 * freq * scale;
-        // SCALE2 = 5/π applied to world coords was double-scaling — see buildNoiseSDF
-        // header comment for full rationale).
-        evalRaw=p=>evalNoiseRaw(surf,p[0]*freq*ex,p[1]*freq*ey,p[2]*freq*ez);
-        topology={bakeRaw:true,halfW:surf.half_width??0.15,center:surf.center??0,
-          topoMode:geom.mode||'sheet',halfInvert:geom.half_invert||false};
-      }
+      // v0.9.0: stochastic families supply their raw field (registerSDF rawEval).
+      const sdfFam=SDF_FAMILIES[fam];
+      const raw=(sdfFam && typeof sdfFam.rawEval==='function') ? sdfFam.rawEval(d) : null;
+      const evalRaw=raw?raw.evalRaw:null, topology=raw?raw.topology:null;
       if(evalRaw){
         const zS=d.zStart||0, zE=(d.zEnd!=null)?d.zEnd:N, slabN=zE-zS;
         const field=new Float32Array(N*N*slabN);
@@ -86,15 +62,8 @@ self.onmessage=async function(e){
         // The padded values are what get cached as recipe._previewFieldMin/Max
         // on the main thread, used by buildSDF's normOverride path on export.
         let postMin=minV, postMax=maxV;
-        if(fam==='noise'){
-          const _ns=json.surface;
-          if(_ns&&_ns.norm_min!=null&&_ns.norm_max!=null){
-            postMin=_ns.norm_min; postMax=_ns.norm_max;
-          } else {
-            const range=maxV-minV;
-            postMin=minV-range*0.05;
-            postMax=maxV+range*0.05;
-          }
+        if(sdfFam && typeof sdfFam.rawRange==='function'){
+          const rr=sdfFam.rawRange(json,minV,maxV); postMin=rr.min; postMax=rr.max;
         }
         const buf=field.buffer;
         self.postMessage({type:'baked',field:buf,N,fieldMin:postMin,fieldMax:postMax,
@@ -302,7 +271,7 @@ self.onmessage=async function(e){
         // shape mm-space, accounting for the structure transform so a
         // rotated lattice gets pruned against the shape correctly.
         let activeSdfFn = sdfFn;
-        if(d.recipe.family==='beam' && d.pruneToNodes){
+        if(d.pruneToNodes && SDF_FAMILIES[d.recipe.family] && SDF_FAMILIES[d.recipe.family].trimToNodes){
           const beamsArr = d.recipe.json.beams || [];
           const geomP = d.recipe.json.geometry || {};
           // v0.5.0-rc22/25: schema-aware radius and pitch resolution.

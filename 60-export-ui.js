@@ -10,18 +10,9 @@ const errorBox=document.getElementById('errorBox'),typeBadge=document.getElement
 const summaryEl=document.getElementById('summaryContent'),triPill=document.getElementById('triPill'),seamPill=document.getElementById('seamPill');
 const coMain=document.getElementById('coMain'),coSub=document.getElementById('coSub');
 const overlay=document.getElementById('computeOverlay');
-const FAMILY_LABEL={noise:'NOISE',tpms:'TPMS',grain:'GRAIN',beam:'BEAM',bundle:'BUNDLE',wave:'WAVE'};
-// rc2.5: Family colors from F13LD.vault scheme. Used by library chips and
-// the per-card recipe chip on body cards.
-const FAMILY_COLOR={
-  tpms:  '#5ecaa5',
-  noise: '#ea7050',
-  grain: '#a8a59a',
-  beam:  '#b8cf50',
-  bundle:'#7B4F9E',
-  wave:  '#D97706'
-};
-function familyColor(fam){ return FAMILY_COLOR[fam] || '#888'; }
+// v0.9.0: FAMILY_LABEL, FAMILY_COLOR and familyColor() now live in
+// 03-registry.js, filled in by each families/fam-*.js descriptor
+// (colors from the F13LD.vault scheme).
 let currentRecipe=null;
 
 // ── Export state & functions ───────────────────────────────────────────────
@@ -63,24 +54,16 @@ function getThinnestFeatureMm(recipe, cellSizeMm){
   // feature-ratio export guard skips them (the 180s wall-clock timeout is the
   // real runaway backstop), and meshopt simplify falls back to its normal
   // edge-based tolerance instead of an over-conservative cap from a fake size.
-  if(recipe.family==='noise' || recipe.family==='grain') return null;
+  // v0.9.0: a family can answer for itself (noise/grain → null; beam's
+  // radius schemas — see families/fam-beam.js). undefined = generic lookup.
+  const fd = familyOf(recipe);
+  if(fd && typeof fd.thinnestFeatureMm==='function'){
+    const v = fd.thinnestFeatureMm(recipe, cellSizeMm);
+    if(v !== undefined) return v;
+  }
   const g = recipe.json?.geometry || {};
   const s = recipe.json?.surface  || {};
   const w2mm = cellSizeMm / 10;
-  // v0.5.0-rc16: Beam family — radius is in cell-local [-1,+1] half-units,
-  // so beam half-thickness in mm is radius*cellSizeMm/2. This is twice as
-  // dense (per cell-local unit) as the wall_thickness/half_width fields,
-  // which use the [-π,+π] convention via w2mm = cellSizeMm/10.
-  // v0.5.0-rc22: new schema (radius_xyz in mm directly) takes the per-axis
-  // minimum as the thinnest feature — already in mm, no conversion needed.
-  if(recipe.family==='beam'){
-    if(typeof g.radius_x==='number' && g.radius_x > 0){
-      const ry = (typeof g.radius_y==='number' && g.radius_y>0) ? g.radius_y : g.radius_x;
-      const rz = (typeof g.radius_z==='number' && g.radius_z>0) ? g.radius_z : g.radius_x;
-      return Math.min(g.radius_x, ry, rz);
-    }
-    if(g.radius != null && g.radius > 0) return g.radius * cellSizeMm / 2;
-  }
   // TPMS shell (wall_thickness is half-thickness: SDF = wall_thickness - |φ|)
   if(g.wall_thickness != null && g.wall_thickness > 0) return g.wall_thickness * w2mm;
   // PI-TPMS pipe filaments (pipe_radius is the filament half-thickness)
@@ -184,13 +167,11 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   // or old schema (radius cell-local). For wallFrac we use the max radius
   // as the "wall fraction" proxy — old behavior keeps the *2 scaling because
   // cell-local 1.0 spans half a cell; new behavior is already mm-scaled.
-  let beamWallRad = null;
-  if(recipe?.family==='beam'){
-    if(typeof g.radius_x==='number') beamWallRad = Math.max(g.radius_x, g.radius_y??g.radius_x, g.radius_z??g.radius_x);
-    else if(g.radius!=null) beamWallRad = g.radius * 2;
-  }
-  const wallFrac=beamWallRad!=null
-                ?Math.min(1, beamWallRad/0.30)
+  // v0.9.0: family-specific wall fraction (beam) comes from the descriptor.
+  const wfd = familyOf(recipe);
+  const famWallFrac = (wfd && typeof wfd.wallFraction==='function') ? wfd.wallFraction(recipe) : null;
+  const wallFrac=famWallFrac!=null
+                ?famWallFrac
                 :g.wall_thickness!=null?Math.min(1,g.wall_thickness/0.30)
                 :g.half_width!=null?Math.min(1,(g.half_width*2)/0.30)
                 :g.pipe_radius!=null?Math.min(1,g.pipe_radius/0.18):0.5;

@@ -37,9 +37,11 @@ function geometryToArrays(geo){
 function mergeArrays(list){
   const allPos=[], allIdx=[];
   let offset=0;
+  // v0.8.1: plain loops — push(...array) hits the engine's argument limit
+  // and threw "Maximum call stack size exceeded" on meshes with ~60k+ vertices.
   for(const {pos,idx} of list){
-    allPos.push(...pos);
-    allIdx.push(...idx.map(i=>i+offset));
+    for(let k=0;k<pos.length;k++) allPos.push(pos[k]);
+    for(let k=0;k<idx.length;k++) allIdx.push(idx[k]+offset);
     offset += pos.length/3;
   }
   return {pos:allPos, idx:allIdx};

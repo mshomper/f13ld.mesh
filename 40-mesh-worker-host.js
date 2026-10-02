@@ -41,7 +41,11 @@ function getMeshWorkerUrl(){
   return _workerUrl;
 }
 function showCancelBtn(show){const b=document.getElementById('cancelMeshBtn');if(b)b.style.display=show?'':'none';}
+// v0.8.1: reject function of the export currently waiting on the mesh worker.
+// A terminated worker never replies, so Cancel settles the wait directly.
+let _exportCancelReject=null;
 window.cancelMesh=function(){
+  if(_exportCancelReject){ const r=_exportCancelReject; _exportCancelReject=null; try{ r(new Error('cancelled')); }catch(_){} }
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
   // v0.5.1-rc4.0b: clear the export timers so the elapsed counter stops and
   // the wall-clock backstop doesn't fire after a manual cancel.

@@ -109,7 +109,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 |---|---|
 | `index.html` | Page markup, import map, script tags |
 | `mesh.css` | All styles |
-| `00-libs.js` · `01-config.js` | Library loader · version + worker URL helper |
+| `00-libs.js` · `01-config.js` · `02-html.js` | Library loader · version + worker URL helper · HTML escaping |
 | `05-ui-chrome.js` | Spinner orb, status indicator |
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
 | `12-shape-sdf-bake.js` · `13-hu-bake.js` | Shape SDF and hyperuniform bake worker pools |
@@ -117,7 +117,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `30-shape-import.js` · `31-body-cards.js` | Body file intake · body cards, weld drag/drop, recipe library |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
 | `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline |
-| `50-recipe-router.js` · `51-summaries.js` | Recipe family detection · summary cards |
+| `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
 | `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
 

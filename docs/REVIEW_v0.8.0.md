@@ -174,3 +174,28 @@ Page scripts and worker scripts are now both plain files, so **one file can be l
 3. **v0.8.2 — geometry accuracy:** A1–A8. These change exported geometry, so each gets a before/after measurement (e.g. export a known cylinder and measure the part envelope).
 4. **v0.9.0 — family + loader registry and shared files.** Pure restructure, verified identical with the same side-by-side harness.
 5. **State/UI fixes:** B6–B9, D1–D6, quick wins.
+
+---
+
+## 7. Status — v0.8.1 (safety and crash fixes)
+
+Fixed in v0.8.1, each checked in the browser against v0.8.0:
+
+| # | Fix | Browser check (v0.8.0 → v0.8.1) |
+|---|---|---|
+| C1 | All recipe, file-name and error text is escaped before it goes on the page (`02-html.js`) | Crafted `?r=` link ran script → shown as plain text |
+| C2 | `?r=` no longer decoded twice | Recipe containing "%" never loaded → loads |
+| C3 | Every recipe source goes through one check (`parseRecipe` / `validateRecipe`) and reports problems | `{"family":"tpms"}` gave no message → names the missing `surface` block |
+| C4 | Grain zero values match F13LD.grain: κ = 0 is isotropic, an orthotropic weight of 0 means none on that axis | κ = 0 exported identical to κ = 6 → distinct mesh; κ = 6 unchanged |
+| C5 | Unknown noise types are rejected with the supported list | Silently became domain warp → clear message |
+| B1 | Hyperuniform pre-bake always uses the worker pool (one worker minimum) | Crash on 2 cores → exports the same mesh as 8 cores |
+| B2 | Warped bundles no longer take the stochastic slab-bake path | Preview stuck forever → finishes |
+| B3 | Body import merges meshes with plain loops | 125k-vertex OBJ failed → imports |
+| B4 | One export at a time; a second click says one is running | — → message shown, first export completes, button resets |
+| B5 | Any error escaping the export pipeline, or a shape-mode preview, resets the panel and shows the message | — |
+| B6 | Cancel settles the shape-SDF, hyperuniform and mesh-worker waits | — → cancel mid-bake, next export runs normally |
+| D4 | Removing the last recipe keeps bodies (as solid), keeps the library row with its + tile, and still allows solid export | All bodies deleted → kept |
+
+Regression: all 14 shared test cases (every family, plus shape mode) produce byte-identical meshes in v0.8.0 and v0.8.1.
+
+Still open from this review: section A (geometry accuracy), B7–B9, D1–D3, D5–D6, quick wins, and the plug-in registry.

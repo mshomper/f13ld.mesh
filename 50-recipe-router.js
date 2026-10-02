@@ -98,3 +98,39 @@ function routeRecipe(json){
 
   throw new Error('Unrecognized recipe format — expected top-level "family" field, surface.type ("noise"/"terms"), field.type ("spinodoid"/"gaussian"/"hyperuniform"), or meta.tool ("beam"/"beam-builder").');
 }
+
+// ── Recipe validation (v0.8.1) ─────────────────────────────────────────────
+// Catches recipes that would otherwise crash the summary panel or silently
+// fall back to a different geometry in the worker. Throws an Error with a
+// plain message naming the missing or unknown field; callers show it.
+const KNOWN_NOISE_TYPES=['simplex','cellular','fbm','ridged','billow','foam','strut','veined','curl','warp'];
+function validateRecipe(r){
+  const j=r.json, isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+  const need=(cond,msg)=>{ if(!cond) throw new Error(msg); };
+  const fam=FAMILY_LABEL[r.family]||r.family;
+  if(j.geometry!==undefined) need(isObj(j.geometry), fam+' recipe: "geometry" must be an object.');
+  if(r.family==='tpms'){
+    need(isObj(j.surface), 'TPMS recipe is missing its "surface" block.');
+    if(j.surface.type==='raw_preset') need(typeof j.surface.preset==='string', 'TPMS raw preset recipe is missing "surface.preset".');
+    else need(Array.isArray(j.surface.terms), 'TPMS recipe is missing its "surface.terms" list.');
+  } else if(r.family==='noise'){
+    need(isObj(j.surface), 'Noise recipe is missing its "surface" block.');
+    const nt=j.surface.noise_type;
+    need(nt==null||KNOWN_NOISE_TYPES.includes(nt), 'Unknown noise type "'+nt+'". Supported: '+KNOWN_NOISE_TYPES.join(', ')+'.');
+  } else if(r.family==='grain'){
+    need(isObj(j.field), 'Grain recipe is missing its "field" block.');
+  } else if(r.family==='wave'){
+    need(isObj(j.field)&&Array.isArray(j.field.modes), 'Wave recipe is missing its "field.modes" list.');
+  }
+  r.subtype=String(r.subtype==null?'':r.subtype);
+  return r;
+}
+
+// One entry point for every recipe source (file drop, file pick, ?r=, ?queue=).
+// Returns the routed + validated recipe, or throws with a readable message.
+function parseRecipe(json, sourceLabel){
+  if(!json||typeof json!=='object'||Array.isArray(json))
+    throw new Error((sourceLabel?sourceLabel+': ':'')+'recipe must be a JSON object.');
+  try{ return validateRecipe(routeRecipe(json)); }
+  catch(e){ throw new Error((sourceLabel?sourceLabel+': ':'')+(e.message||e)); }
+}

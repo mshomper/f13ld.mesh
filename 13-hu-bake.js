@@ -22,37 +22,16 @@ function getHuBakeWorkerUrl(){
   return _huBakeWorkerUrl;
 }
 
-// Serial fallback — used when worker spawn fails or hardwareConcurrency≤2.
-// Mirrors the in-export-worker bakeGridMM (line ~2526) so the result is
-// numerically identical to the legacy path.
-function _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress){
-  const kernels=buildHUKernelsMM(params, bbox, cellSizeMm);
-  const ddx=bbox.mxx-bbox.mnx, ddy=bbox.mxy-bbox.mny, ddz=bbox.mxz-bbox.mnz;
-  const grid=new Float32Array(N*N*N);
-  let minV=Infinity, maxV=-Infinity;
-  for(let iz=0;iz<N;iz++){
-    if(_huBakeAborted) throw new Error('cancelled');
-    for(let iy=0;iy<N;iy++)for(let ix=0;ix<N;ix++){
-      const v=evalHUFieldMM(kernels,
-        bbox.mnx+(ix+0.5)/N*ddx,
-        bbox.mny+(iy+0.5)/N*ddy,
-        bbox.mnz+(iz+0.5)/N*ddz);
-      grid[ix+iy*N+iz*N*N]=v;
-      if(v<minV)minV=v; if(v>maxV)maxV=v;
-    }
-    if(onProgress) onProgress((iz+1)/N);
-  }
-  return {data:grid, N, fieldMin:minV, fieldMax:maxV};
-}
-
+// v0.8.1: the old main-thread serial fallback called kernel functions that
+// only exist inside the worker files, so it crashed with "buildHUKernelsMM is
+// not defined" on machines reporting ≤2 cores. The pool now always runs with at
+// least one worker (identical result: each worker rebuilds the same kernels
+// from the same seed), and a worker failure is reported as a clear error.
 async function computeHUGridMM(params, bbox, cellSizeMm, N, onProgress){
   _huBakeAborted=false;
   _activeHuWorkers=[];
   const hc=navigator.hardwareConcurrency||2;
   const nWorkers=Math.max(1, Math.min(12, hc-1, N));
-  if(nWorkers<=1){
-    return _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress);
-  }
   // Partition Z-slices into contiguous slabs.
   const perWorker=Math.floor(N/nWorkers);
   const extra=N-perWorker*nWorkers;
@@ -78,6 +57,7 @@ async function computeHUGridMM(params, bbox, cellSizeMm, N, onProgress){
       let worker;
       try{ worker=new Worker(getHuBakeWorkerUrl()); }
       catch(we){ reject(we); return; }
+      worker._reject=reject;   // lets _cancelHuBake settle this promise
       _activeHuWorkers.push(worker);
       worker.onmessage=e=>{
         const d=e.data;
@@ -108,8 +88,7 @@ async function computeHUGridMM(params, bbox, cellSizeMm, N, onProgress){
     _activeHuWorkers.forEach(w=>{ try{ w.terminate(); }catch(_){} });
     _activeHuWorkers=[];
     if(_huBakeAborted||e.message==='cancelled') throw new Error('cancelled');
-    console.warn('[HU bake] parallel workers failed, falling back to serial:',e);
-    return _computeHUGridMM_serial(params, bbox, cellSizeMm, N, onProgress);
+    throw new Error('Hyperuniform field pre-bake failed — '+(e.message||e));
   }
   _activeHuWorkers=[];
   // Stitch slabs into the final grid.
@@ -122,6 +101,8 @@ async function computeHUGridMM(params, bbox, cellSizeMm, N, onProgress){
 
 window._cancelHuBake=function(){
   _huBakeAborted=true;
-  _activeHuWorkers.forEach(w=>{ try{ w.terminate(); }catch(_){} });
+  // v0.8.1: a terminated worker never replies, so settle its promise here —
+  // otherwise the export waiting on it hangs forever after Cancel.
+  _activeHuWorkers.forEach(w=>{ try{ w.terminate(); }catch(_){} try{ w._reject&&w._reject(new Error('cancelled')); }catch(_){} });
   _activeHuWorkers=[];
 };

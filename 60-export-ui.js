@@ -142,7 +142,7 @@ function checkFeatureEdgeRatio(featMm, edgeMm, cellSizeMm){
 // is unambiguous.
 function featureRatioErrorHtml(chk, featMm, edgeMm, qual, bodyLabel){
   const subject = bodyLabel
-    ? 'The thinnest features on <b>'+bodyLabel+'</b> are ~'+featMm.toFixed(3)+'mm'
+    ? 'The thinnest features on <b>'+esc(bodyLabel)+'</b> are ~'+featMm.toFixed(3)+'mm'
     : 'The thinnest features are ~'+featMm.toFixed(3)+'mm';
   const fix = (chk.suggestCell!=null)
     ? (bodyLabel?'Increase its cell size to ~':'Increase cell size to ~')+chk.suggestCell+'mm, or lower export quality.'

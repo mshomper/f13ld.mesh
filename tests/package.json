@@ -1,0 +1,14 @@
+{
+  "name": "f13ld-mesh-tests",
+  "private": true,
+  "description": "Dev-only browser test harness for F13LD.mesh. Not loaded by the app.",
+  "dependencies": {
+    "three": "0.158.0",
+    "fflate": "0.8.2",
+    "three-mesh-bvh": "0.7.8",
+    "manifold-3d": "3.4.1",
+    "meshoptimizer": "1.1.1",
+    "playwright": "1.56.0",
+    "acorn": "^8.11.0"
+  }
+}

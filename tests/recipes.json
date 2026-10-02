@@ -1,0 +1,515 @@
+{
+ "tpms-gyroid-sheet": {
+  "recipe": {
+   "family": "tpms",
+   "surface": {
+    "type": "terms",
+    "preset": "gyroid",
+    "terms": [
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "sin(x)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       },
+       {
+        "trig": "cos(y)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "sin(y)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       },
+       {
+        "trig": "cos(z)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "sin(z)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       },
+       {
+        "trig": "cos(x)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     }
+    ]
+   },
+   "geometry": {
+    "mode": "sheet",
+    "offset": 0,
+    "wallThickness": 0.3,
+    "cell_scale": 1
+   }
+  }
+ },
+ "tpms-rawpreset-solid": {
+  "recipe": {
+   "family": "tpms",
+   "surface": {
+    "type": "raw_preset",
+    "preset": "splitP"
+   },
+   "geometry": {
+    "mode": "solid",
+    "offset": 0.1,
+    "cell_scale": 1.5
+   }
+  }
+ },
+ "tpms-pi-fieldpair": {
+  "recipe": {
+   "family": "tpms",
+   "surface": {
+    "type": "terms",
+    "preset": "schwarzP",
+    "terms": [
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(x)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(y)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(z)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     }
+    ]
+   },
+   "surface_b": {
+    "type": "raw_preset",
+    "preset": "octo"
+   },
+   "geometry": {
+    "mode": "pi-tpms",
+    "offset": 0,
+    "wallThickness": 0.3,
+    "pipeR": 0.4,
+    "field_b_freq": 2,
+    "phaseShift": {
+     "x": 0.5,
+     "y": 0,
+     "z": 0
+    },
+    "cell_scale": 1
+   }
+  }
+ },
+ "noise-simplex-sheet": {
+  "recipe": {
+   "family": "noise",
+   "surface": {
+    "type": "noise",
+    "noise_type": "simplex",
+    "frequency": 0.3,
+    "seed": 3,
+    "octaves": 3,
+    "center": 0,
+    "half_width": 0.15
+   },
+   "geometry": {
+    "mode": "sheet"
+   }
+  }
+ },
+ "noise-ridged-half": {
+  "recipe": {
+   "family": "noise",
+   "surface": {
+    "type": "noise",
+    "noise_type": "ridged",
+    "frequency": 0.25,
+    "seed": 11,
+    "octaves": 4,
+    "center": 0.1
+   },
+   "geometry": {
+    "mode": "half"
+   }
+  }
+ },
+ "grain-spinodoid": {
+  "recipe": {
+   "family": "grain",
+   "field": {
+    "type": "spinodoid",
+    "frequency": 0.45,
+    "rng_seed": 42,
+    "dir_mode": "single",
+    "kappa": 8,
+    "principal_direction": [
+     0,
+     0,
+     1
+    ],
+    "n_waves": 48
+   },
+   "geometry": {
+    "mode": "grain-sheet",
+    "center": 0,
+    "half_width": 0.18,
+    "half_invert": false,
+    "topology": "sheet"
+   }
+  }
+ },
+ "grain-hyperuniform": {
+  "recipe": {
+   "family": "grain",
+   "field": {
+    "type": "hyperuniform",
+    "rng_seed": 7,
+    "dir_mode": "single",
+    "kappa": 4,
+    "principal_direction": [
+     0,
+     0,
+     1
+    ],
+    "hu_n": 100,
+    "hu_aspect": 3.0,
+    "hu_width": 0.08
+   },
+   "geometry": {
+    "mode": "grain-half",
+    "center": -0.12,
+    "half_width": 0,
+    "half_invert": false,
+    "topology": "half"
+   }
+  }
+ },
+ "grain-reactiondiff": {
+  "recipe": {
+   "family": "grain",
+   "field": {
+    "type": "reactiondiffusion",
+    "rd_model": "grayscott",
+    "rng_seed": 5,
+    "rd_steps": 400
+   },
+   "geometry": {
+    "topology": "half",
+    "center": 0.3,
+    "half_width": 0.1,
+    "half_invert": false
+   }
+  }
+ },
+ "beam-bcc": {
+  "recipe": {
+   "family": "beam",
+   "beams": [
+    [
+     -1,
+     -1,
+     -1,
+     1,
+     1,
+     1,
+     1
+    ],
+    [
+     -1,
+     -1,
+     1,
+     1,
+     1,
+     -1,
+     1
+    ],
+    [
+     -1,
+     1,
+     -1,
+     1,
+     -1,
+     1,
+     1
+    ],
+    [
+     1,
+     -1,
+     -1,
+     -1,
+     1,
+     1,
+     1
+    ],
+    [
+     -1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     1
+    ],
+    [
+     0,
+     -1,
+     0,
+     0,
+     1,
+     0,
+     1
+    ],
+    [
+     0,
+     0,
+     -1,
+     0,
+     0,
+     1,
+     1
+    ]
+   ],
+   "geometry": {
+    "mode": "solid",
+    "cell_scale": 1,
+    "radius": 0.1,
+    "node_ball_radius": 0.0,
+    "node_smoothing_k": 0.0
+   }
+  }
+ },
+ "bundle-twist": {
+  "recipe": {
+   "family": "bundle",
+   "surface": {
+    "structure": "bundle",
+    "topology": "solid",
+    "iso_offset": 0.0
+   },
+   "geometry": {
+    "mode": "solid",
+    "beam_radius": 0.1,
+    "beam_shape": "circle",
+    "beams_per_side": 3,
+    "beam_spacing": 0.3,
+    "column_gap": 0.2,
+    "twist_rate": 1.2,
+    "twist_mode": 0,
+    "blend_k": 0.01
+   }
+  }
+ },
+ "wave-cubic": {
+  "recipe": {
+   "family": "wave",
+   "field": {
+    "symmetry": "cubic",
+    "mode": "solid",
+    "iso": 0.0,
+    "modes": [
+     {
+      "n": 1,
+      "m": 1,
+      "p": 1,
+      "A": 1.0,
+      "phi": 0.0
+     },
+     {
+      "n": 2,
+      "m": 1,
+      "p": 1,
+      "A": 0.4,
+      "phi": 0.3
+     }
+    ]
+   },
+   "geometry": {
+    "mode": "solid"
+   }
+  }
+ },
+ "shape-tpms": {
+  "shape": "body.stl",
+  "cellMm": 3,
+  "recipe": {
+   "family": "tpms",
+   "surface": {
+    "type": "terms",
+    "preset": "schwarzP",
+    "terms": [
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(x)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(y)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     },
+     {
+      "on": true,
+      "coef": 1,
+      "factors": [
+       {
+        "trig": "cos(z)",
+        "fx": 1,
+        "fy": 1,
+        "fz": 1
+       }
+      ]
+     }
+    ]
+   },
+   "geometry": {
+    "mode": "sheet",
+    "offset": 0,
+    "wallThickness": 0.3,
+    "cell_scale": 1
+   }
+  },
+  "cores": 8
+ },
+ "shape-hyperuniform": {
+  "shape": "body.stl",
+  "cellMm": 3,
+  "recipe": {
+   "family": "grain",
+   "field": {
+    "type": "hyperuniform",
+    "rng_seed": 7,
+    "dir_mode": "single",
+    "kappa": 4,
+    "principal_direction": [
+     0,
+     0,
+     1
+    ],
+    "hu_n": 100,
+    "hu_aspect": 3.0,
+    "hu_width": 0.08
+   },
+   "geometry": {
+    "mode": "grain-half",
+    "center": -0.12,
+    "half_width": 0,
+    "half_invert": false,
+    "topology": "half"
+   }
+  },
+  "cores": 8
+ },
+ "shape-beam-thick": {
+  "shape": "body.stl",
+  "cellMm": 6,
+  "recipe": {
+   "family": "beam",
+   "beams": [
+    [
+     -1,
+     -1,
+     -1,
+     1,
+     1,
+     1,
+     1
+    ],
+    [
+     -1,
+     -1,
+     1,
+     1,
+     1,
+     -1,
+     1
+    ],
+    [
+     -1,
+     1,
+     -1,
+     1,
+     -1,
+     1,
+     1
+    ],
+    [
+     1,
+     -1,
+     -1,
+     -1,
+     1,
+     1,
+     1
+    ]
+   ],
+   "geometry": {
+    "mode": "solid",
+    "cell_scale": 1,
+    "radius": 0.3
+   }
+  },
+  "cores": 8
+ }
+}

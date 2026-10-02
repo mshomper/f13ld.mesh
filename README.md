@@ -34,6 +34,7 @@ Converts implicit scaffold recipes from F13LD's design tools into watertight 3MF
 | **Grain Explorer** | `hyperuniform` | Jittered-grid kernel field |
 | **Grain Explorer** | `reaction-diffusion` | Structure "grown" from competing fields |
 | **Noise Explorer** | `noise` | All 7 noise types: simplex, cellular, FBM, ridged, billow, curl, warp |
+| **F13LD.foam** | `open` · `closed` · `plateau` | Voronoi cell-boundary foams (struts, walls, Plateau borders) from Poisson-disk, Lloyd, random, Weaire–Phelan or Kelvin seeds. Periodic foams only; seed positions travel in the recipe |
 
 All geometry modes are supported: sheet, half-solid, solid, and PI-TPMS (two-phase intersection). The Bundle family carries its own topology (sheet / half-solid / solid via iso offset and sheet width) through the same pipeline.
 
@@ -46,6 +47,8 @@ All geometry modes are supported: sheet, half-solid, solid, and PI-TPMS (two-pha
 Every F13LD design tool has an **⬡ Open in F13LD.mesh** button in its header. Click it and the current recipe opens in the mesher pre-loaded — no file download, no copy-paste.
 
 The recipe is URL-encoded as a `?r=` query parameter. The resulting URL is bookmarkable and shareable.
+
+F13LD.foam sends `#r=` instead: its recipes carry every seed position (up to ~28 KB), and the part after `#` never goes to the server, so there is no length limit. Mesh reads both the same way.
 
 ### Drop or pick a file
 
@@ -87,6 +90,8 @@ All SDF evaluation runs in a `[-5, 5]³` world space. The TPMS and Grain evaluat
 
 **Beam** lattices evaluate in a millimetre-scaled domain (struts in physical units) and tile cubically via wrap + halo neighbors. **Bundle** evaluates over its native `[-π, π]³` design domain, with one structural cell mapped to a fixed world span (10 world units per cell) so the Z-twist period tiles correctly; because that twist period rarely equals the in-plane period, Bundle bakes with **per-axis (anisotropic) world bounds**, the same mechanism the Beam family uses.
 
+**Foam** uses the `[-5, 5]` cube directly: one foam tile is one mesh cell, and world points are wrapped into the tile with nearest-periodic-image seed distances.
+
 All SDFs return positive-inside values (Manifold convention). The box boundary is intersected via a `max()` SDF operation to ensure the mesh closes cleanly at the domain edges.
 
 ---
@@ -110,6 +115,9 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `index.html` | Page markup, import map, script tags |
 | `mesh.css` | All styles |
 | `00-libs.js` · `01-config.js` · `02-html.js` | Library loader · version + worker URL helper · HTML escaping |
+| `03-registry.js` | Family and loader registries (`registerFamily`, `registerLoader`), family labels/colours, type badge |
+| `families/fam-*.js` | One descriptor per design tool: detection, validation, summary, periodicity, bake bounds, export caps and estimates |
+| `loaders/ld-*.js` | One file per recipe source: `?queue=`, `?r=`, `#r=` |
 | `05-ui-chrome.js` | Spinner orb, status indicator |
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
 | `12-shape-sdf-bake.js` · `13-hu-bake.js` | Shape SDF and hyperuniform bake worker pools |
@@ -121,15 +129,25 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
 | `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
 
+### Adding a design tool
+
+1. `families/fam-<id>.js` — call `registerFamily({...})`; the fields are documented at the top of `03-registry.js`.
+2. `worker/m2x-sdf-<id>.js` — write the SDF builder (negative-inside, world units) and call `registerSDF('<id>', {build(recipe){…}})`.
+3. Add one `<script defer>` line to `index.html` and one entry to the `importScripts` list in `worker/mesh-worker.js`.
+4. Add a case to `tests/recipes.json`.
+
+Nothing else should need to change; if it does, the registry is missing a field. A new recipe source (e.g. `?vault=`) is one `loaders/ld-<id>.js` calling `registerLoader`.
+
 ### Workers (`worker/`)
 
 | File | What it holds |
 |---|---|
 | `mesh-worker.js` | Mesh worker entry; loads the `m*.js` parts below in order |
 | `m00-libs.js` | Manifold + meshoptimizer loaders |
+| `m05-sdf-registry.js` | `registerSDF` — each SDF file registers its builder (and, for stochastic fields, its raw preview field) |
 | `m10-noise.js` · `m11-grain-fields.js` · `m12-reaction-diffusion.js` | Field primitives |
-| `m20-sdf-noise-tpms.js` · `m21-sdf-beam.js` · `m22-sdf-grain.js` · `m23-sdf-bundle.js` · `m24-sdf-wave.js` | One SDF builder per recipe family |
-| `m30-sdf-assembly.js` | Weld-group union and the `buildSDF` family dispatcher |
+| `m20-sdf-noise-tpms.js` · `m21-sdf-beam.js` · `m22-sdf-grain.js` · `m23-sdf-bundle.js` · `m24-sdf-wave.js` · `m25-sdf-foam.js` | One SDF builder per recipe family |
+| `m30-sdf-assembly.js` | Weld-group union and `buildSDF` (looks the family up in the registry) |
 | `m90-onmessage.js` | Bake / preview / export message handler |
 | `shape-sdf-worker.js` · `hu-bake-worker.js` | Shape SDF and hyperuniform slab bakes |
 
@@ -155,6 +173,7 @@ Worker files are requested with `?v=<version>` so a deploy never mixes a fresh p
 | [f13ld.bundle](https://mshomper.github.io/f13ld.bundle) | Twisted fiber bundles, helicoids, braids, and weaves |
 | [f13ld.noise](https://mshomper.github.io/f13ld.noise) | Stochastic noise scaffold explorer |
 | [f13ld.grain](https://mshomper.github.io/f13ld.grain) | Spinodoid / Gaussian / hyperuniform anisotropic grain fields |
+| [f13ld.foam](https://mshomper.github.io/f13ld.foam) | Voronoi foams — open, closed and Plateau-border cellular scaffolds |
 | **f13ld.mesh** | This tool — implicit scaffold → watertight 3MF |
 
 All tools share a common JSON recipe schema. Any recipe exported from one tool can be ingested by f13ld.mesh.

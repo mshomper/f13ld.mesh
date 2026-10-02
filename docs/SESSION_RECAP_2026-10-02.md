@@ -66,3 +66,14 @@ New folder `shared/`, loaded by the page (script tag) and by workers (`importScr
 - The new design tool: repo name or file, and one or two exported recipe JSONs.
 - Its SDF/field math, if it isn't already in the tool's source.
 - How its recipes identify themselves (a `family` value?) and which geometry modes it supports (sheet / solid / half…).
+
+## Update — v0.9.0 and v0.9.1 (same day)
+
+| Version | What | PR |
+|---|---|---|
+| v0.9.0 | Family, worker SDF and loader registries (steps 1, 2, 4 above). Harness: all 14 cases byte-identical to v0.8.3. | #6 |
+| v0.9.1 | F13LD.foam as the seventh family (`fam-foam.js` + `m25-sdf-foam.js`, one script line each — no registry gaps) and the `#r=` loader. Existing cases byte-identical to v0.9.0. | #7 |
+
+Decisions: mesh accepts **periodic foams only** (F13LD.foam refuses the handoff otherwise); foam links use `#r=` because recipes carry every seed position; the `FoamSeeds` generator is shared byte-for-byte with F13LD.foam (`tests/foamseeds.js`).
+
+Still open: step 3 (`shared/` de-duplication), deferred on purpose. Foam stiffness estimate is next on the F13LD.foam side.

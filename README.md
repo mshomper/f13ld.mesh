@@ -93,7 +93,47 @@ All SDFs return positive-inside values (Manifold convention). The box boundary i
 
 ## Architecture
 
-Single HTML file. No build step, no npm, no server.
+No build step and no npm. Since v0.8.0 the tool is split into plain files (same layout as F13LD.lab) instead of one large `index.html`. The page must be served over http(s): GitHub Pages, or locally with any static server:
+
+```
+python3 -m http.server 8000      # then open http://localhost:8000
+```
+
+Opening `index.html` straight from disk (`file://`) won't work, because browsers block module scripts and Web Workers there.
+
+### Project structure
+
+Files load in numeric order and share one global scope, so a file can use anything defined in a lower-numbered file. `00-libs.js` is the only ES module; it loads Three.js, the loaders, fflate and three-mesh-bvh through the import map and publishes them as globals.
+
+| File | What it holds |
+|---|---|
+| `index.html` | Page markup, import map, script tags |
+| `mesh.css` | All styles |
+| `00-libs.js` · `01-config.js` | Library loader · version + worker URL helper |
+| `05-ui-chrome.js` | Spinner orb, status indicator |
+| `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
+| `12-shape-sdf-bake.js` · `13-hu-bake.js` | Shape SDF and hyperuniform bake worker pools |
+| `20-raymarcher.js` · `21-gimbal.js` | WebGL2 preview · orientation gimbal |
+| `30-shape-import.js` · `31-body-cards.js` | Body file intake · body cards, weld drag/drop, recipe library |
+| `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
+| `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline |
+| `50-recipe-router.js` · `51-summaries.js` | Recipe family detection · summary cards |
+| `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
+| `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
+
+### Workers (`worker/`)
+
+| File | What it holds |
+|---|---|
+| `mesh-worker.js` | Mesh worker entry; loads the `m*.js` parts below in order |
+| `m00-libs.js` | Manifold + meshoptimizer loaders |
+| `m10-noise.js` · `m11-grain-fields.js` · `m12-reaction-diffusion.js` | Field primitives |
+| `m20-sdf-noise-tpms.js` · `m21-sdf-beam.js` · `m22-sdf-grain.js` · `m23-sdf-bundle.js` · `m24-sdf-wave.js` | One SDF builder per recipe family |
+| `m30-sdf-assembly.js` | Weld-group union and the `buildSDF` family dispatcher |
+| `m90-onmessage.js` | Bake / preview / export message handler |
+| `shape-sdf-worker.js` · `hu-bake-worker.js` | Shape SDF and hyperuniform slab bakes |
+
+Worker files are requested with `?v=<version>` so a deploy never mixes a fresh page with stale cached worker code. Bump `F13LD_MESH_VERSION` in `01-config.js` (and the header label in `index.html`) on each release.
 
 **Libraries loaded from CDN at runtime:**
 - [Manifold 3.4.1](https://github.com/elalish/manifold) — WASM mesh kernel (LevelSet, manifold guarantee, 3MF-friendly topology)

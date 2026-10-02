@@ -5,9 +5,9 @@
 'use strict';
 
 // ── Summary renderers ─────────────────────────────────────────────────────
-function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-lbl">${l}</div><div class="mc-val">${v}${u?`<span class="mc-unit">${u}</span>`:''}</div></div>`;}
-function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${l} <b>${v}</b>${u?`<small> ${u}</small>`:''}</div>`;}
-function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${h.method||'MIL-HS'}&middot;${h.grid||'?'}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
+function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-lbl">${esc(l)}</div><div class="mc-val">${esc(v)}${u?`<span class="mc-unit">${esc(u)}</span>`:''}</div></div>`;}
+function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${esc(l)} <b>${esc(v)}</b>${u?`<small> ${esc(u)}</small>`:''}</div>`;}
+function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${esc(h.method||'MIL-HS')}&middot;${esc(h.grid||'?')}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
 function exportPanel(){
   const q=currentExportQual||'low';
   return`<hr class="div">
@@ -64,7 +64,7 @@ function buildGrainSummary(r){const f=r.json.field,g=r.json.geometry||{},h=r.jso
     </div>${exportPanel()}`;
   }
   const dir=f.principal_direction?`[${f.principal_direction.map(v=>parseFloat(v.toFixed(2))).join(', ')}]`:f.dir_mode||'—';
-  return`<div class="sec-lbl">grain scaffold &middot;${r.subtype}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${exportPanel()}`;}
+  return`<div class="sec-lbl">grain scaffold &middot;${esc(r.subtype)}</div><div class="meta-grid">${card('field type',(f.type||'—').toUpperCase())}${card('N waves',f.n_waves)}${card('κ',f.kappa)}${card('frequency',f.frequency)}${card('direction',dir)}${card('dir mode',f.dir_mode)}${card('topology',g.topology)}${card('center',g.center)}${card('half-width',g.half_width)}${card('RNG seed',f.rng_seed)}</div>${exportPanel()}`;}
 // v0.5.0-rc16: Beam-family summary. Uses MPa engineering_constants & Zener
 // from the F13LD.beam JSON (different schema than the noise/tpms/grain
 // homogenization block, so cannot reuse homoSection).

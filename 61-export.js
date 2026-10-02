@@ -93,6 +93,7 @@ async function _exportWeldGroup(gid){
       exportTimer=setTimeout(()=>{ exportTimedOut=true; try{worker.terminate();}catch(_){} if(meshWorker===worker)meshWorker=null;
         reject(new Error('Weld export exceeded '+(EXPORT_TIMEOUT_MS/1000)+'s and was stopped. The group is too dense at this quality \u2014 increase cell size or lower export quality.')); }, EXPORT_TIMEOUT_MS);
       _exportTimeoutTimer=exportTimer;
+      _exportCancelReject=reject;
       worker.onmessage=e=>{ const dd=e.data; if(exportTimedOut)return;
         if(dd.type==='progress')coSub.textContent=dd.stage;
         else if(dd.type==='diag')console.log('[export][mem-guard]',dd.diag);
@@ -134,14 +135,47 @@ async function _exportWeldGroup(gid){
     if(elapsedEl)elapsedEl.style.display='none';
     if(meshWorker){meshWorker.terminate();meshWorker=null;}
     hideComputing();showCancelBtn(false);
-    report.innerHTML='<div class="exp-err">&#9888; '+(e.message||e)+'</div>';
+    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">&#9888; '+esc(e.message||e)+'</div>';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
-    console.error('[weld export]',e);
+    if(e.message!=='cancelled') console.error('[weld export]',e);
   }
   btn.disabled=false;
 }
 
+// ── One export at a time (v0.8.1) ─────────────────────────────────────────
+// Re-rendering the panel mid-export creates a fresh, enabled Export button.
+// A second export used to terminate the first's worker; the first then hung,
+// and its timeout later tore down the second — leaving the button stuck with
+// no way to cancel. Exports now run one at a time, and any error that escapes
+// the pipeline still resets the panel instead of leaving the overlay up.
+let _exportBusy=false;
 window.triggerExport=async function(){
+  if(_exportBusy){
+    const rep=document.getElementById('expReport');
+    if(rep) rep.innerHTML='<div class="exp-err">&#9888; An export is already running — wait for it to finish or press cancel.</div>';
+    return;
+  }
+  _exportBusy=true;
+  try{ await _triggerExportImpl(); }
+  catch(e){ _exportFailUI(e); }
+  finally{ _exportBusy=false; _exportCancelReject=null; }
+};
+function _exportFailUI(e){
+  if(_exportElapsedTimer) clearInterval(_exportElapsedTimer);
+  if(_exportTimeoutTimer) clearTimeout(_exportTimeoutTimer);
+  _exportElapsedTimer=null; _exportTimeoutTimer=null;
+  const el=document.getElementById('expElapsed'); if(el) el.style.display='none';
+  if(meshWorker){ try{ meshWorker.terminate(); }catch(_){} meshWorker=null; }
+  hideComputing(); showCancelBtn(false);
+  const btn=document.getElementById('expBtn');
+  if(btn){ btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF'; }
+  const cancelled=e&&e.message==='cancelled';
+  const rep=document.getElementById('expReport');
+  if(rep && !cancelled) rep.innerHTML='<div class="exp-err">&#9888; '+esc((e&&e.message)||e)+'</div>';
+  if(!cancelled) console.error('[export]',e);
+}
+
+async function _triggerExportImpl(){
   // ── Weld-group export (W4): active body in a >=2-member weld group emits the
   //    group's union as ONE watertight 3MF part (mirrors active-body export). ──
   const _wgid=(typeof activeGroupId==='function')?activeGroupId():null;
@@ -292,7 +326,7 @@ window.triggerExport=async function(){
         dirPhi=Math.atan2(my,mx)*180/Math.PI;
       }
       const huParams={
-        kappa:f.kappa||6, rngSeed:f.rng_seed||42,
+        kappa:f.kappa??6, rngSeed:f.rng_seed??42,
         dirMode:f.dir_mode||'single', dirTheta, dirPhi,
         wX:f.ortho_weights?.[0]??.33, wY:f.ortho_weights?.[1]??.33, wZ:f.ortho_weights?.[2]??.34,
         huN:f.hu_n||80, huAspect:f.hu_aspect||4, huWidth:f.hu_width||.04,
@@ -509,6 +543,7 @@ window.triggerExport=async function(){
         ));
       }, EXPORT_TIMEOUT_MS);
       _exportTimeoutTimer = exportTimer; // expose to cancelMesh()
+      _exportCancelReject = reject;      // v0.8.1: Cancel settles this wait
       worker.onmessage=e=>{
         const d=e.data;
         if(exportTimedOut) return; // ignore late messages from a killed worker
@@ -612,9 +647,9 @@ window.triggerExport=async function(){
     if(elapsedEl){elapsedEl.style.display='none';}
     if(meshWorker){meshWorker.terminate();meshWorker=null;}
     hideComputing();showCancelBtn(false);
-    report.innerHTML='<div class="exp-err">&#9888; '+(e.message||e)+'</div>';
+    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">&#9888; '+esc(e.message||e)+'</div>';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
-    console.error(e);
+    if(e.message!=='cancelled') console.error(e);
   }
   btn.disabled=false;
 };

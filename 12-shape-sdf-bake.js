@@ -207,6 +207,7 @@ async function computeShapeSDF(posArr, idxArr, bbox, N=128, onProgress){
       let worker;
       try{worker=new Worker(getSdfWorkerUrl());}
       catch(we){reject(we);return;}
+      worker._reject=reject;   // lets _cancelSdfBake settle this promise
       _activeSdfWorkers.push(worker);
       worker.onmessage=e=>{
         const d=e.data;
@@ -267,6 +268,8 @@ window._cancelSdfBake=function(){
   _sdfBakeAborted=true;
   // Terminate all active SDF workers so the cancel takes effect immediately
   // rather than waiting for the next yield-cadence check.
-  _activeSdfWorkers.forEach(w=>{try{w.terminate();}catch(_){}});
+  // v0.8.1: terminated workers never reply — settle their promises so the
+  // caller's cancel path runs instead of waiting forever.
+  _activeSdfWorkers.forEach(w=>{try{w.terminate();}catch(_){} try{w._reject&&w._reject(new Error('cancelled'));}catch(_){}});
   _activeSdfWorkers=[];
 };

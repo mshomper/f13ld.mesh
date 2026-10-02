@@ -28,7 +28,7 @@ function buildSpinodoidWaves(params){
   var rng=mulberry32(params.rngSeed),N=params.nWaves,freq=params.frequency,kappa=params.kappa,mode=params.dirMode;
   var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
   var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34],totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6),waves=[];
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX??.33,params.wY??.33,params.wZ??.34],totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6),waves=[];
   for(var i=0;i<N;i++){
     var dir;
     if(mode==='iso')dir=sampleVMF(rng,0);
@@ -47,7 +47,7 @@ function buildGRFWaves(params){
   function randn(){var u=Math.max(rng(),1e-10),v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
   for(var i=0;i<N;i++){
     var dir=sampleVMF(rng,0),k0;
-    if(mode==='ortho'){var wx=params.wX||.33,wy=params.wY||.33,wz=params.wZ||.34;var tot=Math.max(wx+wy+wz,1e-6);wx/=tot;wy/=tot;wz/=tot;var mW=Math.max(wx,wy,wz);var kS=1/(Math.max(wx*dir[0]*dir[0]+wy*dir[1]*dir[1]+wz*dir[2]*dir[2],.05)/mW);kS=Math.min(Math.max(kS,.3),3);k0=k0base*kS;}
+    if(mode==='ortho'){var wx=params.wX??.33,wy=params.wY??.33,wz=params.wZ??.34;var tot=Math.max(wx+wy+wz,1e-6);wx/=tot;wy/=tot;wz/=tot;var mW=Math.max(wx,wy,wz);var kS=1/(Math.max(wx*dir[0]*dir[0]+wy*dir[1]*dir[1]+wz*dir[2]*dir[2],.05)/mW);kS=Math.min(Math.max(kS,.3),3);k0=k0base*kS;}
     else if(mode==='single'){var align=Math.abs(dir[0]*mux+dir[1]*muy+dir[2]*muz);k0=k0base*(1.5-align);}
     else k0=k0base;
     var sigma=sigmafrac*k0,mag,tries=0;do{mag=k0+randn()*sigma;tries++;}while(mag<=0&&tries<30);
@@ -70,7 +70,7 @@ function buildHUKernels(params){
   var ell=params.huEll||1,sq=Math.sqrt(ell),a=bw*aspect*.5,b=bw*.5,b1=b/sq,b2=b*sq,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
   var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
   var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX??.33,params.wY??.33,params.wZ??.34];
   var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
   function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
   function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}

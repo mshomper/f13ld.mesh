@@ -87,6 +87,11 @@ function bakeField(recipe, N, opts){
           topology=d.topology; wMin=d.worldMin; wMax=d.worldMax;
           wk.terminate(); if(++done===slabs.length && !failed) finalize();
         }else if(d.type==='error'){ if(!failed){failed=true; cleanup(); reject(new Error(d.message));} }
+        else if(d.type==='baked'){
+          // v0.8.1: the worker only slab-bakes noise/grain; any other family
+          // answers with a whole grid. Fail loudly instead of waiting forever.
+          if(!failed){failed=true; cleanup(); reject(new Error('Slab bake not supported for '+recipe.family+' recipes.'));}
+        }
       };
       wk.onerror=e=>{ if(!failed){failed=true; cleanup(); reject(new Error(e.message||'Bake error'));} };
       wk.postMessage({mode:'bake',recipe,N,...opts,zStart:sl.zStart,zEnd:sl.zEnd});

@@ -35,7 +35,7 @@ function buildHUKernels(params){
   var ell=params.huEll||1,sq=Math.sqrt(ell),a=bw*aspect*.5,b=bw*.5,b1=b/sq,b2=b*sq,kappa=params.kappa,mode=params.dirMode,pts=jitteredGrid3D(N,rng);
   var tRad=params.dirTheta*Math.PI/180,pRad=params.dirPhi*Math.PI/180;
   var mux=Math.sin(tRad)*Math.cos(pRad),muy=Math.sin(tRad)*Math.sin(pRad),muz=Math.cos(tRad);
-  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX||.33,params.wY||.33,params.wZ||.34];
+  var axes=[[1,0,0],[0,1,0],[0,0,1]],weights=[params.wX??.33,params.wY??.33,params.wZ??.34];
   var totalW=Math.max(weights[0]+weights[1]+weights[2],1e-6);
   function cross3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
   function norm3(v){var l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2)||1;return[v[0]/l,v[1]/l,v[2]/l];}

@@ -75,7 +75,7 @@ async function showRecipe(recipe){
   }
   dropzone.style.display='none';recipeView.style.display='flex';
   document.getElementById('shapeStrip').style.display='block';
-  typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+recipe.subtype.toUpperCase();
+  typeBadge.className=recipe.family;typeBadge.textContent=FAMILY_LABEL[recipe.family]+' · '+String(recipe.subtype).toUpperCase();
   summaryEl.innerHTML=renderSummary(recipe);
   // v0.5.0-rc17: refresh trim-to-nodes toggle visibility for the new family.
   // setShapeUI only fires on shape state changes, so if a shape was already

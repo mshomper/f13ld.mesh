@@ -40,7 +40,7 @@ async function triggerPreview(quality){
       syncGhostsToRaymarcher();
       if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
       clearStale(); triPill.style.display='block'; triPill.textContent='preview · '+result.ms+'ms';
-    }catch(e){ console.error('weld preview',e); }
+    }catch(e){ console.error('weld preview',e); if(e.message!=='cancelled') showError('Weld preview: '+(e.message||e)); }
     hideComputing(); setBtns(true);
     return;
   }
@@ -52,7 +52,10 @@ async function triggerPreview(quality){
   rm.setQuality(quality);
   const periodic=recipeIsPeriodic(currentRecipe);
   let N=PREVIEW_BAKE_N[quality]||64;
-  const needsRawBake=!periodic;
+  // v0.8.1: only stochastic fields (noise, grain) get the raw normalized bake.
+  // A warped bundle is non-periodic but is a true SDF; routing it here made the
+  // slab-parallel bake wait forever for slabs the worker never sends.
+  const needsRawBake=!periodic && (currentRecipe.family==='noise' || currentRecipe.family==='grain');
   let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
   if(!periodic&&importedShape){
     // Stochastic field + shape: bake strategy depends on field type.
@@ -108,21 +111,30 @@ async function triggerPreview(quality){
       rm.setWorldBounds(wMin,wMax,false);
     }
     await new Promise(r=>setTimeout(r,0));
-    const result=await bakeField(currentRecipe, N, bakeOpts);
-    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
-    // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
-    // reuse the same normalization instead of doing a sparser 16³ pre-scan.
-    // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
-    // don't need normalization since their fields are in known unit systems.
-    if(bakeOpts.bakeRaw && currentRecipe){
-      currentRecipe._previewFieldMin=result.fieldMin;
-      currentRecipe._previewFieldMax=result.fieldMax;
+    // v0.8.1: errors here used to leave the overlay up and the quality
+    // buttons disabled; handled the same way as the periodic path below.
+    try{
+      const result=await bakeField(currentRecipe, N, bakeOpts);
+      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+      // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
+      // reuse the same normalization instead of doing a sparser 16³ pre-scan.
+      // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
+      // don't need normalization since their fields are in known unit systems.
+      if(bakeOpts.bakeRaw && currentRecipe){
+        currentRecipe._previewFieldMin=result.fieldMin;
+        currentRecipe._previewFieldMax=result.fieldMax;
+      }
+      clearStale();
+      triPill.style.display='block';
+      triPill.textContent='preview · '+result.ms+'ms';
+      seamPill.style.display='none';
+      hideComputing();
+    }catch(e){
+      hideComputing();
+      if(e.message!=='cancelled')showError('Preview: '+(e.message||e));
+    }finally{
+      setBtns(true);
     }
-    clearStale();
-    triPill.style.display='block';
-    triPill.textContent='preview · '+result.ms+'ms';
-    seamPill.style.display='none';
-    hideComputing();setBtns(true);
     return;
   }
   // Periodic or no shape: bake one cell with tiling

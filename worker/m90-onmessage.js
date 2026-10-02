@@ -42,8 +42,8 @@ self.onmessage=async function(e){
           dirTheta=Math.acos(Math.max(-1,Math.min(1,mz)))*180/Math.PI;
           dirPhi=Math.atan2(my,mx)*180/Math.PI;
         }
-        const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa||6,
-          frequency:f.frequency||.27,rngSeed:f.rng_seed||42,dirMode:f.dir_mode||'single',
+        const params={fieldType:f.type,nWaves:f.n_waves||48,kappa:f.kappa??6,
+          frequency:f.frequency||.27,rngSeed:f.rng_seed??42,dirMode:f.dir_mode||'single',
           dirTheta,dirPhi,wX:f.ortho_weights?.[0]??.33,wY:f.ortho_weights?.[1]??.33,
           wZ:f.ortho_weights?.[2]??.34,grfSigma:f.grf_sigma||.45,
           huN:f.hu_n||80,huAspect:f.hu_aspect||4,huWidth:f.hu_width||.04,huCross:f.hu_cross||2,huSharp:f.hu_sharp||1,huBlend:f.hu_blend||1,huEll:f.hu_ell||1};

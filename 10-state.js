@@ -566,9 +566,15 @@ function removeRecipe(recipeId){
   }
   // Sync currentRecipe based on the (possibly changed) active body assignment.
   syncCurrentRecipeFromActiveBody();
-  // If library is now empty, send back to dropzone (no preview possible).
+  // If library is now empty: with no bodies, send back to the dropzone.
+  // v0.8.1: with bodies loaded, keep them (all now solid) and show the
+  // empty-library state instead of deleting every body and weld group.
   if(recipes.size === 0){
-    if(typeof resetToDropzone === 'function') resetToDropzone();
+    if(bodies.size === 0){
+      if(typeof resetToDropzone === 'function') resetToDropzone();
+    } else {
+      showNoRecipeState();
+    }
     return;
   }
   // Otherwise refresh UI and rebuild preview for new active recipe.
@@ -577,6 +583,24 @@ function removeRecipe(recipeId){
   reloadActiveRecipeIntoPreview();
   // rc3: ghost colors may have changed.
   syncGhostsToRaymarcher();
+}
+
+// v0.8.1: recipe library emptied while bodies remain. Bodies stay (solid),
+// the panel explains how to continue, and solid bodies can still be exported.
+function showNoRecipeState(){
+  if(typeof typeBadge !== 'undefined' && typeBadge){ typeBadge.className=''; typeBadge.textContent='NO RECIPE'; }
+  if(typeof summaryEl !== 'undefined' && summaryEl){
+    summaryEl.innerHTML='<div class="sec-lbl">no recipe loaded</div>'+
+      '<div class="norecipe-note">Your bodies are kept and shown as solid. '+
+      'Add a recipe with the <b>+ add recipe</b> tile or drop a recipe JSON anywhere, '+
+      'then click its chip to fill the active body.</div>'+
+      (typeof exportPanel==='function'?exportPanel():'');
+  }
+  const trimWrap=document.getElementById('trimNodesWrap'); if(trimWrap) trimWrap.style.display='none';
+  renderRecipeLibrary();
+  renderBodyCards();
+  syncGhostsToRaymarcher();
+  if(typeof updateExportEstimate === 'function') setTimeout(updateExportEstimate,0);
 }
 
 // rc2.5: count how many bodies have this recipe assigned.

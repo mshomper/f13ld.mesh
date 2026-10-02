@@ -73,7 +73,7 @@ function buildBodyCardHTML(bodyId){
   const chips = `
       <span class="sc-chip">${meta.format||''}</span>
       <span class="sc-chip">tris <b>${tris}</b></span>`;
-  const safeName = String(meta.name||'shape').replace(/</g,'&lt;');
+  const safeName = esc(meta.name||'shape');
   const rid = assignments.get(bodyId);
   const r = (rid && rid !== SOLID_SENTINEL && recipes.has(rid)) ? recipes.get(rid) : null;
   const bodyCol = resolveBodyColor(bodyId);
@@ -90,7 +90,7 @@ function buildBodyCardHTML(bodyId){
     recipeChipHtml = `
       <span class="shapeCard-recipe" data-body-id="${bodyId}" style="color:${bodyCol};border-color:${bodyCol};background:${bodyCol}11">
         <span class="scr-dot" style="background:${bodyCol}"></span>
-        <span class="scr-name">${label}</span>
+        <span class="scr-name">${esc(label)}</span>
         <span class="scr-caret">▾</span>
       </span>`;
   } else {
@@ -228,10 +228,10 @@ function renderBodyCards(){
   // Optional "in progress" card for an import that's loading or errored.
   if(_pendingImport){
     const cls = _pendingImport.state === 'loading' ? 'loading' : 'err';
-    const safeName = String(_pendingImport.name||'').replace(/</g,'&lt;');
+    const safeName = esc(_pendingImport.name||'');
     const msg = _pendingImport.state === 'loading'
       ? '<div class="sc-status">loading…</div>'
-      : `<div class="sc-status err">⚠ ${_pendingImport.errMsg||'failed'}</div>`;
+      : `<div class="sc-status err">⚠ ${esc(_pendingImport.errMsg||'failed')}</div>`;
     cards.push(`
       <div class="shapeCard ${cls}">
         <span class="sc-name">${safeName}</span>
@@ -341,14 +341,14 @@ function renderRecipeLibrary(){
     if(!r) continue;
     const col = familyColor(r.family);
     const label = (FAMILY_LABEL[r.family]||r.family).toLowerCase() + ' · ' + String(r.subtype||'').toLowerCase();
-    const safeName = String(r.filename||label).replace(/</g,'&lt;');
+    const safeName = esc(r.filename||label);
     const usage = getRecipeUsageCount(recipeId);
     chips.push(`
       <div class="libraryChip" data-recipe-id="${recipeId}" style="border-color:${col}">
         <button class="lc-x" data-recipe-id="${recipeId}" title="remove">&#10005;</button>
         <div class="lc-row">
           <span class="lc-dot" style="background:${col}"></span>
-          <span class="lc-name">${label}</span>
+          <span class="lc-name">${esc(label)}</span>
         </div>
         <div class="lc-usage" style="color:${col}">used ${usage}×</div>
       </div>`);
@@ -361,7 +361,7 @@ function renderRecipeLibrary(){
       <span class="lca-lbl">${atCap?'cap':'add recipe'}</span>
     </div>`);
   row.innerHTML = chips.join('');
-  row.style.display = (recipes.size > 0) ? 'flex' : 'none';
+  row.style.display = (recipes.size > 0 || bodies.size > 0) ? 'flex' : 'none';
 
   // Library chip click → open dropdown that ALSO lets you preview/assign to active body.
   // For now, simple behavior: click the chip body to assign to active body.
@@ -477,7 +477,7 @@ function _openRecipeDropdown(anchor, bodyId){
       items.push(`
         <div class="rd-item${isCurrent?' current':''}" data-recipe-id="${rid}">
           <span class="rd-dot" style="background:${col}"></span>
-          <span class="rd-name" style="color:${col}">${label}</span>
+          <span class="rd-name" style="color:${col}">${esc(label)}</span>
         </div>`);
     }
   }
@@ -528,7 +528,7 @@ function _openPalettePopover(anchor, bodyId){
               data-hex="${hex||''}"
               title="${isReset?'Reset to default':hex}"
               style="background:${bg};border-color:${border}">
-        ${label}
+        ${esc(label)}
       </button>`;
   }).join('');
   dd.innerHTML = `<div class="pp-grid">${swatchesHtml}</div>`;

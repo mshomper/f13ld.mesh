@@ -33,8 +33,8 @@
 //
 // Fallback: if override is absent (first export before any preview bake,
 // or after a setStale event), the builder does its own 16³ pre-scan over
-// world [-5,5]. No padding (rc14: the rc10 5% padding was compensation
-// for the old mis-domain pre-scan in noise; rc14 fixes that bug too).
+// world [-5,5]. Noise pads that range by 5% (rc27, matching F13LD.noise and
+// F13LD.sweep); grain uses the unpadded range.
 // RD path doesn't need normalization (Gray-Scott v-field is naturally in
 // [0,1]). TPMS has no normalization concept — phi is in a well-defined
 // implicit-function unit system.

@@ -126,8 +126,22 @@ function computeShapeBbox(pos){
 // only; marching cubes lives in the worker via Manifold.levelSet.
 
 // ── Main shape file dispatcher ────────────────────────────────────────────
-async function handleShapeFile(file){
+// v0.8.3: imports run one at a time. Dropping a second file mid-bake used to
+// pass the body-cap check before either finished (exceeding the 7-body limit),
+// share one shape-SDF worker list (so cancel orphaned the first bake's
+// workers), and overwrite the single pending-import card.
+let _shapeImportQueue=Promise.resolve();
+function handleShapeFile(file){
+  const job=_shapeImportQueue.then(()=>_handleShapeFileImpl(file)).catch(e=>console.error('[import]',e));
+  _shapeImportQueue=job;
+  return job;
+}
+async function _handleShapeFileImpl(file){
   const name=file.name, ext=name.split('.').pop().toLowerCase();
+  if(typeof _exportBusy!=='undefined' && _exportBusy){
+    showCapToast('An export is running — add the body after it finishes.');
+    return;
+  }
   // rc2: enforce MAX_BODIES cap at entry. Reject with toast, no UI change.
   if(!canAddBody()){
     showCapToast();
@@ -137,7 +151,10 @@ async function handleShapeFile(file){
   clearShapeWire();
   // rc2: no longer clear prior body — bodies accumulate. Raymarcher rebind
   // happens on switchActiveBody / after setActiveBody in the success path.
-  if(rm) rm.clearShape();
+  // v0.8.3: only clear when there is no body yet. Clearing on every import
+  // reset the camera, showed the active body unclipped during the bake, and
+  // left it unclipped if the import failed.
+  if(rm && bodies.size===0) rm.clearShape();
   showComputing('loading shape…','parsing file');
   try{
     let pos, idx, format;
@@ -154,16 +171,8 @@ async function handleShapeFile(file){
     } else if(ext==='3mf'){
       format='3MF';
       const buf=await file.arrayBuffer();
-      // ⚠ API UNCERTAIN: ThreeMFLoader may not have parseAsync — if this throws,
-      // it may be .parse(buf) only; check console
-      console.log('[F13LD.mesh] ThreeMFLoader: calling parseAsync…');
-      let group;
-      try{
-        group=await new ThreeMFLoader().parseAsync(buf);
-      }catch(e){
-        console.warn('[F13LD.mesh] parseAsync failed, trying sync parse:', e);
-        group=new ThreeMFLoader().parse(buf);
-      }
+      // three r158's ThreeMFLoader has parse() only (no parseAsync).
+      const group=new ThreeMFLoader().parse(buf);
       ({pos,idx}=groupToArrays(group));
       const unitMm=threeMFUnitScale(buf);
       if(unitMm!==1){ for(let k=0;k<pos.length;k++) pos[k]*=unitMm; console.log('[F13LD.mesh] 3MF unit scale ×'+unitMm); }

@@ -4,7 +4,16 @@
    ============================================================ */
 'use strict';
 
+// v0.8.3: preview generation counter. Body cards and the recipe library stay
+// clickable during a bake, so an older bake can finish after a newer one. Each
+// run captures its sequence number and recipe; a superseded run drops its
+// result instead of overwriting the view, and the field range it measured is
+// written to the recipe it actually baked (never to whatever is current now —
+// that cached range feeds export normalization).
+let _previewSeq=0;
 async function triggerPreview(quality){
+  const seq=++_previewSeq;
+  const isCurrent=()=>seq===_previewSeq;
   if(!rm)return;
   // -- Weld-group preview: bake the active group merged over its bbox ----------
   const _agid=activeGroupId();
@@ -21,8 +30,6 @@ async function triggerPreview(quality){
       const s=10/refCell;
       const N=PREVIEW_BAKE_N[quality]||64;
       const wMin=[gbb.mnx*s,gbb.mny*s,gbb.mnz*s], wMax=[gbb.mxx*s,gbb.mxy*s,gbb.mxz*s];
-      console.log('[weld] members',specs.length,'· groupBbox(mm)',gbb,'· scale',s);                                  // TEMP DEBUG
-      specs.forEach((x,i)=>console.log('[weld]   spec'+i, x.solid?'SOLID':'lattice('+(x.recipe&&x.recipe.family)+')', '· cell',x.cellSizeMm, '· N',x.shapeN, '· bbox', JSON.stringify(x.bbox)));  // TEMP DEBUG
       rm.setWorldBounds(wMin,wMax,false);
       // Size the view cube to the WHOLE assembly (not just the group) so bodies
       // outside the weld still fit; the field itself only spans the group bbox.
@@ -32,7 +39,7 @@ async function triggerPreview(quality){
       if(rm.fitReachBounds) rm.fitReachBounds(_rMin,_rMax);
       const result=await bakeField(currentRecipe, N,
         {isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)});
-      console.log('[weld] baked ·',{N:result.N,fieldMin:result.fieldMin,fieldMax:result.fieldMax,ms:result.ms});      // TEMP DEBUG
+      if(!isCurrent()) return;   // superseded by a newer preview
       rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
       // Bodies outside the group render as ghosts (syncGhosts skips group members);
       // then set the lattice base color to the GROUP rail color so the welded mass
@@ -40,11 +47,12 @@ async function triggerPreview(quality){
       syncGhostsToRaymarcher();
       if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
       clearStale(); triPill.style.display='block'; triPill.textContent='preview · '+result.ms+'ms';
-    }catch(e){ console.error('weld preview',e); if(e.message!=='cancelled') showError('Weld preview: '+(e.message||e)); }
+    }catch(e){ if(!isCurrent()) return; console.error('weld preview',e); if(e.message!=='cancelled') showError('Weld preview: '+(e.message||e)); }
     hideComputing(); setBtns(true);
     return;
   }
   if(!currentRecipe)return;
+  const bakedRecipe=currentRecipe;
   rm.setAssemblyMode(false);   // single-body path: ensure the active-body clip is restored
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
   setBtns(false);showCancelBtn(false);
@@ -114,26 +122,29 @@ async function triggerPreview(quality){
     // v0.8.1: errors here used to leave the overlay up and the quality
     // buttons disabled; handled the same way as the periodic path below.
     try{
-      const result=await bakeField(currentRecipe, N, bakeOpts);
-      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+      const result=await bakeField(bakedRecipe, N, bakeOpts);
       // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
       // reuse the same normalization instead of doing a sparser 16³ pre-scan.
       // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
       // don't need normalization since their fields are in known unit systems.
-      if(bakeOpts.bakeRaw && currentRecipe){
-        currentRecipe._previewFieldMin=result.fieldMin;
-        currentRecipe._previewFieldMax=result.fieldMax;
+      // v0.8.3: written to the recipe that was baked, even if superseded.
+      if(bakeOpts.bakeRaw){
+        bakedRecipe._previewFieldMin=result.fieldMin;
+        bakedRecipe._previewFieldMax=result.fieldMax;
       }
+      if(!isCurrent()) return;   // superseded by a newer preview
+      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
       clearStale();
       triPill.style.display='block';
       triPill.textContent='preview · '+result.ms+'ms';
       seamPill.style.display='none';
       hideComputing();
     }catch(e){
+      if(!isCurrent()) return;
       hideComputing();
       if(e.message!=='cancelled')showError('Preview: '+(e.message||e));
     }finally{
-      setBtns(true);
+      if(isCurrent()) setBtns(true);
     }
     return;
   }
@@ -170,23 +181,25 @@ async function triggerPreview(quality){
   rm.setWorldBounds(pMin,pMax,periodic);
   if(!importedShape) rm.fitPeriodicBounds(pMin,pMax); // frame the full cell on import; preserves zoom on re-preview
   try{
-    const result=await bakeField(currentRecipe, N, bakeOpts);
-    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    const result=await bakeField(bakedRecipe, N, bakeOpts);
     // v0.5.0-rc14: cache preview fieldMin/Max for export reuse (see shape path above).
-    if(bakeOpts.bakeRaw && currentRecipe){
-      currentRecipe._previewFieldMin=result.fieldMin;
-      currentRecipe._previewFieldMax=result.fieldMax;
+    if(bakeOpts.bakeRaw){
+      bakedRecipe._previewFieldMin=result.fieldMin;
+      bakedRecipe._previewFieldMax=result.fieldMax;
     }
+    if(!isCurrent()) return;   // superseded by a newer preview
+    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
     clearStale();
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
     updateSeamPill(currentRecipe);
     hideComputing();
   }catch(e){
+    if(!isCurrent()) return;
     hideComputing();
     if(e.message!=='cancelled')showError('Preview: '+(e.message||e));
   }finally{
-    setBtns(true);
+    if(isCurrent()) setBtns(true);
   }
 }
 window.triggerPreview=triggerPreview;

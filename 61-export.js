@@ -34,7 +34,9 @@ async function _exportWeldGroup(gid){
     showCancelBtn(false);
     // Edge clamp against the GROUP bbox; protect the thinnest lattice wall across members.
     const rawEdge=QUAL_EDGE_MM[currentExportQual]||0.10;
-    const {safeEdge:relEdgeMm}=clampEdgeMm(rawEdge, gbb, getMaxExportVoxels(currentRecipe||{family:'tpms'}));
+    // v0.8.3: cap by the strictest lattice member (was: the active body's recipe).
+    const capVox=specs.reduce((m,sp)=>(sp.solid||!sp.recipe)?m:Math.min(m,getMaxExportVoxels(sp.recipe)), MAX_EXPORT_VOXELS_DEFAULT);
+    const {safeEdge:relEdgeMm}=clampEdgeMm(rawEdge, gbb, capVox);
     // Track WHICH member is thinnest, not just the value: the suggested cell
     // size has to come from that member's own cellSizeMm, since members in a
     // weld group can each carry a different cell size.
@@ -115,9 +117,7 @@ async function _exportWeldGroup(gid){
     const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??1.0);
     const ts=new Date().toISOString().slice(0,10);
     const filename='weld_'+letter+'_'+specs.length+'bodies_'+ts+'.3mf';
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=filename;a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
     report.innerHTML='<div class="exp-report">'+
       expChip('part','weld '+letter)+
       expChip('bodies',specs.length)+
@@ -209,14 +209,15 @@ async function _triggerExportImpl(){
       const baseName = name.replace(/\.[^.]+$/, '');
       const ts = (function(){ const d=new Date(); const p=n=>String(n).padStart(2,'0');
         return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes()); })();
-      const fname = baseName + '_solid_' + ts + '.3mf';
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fname;
-      a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+      const fname = safeFilePart(baseName) + '_solid_' + ts + '.3mf';
+      downloadBlob(blob, fname);
+      const rep=document.getElementById('expReport');
+      if(rep) rep.innerHTML='<div class="exp-report">'+expChip('part','solid body')+expChip('triangles',(tris.length/3).toLocaleString())+expChip('file',(blob.size/1024).toFixed(1)+' KB')+'</div>';
     } catch(e) {
+      // v0.8.3: show the failure in the export report, not just the console.
       console.error('[export] solid body export failed:', e);
+      const rep=document.getElementById('expReport');
+      if(rep) rep.innerHTML='<div class="exp-err">&#9888; Solid body export failed — '+esc(e.message||e)+'</div>';
     } finally {
       btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
     }
@@ -487,8 +488,13 @@ async function _triggerExportImpl(){
   } else {
     const domainEl=document.getElementById('expDomainMm');
     const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
-    const edgeMm=QUAL_EDGE_MM[currentExportQual]||.10;
-    const edgeWorld=edgeMm*10/domainMm;
+    // v0.8.3: open-cube exports now respect the same family voxel cap as
+    // shape exports (clampEdgeWorld existed but was never called): a 100 mm
+    // domain at Low asked Manifold for 125M voxels.
+    const rawEdgeMmC=QUAL_EDGE_MM[currentExportQual]||.10;
+    const {safeEdge:edgeWorld,clamped:cubeClamped}=clampEdgeWorld(rawEdgeMmC*10/domainMm, getMaxExportVoxels(currentRecipe));
+    const edgeMm=+(edgeWorld*domainMm/10).toFixed(4);
+    if(cubeClamped) console.warn('[export] cube grid clamped to '+edgeMm+'mm edge — voxel budget for '+currentRecipe.family);
     const {estTris,estSec}=estimateMeshStats(currentRecipe,edgeWorld,null);
     coMain.textContent='exporting...';
     coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
@@ -590,8 +596,8 @@ async function _triggerExportImpl(){
     }
     const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??scale);
     const j=currentRecipe.json;
-    const preset=j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype;
-    const shapeSuffix=importedShape?('_'+importedShape.meta.name.replace(/\.[^.]+$/,'')):'';
+    const preset=safeFilePart(j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype);
+    const shapeSuffix=importedShape?('_'+safeFilePart(importedShape.meta.name.replace(/\.[^.]+$/,''))):'';
     // Filename decorators (v0.5.0-rc8): embed cell size and iso offset so
     // downstream files are self-describing. Filesystem-safe formatting:
     //   - dots → 'p' (5.0mm → "5p0mm")
@@ -610,9 +616,7 @@ async function _triggerExportImpl(){
     }
     const ts=new Date().toISOString().slice(0,10);
     const filename=currentRecipe.family+'_'+preset+shapeSuffix+paramSuffix+'_'+ts+'.3mf';
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=filename;a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
     report.innerHTML='<div class="exp-report">'+
       expChip('triangles',result.triCount.toLocaleString())+
       expChip('domain',domainLabel)+
@@ -653,4 +657,4 @@ async function _triggerExportImpl(){
   }
   btn.disabled=false;
 };
-function expChip(l,v){return`<div class="exp-chip">${l} <b>${v}</b></div>`;}
+function expChip(l,v){return`<div class="exp-chip">${esc(l)} <b>${esc(v)}</b></div>`;}

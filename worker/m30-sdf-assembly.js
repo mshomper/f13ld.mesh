@@ -74,7 +74,9 @@ function buildAssemblySDF(specs, blendK, rawPreview){
   return function(p){
     var acc=1e9;
     for(var i=0;i<comps.length;i++){
-      var d = (islat[i] && !rawPreview) ? unionGradNorm(comps[i], p, h, cap) : comps[i](p);
+      // v0.8.3: with no fillet (k≈0) the union is a plain min, whose zero set
+      // doesn't depend on gradient normalization — skip its 7 extra evaluations.
+      var d = (islat[i] && !rawPreview && k>1e-6) ? unionGradNorm(comps[i], p, h, cap) : comps[i](p);
       acc = unionSmin(acc, d, k);
     }
     return acc;

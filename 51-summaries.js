@@ -8,13 +8,15 @@
 function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-lbl">${esc(l)}</div><div class="mc-val">${esc(v)}${u?`<span class="mc-unit">${esc(u)}</span>`:''}</div></div>`;}
 function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${esc(l)} <b>${esc(v)}</b>${u?`<small> ${esc(u)}</small>`:''}</div>`;}
 function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${esc(h.method||'MIL-HS')}&middot;${esc(h.grid||'?')}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
+// v0.8.3: remembered across panel re-renders (was reset to 10 mm every time).
+let exportDomainMm=10;
 function exportPanel(){
   const q=currentExportQual||'low';
   return`<hr class="div">
 <div class="sec-lbl">export 3mf</div>
 <div class="exp-row">
   <span class="exp-label">domain size</span>
-  <input type="number" id="expDomainMm" class="exp-num" value="10" min="1" max="100" step="1">
+  <input type="number" id="expDomainMm" class="exp-num" value="${exportDomainMm}" min="1" max="100" step="1" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()">
   <span class="exp-unit">mm</span>
 </div>
 <div class="qual-strip" style="margin-bottom:8px">

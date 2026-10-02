@@ -34,7 +34,8 @@ function _scheduleStructXformRebake(){
   if(_structXformRebakeTimer) clearTimeout(_structXformRebakeTimer);
   _structXformRebakeTimer=setTimeout(()=>{
     _structXformRebakeTimer=null;
-    if(typeof triggerPreview==='function') triggerPreview();
+    // v0.8.3: keep the user's selected preview quality (was: no argument → fallback quality).
+    if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low');
   },300);
 }
 

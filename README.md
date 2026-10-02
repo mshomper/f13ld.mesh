@@ -163,8 +163,7 @@ All tools share a common JSON recipe schema. Any recipe exported from one tool c
 
 ## Known limitations
 
-- Gradient mode (spatially-varying cell scale) in TPMS recipes is parsed but not yet applied in the mesher — gradient recipes export at uniform cell scale
-- Domain shape is cubic only; non-box clipping geometries are planned for a future release
+- Without an imported body the export is a cube; to export any other envelope, import it as a body (STL / OBJ / 3MF / STEP / IGES) and fill it with the recipe
 - Warped Bundle recipes (warp mode on) bake non-periodically over the shape rather than tiling, since the warped field has no finite repeating cell
 - A non-zero Bundle Z-ramp is treated as a periodic input; if the ramp isn't set so the cell self-tiles, seams may appear at the tile borders
 - Fine quality at large domain sizes (e.g. 80 mm Fine) may take 30–60 seconds in-browser due to the density of SDF evaluations; use Standard for iteration and Fine for final export

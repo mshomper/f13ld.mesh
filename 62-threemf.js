@@ -53,10 +53,16 @@ async function buildMinimal3MF(vertProps,triVerts,scale){
   }
   if(buf){ parts.push(enc.encode(buf)); buf=''; }
   parts.push(midBytes);
+  // v0.8.3: the 3MF core spec requires three distinct vertex indices per
+  // triangle; zero-area triangles with a repeated index are skipped.
+  let degenerate=0;
   for(let i=0;i<nT;i++){
-    buf+=`<triangle v1="${triVerts[i*3]}" v2="${triVerts[i*3+1]}" v3="${triVerts[i*3+2]}"/>`;
+    const a=triVerts[i*3], b=triVerts[i*3+1], c=triVerts[i*3+2];
+    if(a===b||b===c||a===c){ degenerate++; continue; }
+    buf+=`<triangle v1="${a}" v2="${b}" v3="${c}"/>`;
     if((i&(CHUNK-1))===(CHUNK-1)){ parts.push(enc.encode(buf)); buf=''; }
   }
+  if(degenerate) console.warn('[3MF] skipped '+degenerate+' degenerate triangle(s)');
   if(buf){ parts.push(enc.encode(buf)); buf=''; }
   parts.push(tailBytes);
   // Concatenate all byte chunks into one model buffer.
@@ -67,4 +73,17 @@ async function buildMinimal3MF(vertProps,triVerts,scale){
   const rels=`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
   const zipped=fflate.zipSync({'[Content_Types].xml':enc.encode(ct),'_rels/.rels':enc.encode(rels),'3D/3dmodel.model':modelBytes});
   return new Blob([zipped],{type:'model/3mf'});
+}
+
+// v0.8.3: one download path for every export. Revoking the object URL right
+// after click() can cancel the download in Firefox/Safari, so revoke later.
+function downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+}
+// Filename-safe text from recipe strings (preset names, file names).
+function safeFilePart(v){
+  return String(v==null?'':v).replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60)||'x';
 }

@@ -572,7 +572,7 @@ function assignSolidToBody(bodyId){
 window.clearImportedShape=function(bodyId){
   // rc2: bodyId is passed from the card × button. If absent (legacy callers),
   // falls back to the active body (matches rc1 behavior).
-  clearActiveBody(bodyId);
+  const cleared = clearActiveBody(bodyId) || {};
   _assertModeAInvariants('after-clearImportedShape');
   clearShapeWire();
   // If no bodies remain, hide overlays. Otherwise the surviving active body
@@ -588,7 +588,10 @@ window.clearImportedShape=function(bodyId){
   } else {
     // A new active body was promoted inside clearActiveBody. Re-render cards.
     renderBodyCards();
-    if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
+    renderRecipeLibrary();
+    // v0.8.3: a different recipe family needs the full re-init (summary, badge).
+    if(cleared.recipeChanged && currentRecipe) reloadActiveRecipeIntoPreview();
+    else if(currentRecipe) triggerPreview(rm&&rm._quality||'low');
   }
   updateExportEstimate();
 };

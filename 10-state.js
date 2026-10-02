@@ -67,6 +67,16 @@ function setActiveBody(record){
   // visually busy than ghost mode). colorHex is null = use family default.
   if(record.visibility === undefined) record.visibility = VIS_DEFAULT;
   if(record.colorHex === undefined) record.colorHex = null;
+  // v0.8.3: every body starts with its own settings. A body that had never
+  // been active used to inherit the previous body's rotation / offset / iso /
+  // trim when first selected (restore skipped undefined fields), and weld
+  // groups assumed a 3 mm cell for it. New bodies get an identity structure
+  // transform, default trim, and the cell size currently shown.
+  if(record.cellSizeMm === undefined) record.cellSizeMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+  if(record.structureTransform === undefined) record.structureTransform = {rotXDeg:0,rotYDeg:0,rotZDeg:0,
+    spatialOffsetMmX:0,spatialOffsetMmY:0,spatialOffsetMmZ:0,isoOffsetMm:0,rotMat:[1,0,0,0,1,0,0,0,1]};
+  if(record.trimToNodes === undefined) record.trimToNodes = true;
+  if(record.trimInsetMult === undefined) record.trimInsetMult = 1.0;
   bodies.set(id, record);
   bodyOrder.push(id);
   // rc3.7: only the first body becomes active. Subsequent imports leave
@@ -201,8 +211,11 @@ function clearActiveBody(bodyId){
   if(targetId === null || targetId === undefined) return;
   if(!bodies.has(targetId)) return;
   const wasActive = (targetId === activeBodyId);
+  const priorRecipeId = activeRecipeId;
+  let recipeChanged = false;
   bodies.delete(targetId);
   assignments.delete(targetId);
+  bodyGroup.delete(targetId);   // v0.8.3: no stale weld membership
   const i = bodyOrder.indexOf(targetId);
   if(i >= 0) bodyOrder.splice(i, 1);
   if(wasActive){
@@ -211,6 +224,11 @@ function clearActiveBody(bodyId){
     if(bodyOrder.length > 0){
       activeBodyId = bodyOrder[bodyOrder.length - 1];
       importedShape = bodies.get(activeBodyId);
+      // v0.8.3: pull the promoted body's recipe / solid state onto the GPU.
+      // Without this the deleted body's solid flag and recipe stayed live
+      // (e.g. deleting a solid active body left the cube preview blank).
+      syncCurrentRecipeFromActiveBody();
+      recipeChanged = (activeRecipeId !== priorRecipeId);
       restoreActiveBodyState();
       // Re-bind raymarcher to new active body.
       if(rm){
@@ -225,10 +243,15 @@ function clearActiveBody(bodyId){
     } else {
       activeBodyId = null;
       importedShape = null;
+      syncCurrentRecipeFromActiveBody();
     }
   }
+  // v0.8.3: last body gone → release the scene origin (as clearAllBodies does),
+  // so the next import isn't offset by the deleted body's centre.
+  if(bodyOrder.length === 0) sceneCenter = null;
   // rc3: refresh ghost list after any removal.
   if(typeof syncGhostsToRaymarcher === 'function') syncGhostsToRaymarcher();
+  return {recipeChanged};
 }
 
 // rc2: Clear every body — used by error recovery paths. NOT called from

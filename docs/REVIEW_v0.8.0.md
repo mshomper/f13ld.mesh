@@ -222,3 +222,35 @@ All of section A is fixed. Each fix was measured before and after on a known sha
 **Expected visible changes for users:** shape-clipped parts come out at their CAD size (slightly smaller than before); reaction-diffusion patterns shift slightly and lose their tile seams; hyperuniform and reaction-diffusion patterns in shape mode now match the preview and stay put when rotating/offsetting.
 
 Also removed: `main-names.json`, a test-script scratch file accidentally committed in v0.8.1.
+
+---
+
+## 9. Status — v0.8.3 (leftover bugs and quick wins)
+
+| # | Fix | Browser check (v0.8.2 → v0.8.3) |
+|---|---|---|
+| B7 | Preview runs carry a sequence number; a superseded bake drops its result, and its field range is stored on the recipe it baked | Switch recipes mid-bake: new recipe's cached range was the old recipe's **(−4.95, 1.28) → its own (−1.99, 1.96)** |
+| B8 | Open-cube exports use the family voxel cap; cube triangle estimate scales with edge⁻² | 100 mm noise at Low: **125M → 40M voxels**; estimate **18.8M tris / 2250 s → 292k tris / 35 s** |
+| B9 | Weld exports cap by the strictest lattice member | Code-checked (not browser-tested) |
+| D1 | Removing the active body syncs the promoted body's recipe/solid state; drops its weld membership; releases the scene origin when the last body goes | Remove the only (solid) body: cube preview **stayed solid-masked (blank) → restored** |
+| D2 | Importing a body only clears the shape when none exist | Second import: camera **reset (zoom 618, pan 0) → framing kept** |
+| D3 | New bodies start with identity structure transform, default trim, current cell size | Rotate body 1 by 30°, add body 2, select it: **30° inherited → 0°** |
+| D5 | Body imports run one at a time; blocked while an export runs | Both pass — the test didn't reproduce the old race; fix is by construction |
+| D6 | Structure-transform rebake (and stale-banner refresh) keep the selected quality | Medium selected, rotate: quality **undefined → med** |
+
+**Quick wins done:**
+- Removed the worker's weld debug block (rebuilt every member's SDF on each weld preview), the preview `TEMP DEBUG` logs, the worker's dead `computeTPMSBakeBounds`, and `SCALE2`.
+- Reaction-diffusion grids are cached per worker.
+- Weld unions skip gradient normalization when the fillet is 0.
+- One download helper with delayed revoke.
+- Solid-body export shows a report or error.
+- Export filenames are sanitized (`my part #1 (v2).stl` → `my_part_1_v2_solid_…`).
+- The 3MF writer skips degenerate triangles.
+- Domain size survives panel re-renders.
+- 3MF import calls `parse` directly.
+- Grain parameter parsing lives in one worker helper.
+- Misleading comments fixed; README limitations updated.
+
+**Deliberately left:** unifying the three.js CDN. The shape-SDF worker needs `three-mesh-bvh` with its bare `three` import rewritten to the same pinned version. esm.sh's `?deps=` does that; jsdelivr's `+esm` resolves `three` to the latest release instead, which would load two different three.js builds. Switching the page to esm.sh instead risks the main app on a CDN this sandbox can't test. The two sources are pinned to the same version (0.158.0), so they serve identical code.
+
+**Regression:** all 14 cases byte-identical to v0.8.2.

@@ -34,6 +34,7 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `fieldtest.js <build> <label>` | Loads the worker SDF code in Node; checks preview-vs-export agreement for hyperuniform/RD, RD tile seam, weld hyperuniform tiling. |
 | `radtest.js <build>` | Trim-to-nodes strut radius vs measured radius. |
 | `loadorder.js <build>` | Static check that no load-time code uses something from a later-numbered file. |
+| `foamseeds.js <build> <F13LD.foam index.html> [recipes.json]` | The FoamSeeds generator block is byte-identical in mesh and F13LD.foam; for each foam recipe, regenerated seeds match the embedded positions and the field tiles seamlessly. |
 
 ## Notes
 

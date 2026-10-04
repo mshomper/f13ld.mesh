@@ -34,7 +34,7 @@ Converts implicit scaffold recipes from F13LD's design tools into watertight 3MF
 | **Grain Explorer** | `hyperuniform` | Jittered-grid kernel field |
 | **Grain Explorer** | `reaction-diffusion` | Structure "grown" from competing fields |
 | **Noise Explorer** | `noise` | All 7 noise types: simplex, cellular, FBM, ridged, billow, curl, warp |
-| **F13LD.foam** | `open` · `closed` · `plateau` | Voronoi cell-boundary foams (struts, walls, Plateau borders) from Poisson-disk, Lloyd, random, Weaire–Phelan or Kelvin seeds. Periodic foams only; seed positions travel in the recipe |
+| **F13LD.foam** | `open` · `closed` · `plateau` | Voronoi cell-boundary foams (struts, walls, Plateau borders) from Poisson-disk, Lloyd, random, Weaire–Phelan or Kelvin seeds. Periodic foams only; seed positions travel in the recipe. Recipes from F13LD.foam v0.6.0+ (`geometry.field: 2`) build with the exact distance to the cell walls / edges, down to single-cube tiles, and add wet foam, fillet / node, two-size (power-cell) mixes, symmetric seeds and FCC / C15 lattices |
 
 All geometry modes are supported: sheet, half-solid, solid, and PI-TPMS (two-phase intersection). The Bundle family carries its own topology (sheet / half-solid / solid via iso offset and sheet width) through the same pipeline.
 

@@ -10,6 +10,9 @@
                  preview bake; d is the bake message
      rawRange(json, minV, maxV) → {min, max}   post-bake range (default as-is)
      trimToNodes                 family supports the trim-to-nodes pass
+     metric                      the export field is already a true distance
+                                 (|∇| ≈ 1 near the surface), so a weld fillet
+                                 needs no gradient normalization (v0.9.3)
    ============================================================ */
 'use strict';
 const SDF_FAMILIES = Object.create(null);

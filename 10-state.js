@@ -491,7 +491,8 @@ async function gatherGroupSpecs(gid, ensureN, cloneBuffers){
     // v0.5.1-rc4.1: carry the display name + recipe label (same strings the body
     // card shows) so the feature-ratio guard can name the offending member
     // instead of blaming the whole group. Two short strings per member; the
-    // worker ignores them.
+    // worker ignores them. v0.9.3: bodyId lets the weld planner find the
+    // member's mesh (planWeld, 14-weld-bake.js).
     const memRecipe=isSolid?null:recipes.get(rid);
     const memName=String((b.meta&&b.meta.name)||'shape');
     const memRecipeLabel=memRecipe
@@ -501,7 +502,7 @@ async function gatherGroupSpecs(gid, ensureN, cloneBuffers){
     specs.push({solid:isSolid, recipe:memRecipe,
       shapeSdfData:buf, shapeN:b.sdfGrid.N,
       bbox:{mnx:b.bbox.mnx,mny:b.bbox.mny,mnz:b.bbox.mnz,mxx:b.bbox.mxx,mxy:b.bbox.mxy,mxz:b.bbox.mxz},
-      cellSizeMm, name:memName, recipeLabel:memRecipeLabel});
+      cellSizeMm, name:memName, recipeLabel:memRecipeLabel, bodyId:id});
   }
   return {specs};
 }

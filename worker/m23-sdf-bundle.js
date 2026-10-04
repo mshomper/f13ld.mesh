@@ -281,4 +281,4 @@ function buildBundleSDF(json){
 // scale, exactly as on the analytic TPMS path.
 
 // ── Registry (v0.9.0) ───────────────────────────────────────────────────────
-registerSDF('bundle', { build(recipe){ return buildBundleSDF(recipe.json); } });
+registerSDF('bundle', { build(recipe){ return buildBundleSDF(recipe.json); }, metric: true });

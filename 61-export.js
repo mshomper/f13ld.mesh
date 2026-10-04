@@ -9,7 +9,11 @@
 // watertight 3MF part. Re-bakes each member's shape SDF at export resolution,
 // bakes the union via Manifold.levelSet in the worker (buildAssemblySDF), and
 // restores CAD coordinates by +sceneCenter (shared across all members).
+// v0.9.3: solids with a closed mesh are used as-is and only the boxes around
+// lattice members are level-set (planWeld); the field there is pre-baked on a
+// worker pool (bakeWeldRegion). See 14-weld-bake.js.
 async function _exportWeldGroup(gid){
+  const tExport=performance.now();
   const btn=document.getElementById('expBtn');
   const report=document.getElementById('expReport');
   if(meshWorker){meshWorker.terminate();meshWorker=null;}
@@ -24,6 +28,10 @@ async function _exportWeldGroup(gid){
   try{
     const gbb=computeGroupBbox(gid);
     if(!gbb) throw new Error('weld group has no geometry');
+    // v0.9.3: estimate before the member re-bakes, so the calibration below
+    // compares like with like. Diagnostic only — never fails the export.
+    let est=null;
+    try{ est=estimateWeldExport(gid, currentExportQual); }catch(e){ console.warn('[export][weld] estimate failed', e); }
     const exportN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
     coMain.textContent='preparing weld export...';
     coSub.textContent='refining member SDFs ('+exportN+'\u00b3)...';
@@ -80,13 +88,38 @@ async function _exportWeldGroup(gid){
       return;
     }
     coMain.textContent='exporting weld...';
-    coSub.textContent='union level set over group bbox...';
+    coSub.textContent='planning weld...';
     overlay.classList.remove('hidden');showCancelBtn(true);
+    // v0.9.3 plan: exact solids, fine regions, far-member reach.
+    const blendK=groupFilletMm(gid);
+    const plan=planWeld(specs, blendK, relEdgeMm, gbb);
+    specs.forEach((sp,i)=>{ if(plan.solidOk[i]) sp.insetMm=plan.insetMm; });
+    const solidMeshes=specs.map((sp,i)=>plan.solidOk[i]?solidMeshForWorker(bodies.get(sp.bodyId)):null);
+    // Pre-bake each fine region's field on the worker pool.
+    const regions=[]; let bakeMs=0, bakeWorkers=0;
+    for(let ri=0;ri<plan.regions.length;ri++){
+      const r=plan.regions[ri];
+      const tag=plan.regions.length>1?' '+(ri+1)+'/'+plan.regions.length:'';
+      coSub.textContent='baking weld field'+tag+'...';
+      const baked=await bakeWeldRegion(specs, r, blendK, plan.reachMm, relEdgeMm,
+        (f,nw)=>{ coSub.textContent='baking weld field'+tag+': '+Math.round(f*100)+'% ('+nw+' workers)'; });
+      if(baked){ regions.push({min:r.min, max:r.max, main:baked.main, off:baked.off, f32:baked.f32}); bakeMs+=baked.ms; bakeWorkers=baked.workers; }
+      else regions.push({min:r.min, max:r.max});
+    }
+    console.log('[export][weld] plan', { group:letter, hybrid:plan.hybrid,
+      exactSolids:specs.filter((_,i)=>plan.solidOk[i]).map(sp=>sp.name),
+      regions:plan.regions.map(r=>r.min.map(v=>+v.toFixed(2)).concat(r.max.map(v=>+v.toFixed(2)))),
+      reachMm:+plan.reachMm.toFixed(3), insetMm:plan.insetMm, bakeMs, bakeWorkers, estimate:est });
     const workerMsg={
-      mode:'export', bodies:specs, blendK:groupFilletMm(gid),
+      mode:'export', bodies:specs, blendK,
       bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
-      relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0
+      relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0,
+      weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes}
     };
+    const transfer=specs.map(s=>s.shapeSdfData);
+    for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
+    for(const m of solidMeshes){ if(m){ transfer.push(m.pos, m.idx); } }
+    let weldDiag=null;
     const worker=new Worker(getMeshWorkerUrl());
     meshWorker=worker;
     const EXPORT_TIMEOUT_MS=180000;
@@ -98,17 +131,21 @@ async function _exportWeldGroup(gid){
       _exportCancelReject=reject;
       worker.onmessage=e=>{ const dd=e.data; if(exportTimedOut)return;
         if(dd.type==='progress')coSub.textContent=dd.stage;
-        else if(dd.type==='diag')console.log('[export][mem-guard]',dd.diag);
+        else if(dd.type==='diag'){ if(dd.diag&&dd.diag.weld&&dd.diag.hybrid!==undefined) weldDiag=dd.diag; console.log(dd.diag&&dd.diag.weld?'[export][weld]':'[export][mem-guard]',dd.diag); }
         else if(dd.type==='done'){clearTimeout(exportTimer);resolve(dd);}
         else if(dd.type==='error'){clearTimeout(exportTimer);reject(new Error(dd.message));} };
       worker.onerror=e=>{ clearTimeout(exportTimer); reject(new Error(e.message||'Worker error')); };
-      worker.postMessage(workerMsg, specs.map(s=>s.shapeSdfData));
+      worker.postMessage(workerMsg, transfer);
     });
     if(meshWorker===worker)meshWorker=null;
     worker.terminate();
     if(elapsedTimer)clearInterval(elapsedTimer);
     _exportElapsedTimer=null;_exportTimeoutTimer=null;
     hideComputing();showCancelBtn(false);
+    // Self-calibrate the weld estimate against this export's wall time —
+    // unless the worker had to drop the plan (rejected solid mesh), which the
+    // estimate didn't model.
+    if(est && !(plan.hybrid && weldDiag && !weldDiag.hybrid)) recordWeldTiming(est, performance.now()-tExport);
     btn.textContent='building 3MF...';
     const vertProps=new Float32Array(result.vertProperties);
     const triVerts=new Uint32Array(result.triVerts);
@@ -123,6 +160,8 @@ async function _exportWeldGroup(gid){
       expChip('bodies',specs.length)+
       expChip('triangles',result.triCount.toLocaleString())+
       expChip('edge',relEdgeMm.toFixed(2)+'mm')+
+      (plan.hybrid?expChip('exact solids',plan.solidOk.filter(Boolean).length):'')+
+      expChip('cores',bakeWorkers||1)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';

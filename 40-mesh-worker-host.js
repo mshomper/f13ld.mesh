@@ -54,6 +54,7 @@ window.cancelMesh=function(){
   const ee=document.getElementById('expElapsed');if(ee)ee.style.display='none';
   if(window._cancelSdfBake)window._cancelSdfBake();
   if(window._cancelHuBake)window._cancelHuBake();
+  if(window._cancelWeldBake)window._cancelWeldBake();
   hideComputing();setBtns(true);showCancelBtn(false);
   const eb=document.getElementById('expBtn');if(eb){eb.disabled=false;eb.classList.remove('sweeping');eb.textContent='Export 3MF';}
 };

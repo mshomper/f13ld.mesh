@@ -154,25 +154,91 @@ self.onmessage=async function(e){
     const sdfFn=(d.bodies&&d.bodies.length)?null:buildSDF(d.recipe,shapeCtx);
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
+    let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
     // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
     // main thread. Boolean CSG via Manifold.intersection no longer needed; the
     // implicit max(scaffold,-shape) composition in mode:'export' replaced it.
     if(d.mode==='export'){
       // ── Export mode: pre-computed edge/simplify lengths, returns scale ───────
       if(d.bodies && d.bodies.length){
-        // ── Weld-group export (W3): union of members -> one watertight mesh ──
+        // ── Weld-group export (W3; v0.9.3 hybrid) ───────────────────────────
         // d.bodies = per-member specs (shape grid + recipe + cell), d.bbox =
-        // group bbox (mm), d.blendK = fillet. buildAssemblySDF returns canonical
-        // NEGATIVE-INSIDE; flip to Manifold POSITIVE-INSIDE (NaN-guarded). Skips
-        // the coarse bbox-tightening pass — the group bbox is the union extent.
-        const asm=buildAssemblySDF(d.bodies,d.blendK,false);
-        const gbb=d.bbox;
-        const wrappedSDF=function(p){var v=-asm(p);return (v>-1e20&&v<1e20)?v:-1e3;};
-        self.postMessage({type:'progress',stage:'weld level set ('+(d.relEdgeMm||0).toFixed(3)+'mm)...'});
+        // group bbox (mm), d.blendK = fillet. d.weld (v0.9.3, planned by
+        // 14-weld-bake.js on the main thread):
+        //   hybrid       solids with a closed mesh come from that mesh; only the
+        //                regions around lattice members are level-set, with
+        //                those solids pulled one voxel inside (spec.insetMm) so
+        //                the exact mesh covers them in the union
+        //   solidMeshes  [i] = {pos, idx} for each such solid, else null
+        //   regions      [{min,max, main?,off?,f32}] level-set boxes; main/off
+        //                are the field pre-baked at levelSet's grid points by
+        //                the worker pool (m31-weld-grid.js)
+        //   reachMm      far-member skip distance (buildAssemblySDF)
+        // The field is canonical NEGATIVE-INSIDE, flipped to Manifold
+        // POSITIVE-INSIDE (NaN-guarded) by makeWeldField.
+        const w=d.weld||{};
+        const gbb=d.bbox, edge=d.relEdgeMm;
+        const fullBox={min:[gbb.mnx,gbb.mny,gbb.mnz],max:[gbb.mxx,gbb.mxy,gbb.mxz]};
+        let bodies=d.bodies, regions=(w.regions&&w.regions.length)?w.regions:[fullBox];
+        let hybrid=!!w.hybrid;
+        const solidMf=[];
+        if(hybrid){
+          try{
+            for(let i=0;i<bodies.length;i++){
+              const sm=w.solidMeshes&&w.solidMeshes[i]; if(!sm) continue;
+              const mesh=new ManifoldAPI.Mesh({numProp:3, vertProperties:new Float32Array(sm.pos), triVerts:new Uint32Array(sm.idx)});
+              mesh.merge();
+              const m=new ManifoldAPI.Manifold(mesh);   // throws if not a closed manifold
+              solidMf.push(m);
+              if(!(m.volume()>0)) throw new Error('solid mesh is inside-out');
+            }
+          }catch(err){
+            // The main thread's closed-mesh check passed but Manifold disagrees:
+            // mesh the whole group the pre-v0.9.3 way (no inset, no cache).
+            for(const m of solidMf) m.delete();
+            solidMf.length=0; hybrid=false;
+            bodies=bodies.map(b=>b.insetMm?Object.assign({},b,{insetMm:0}):b);
+            regions=[fullBox];
+            self.postMessage({type:'progress',stage:'solid mesh rejected ('+((err&&err.message)||err)+') — meshing the whole group...'});
+          }
+        }
+        // Built on first use: with every point pre-baked it may never be needed,
+        // and some fields are costly to set up (foam relaxation, RD).
+        let _field=null;
+        const field=function(p){ if(!_field) _field=makeWeldField(bodies,d.blendK,w.reachMm||0); return _field(p); };
         const tLevelSet=performance.now();
-        mfld=safeLevelSet(wrappedSDF,{min:[gbb.mnx,gbb.mny,gbb.mnz],max:[gbb.mxx,gbb.mxy,gbb.mxz]},d.relEdgeMm,'weld level set');
-        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty weld mesh — check group overlap.');}
+        const pieces=[], diag=[];
+        for(let ri=0;ri<regions.length;ri++){
+          const r=regions[ri];
+          const g=weldGridDims(r.min,r.max,edge);
+          let fn=field, stats=null;
+          if(r.main && r.off && g.ok){
+            const A=r.f32?Float32Array:Float64Array;
+            const M=new A(r.main), O=new A(r.off);
+            if(M.length===g.mainCount && O.length===g.offCount){ stats={}; fn=makeWeldLookup(g,M,O,field,stats); }
+          }
+          lastStage='weld level set'+(regions.length>1?' '+(ri+1)+'/'+regions.length:'')+' ('+edge.toFixed(3)+'mm'+(stats?', pre-baked':'')+')';
+          self.postMessage({type:'progress',stage:lastStage+'...'});
+          const m=safeLevelSet(fn,{min:r.min,max:r.max},edge,'weld level set');
+          diag.push({region:ri, points:g.mainCount+g.offCount, cached:stats?stats.hit:0, direct:stats?stats.miss:(g.mainCount+g.offCount)});
+          if(m.isEmpty()) m.delete(); else pieces.push(m);
+        }
         msLevelSet=Math.round(performance.now()-tLevelSet);
+        let msUnion=0;
+        const parts=pieces.concat(solidMf);
+        if(!parts.length) throw new Error('Empty weld mesh — check group overlap.');
+        if(parts.length===1){ mfld=parts[0]; }
+        else{
+          lastStage='union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es');
+          self.postMessage({type:'progress',stage:lastStage+'...'});
+          const tU=performance.now();
+          mfld=ManifoldAPI.Manifold.union(parts);
+          for(const m of parts) m.delete();
+          msUnion=Math.round(performance.now()-tU);
+        }
+        if(mfld.isEmpty()){mfld.delete();throw new Error('Empty weld mesh — check group overlap.');}
+        if(hybrid) weldDustMm3=0.1*edge*edge*edge;
+        self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion}});
       } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
         const mmToWorld=10/d.cellSizeMm;
@@ -563,6 +629,13 @@ self.onmessage=async function(e){
     let vertProperties=new Float32Array(extractedMesh.vertProperties);
     let triVerts=new Uint32Array(extractedMesh.triVerts);
     mfld.delete();mfld=null;
+    if(weldDustMm3>0){
+      const r=dropTinyShells(vertProperties,triVerts,weldDustMm3);
+      if(r){
+        vertProperties=r.vertProperties; triVerts=r.triVerts;
+        self.postMessage({type:'diag',diag:{weld:true, tinyShellsDropped:r.dropped, ofShells:r.shells, droppedVolMm3:+r.droppedVol.toExponential(2)}});
+      }
+    }
     const preTris=triVerts.length/3;
     const simplifyTol=d.simplifyTol||0;
     let msSimplify=0;

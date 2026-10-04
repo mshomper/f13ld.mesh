@@ -17,7 +17,8 @@ Five things added up:
 | Change | Where |
 |---|---|
 | **Exact solids.** A solid with a closed mesh comes straight from its imported mesh (`Manifold.union` at the end). Only boxes around lattice members (+ fillet + 3 voxels) are level-set. Inside those boxes the solid is pulled one voxel in (`insetMm`), so the exact mesh covers it. | `14-weld-bake.js` `planWeld`; `worker/m90-onmessage.js` weld branch |
-| **Fallbacks.** A solid whose mesh isn't closed is level-set as before. The main thread checks edges + orientation (`meshIsClosedOutward`); if Manifold still rejects the mesh, the worker meshes the whole group as before. | `14-weld-bake.js`, `m90` |
+| **Fallbacks.** A solid whose mesh isn't closed is level-set as before. The main thread pairs edges (`meshIsClosedOutward`). It welds identical positions first if needed, since the STEP/IGES loader doesn't weld; skips collapsed triangles; and flips an inside-out mesh's copy. If Manifold still rejects a mesh, the worker meshes the whole group as before. | `14-weld-bake.js`, `m90` |
+| **Tiny-shell cleanup.** A lattice that only shares a face with an exact solid can leave pockets a few µm thick at that face, plus specks at corners. After the union, shells under 0.1 voxel in volume are dropped (`dropTinyShells`). This also removes sub-0.1-voxel lattice dust in the group's mesh. | `m31`, `m90` |
 | **No gradient normalization for true-distance families.** Foam, beam and bundle set `metric: true` on `registerSDF`. | `m05`, `m21`, `m23`, `m25`, `m30` |
 | **Far-member skip.** A member is skipped where its shape distance is ≥ 2·fillet + 3 voxels. Far from every member the field is the nearest shape distance. | `m30` `buildAssemblySDF(…, {reachMm})` |
 | **Multi-core bake.** The weld field is evaluated at exactly the points `levelSet` will ask for, on min(12, cores − 1) workers. Each worker gets only the cropped part of each member's grid. `levelSet` then reads the stored values (any point it doesn't recognise is evaluated directly). | `14-weld-bake.js` `bakeWeldRegion`; `worker/weld-bake-worker.js`; `worker/m31-weld-grid.js` |
@@ -29,6 +30,7 @@ Five things added up:
 - Fillets on foam, beam and bundle members are no longer gradient-normalized. Volume moves by less than 0.4%.
 - In a mixed group, solid-to-solid contacts are now a plain union with no fillet.
 - An all-solid group keeps the old path, so its fillets stay.
+- Shells under 0.1 voxel are dropped from a hybrid weld's mesh. The foam test scene at Draft drops 1,751 of 2,125 shells (sub-voxel foam dust), which moves the volume by 0.03%.
 
 ### `levelSet` grid (manifold-3d 3.4.1)
 
@@ -67,17 +69,41 @@ Checked bit-for-bit on four boxes (`tests/weldtest.js` §1):
 
 These seed the estimate table (`WELD_EVAL_US`).
 
+## Independent review (before merge)
+
+A separate review pass checked the diff. It confirmed:
+- crop index math is bit-identical (420 k random samples, N 1–33);
+- layer/job splits have no gaps or overlaps (Float32 and Float64);
+- multiple fine regions work;
+- the reach skip is byte-identical for gradient-normalized families;
+- no buffer is used after transfer;
+- the single-body and cube paths are unchanged.
+
+It found the following, all fixed before merge:
+1. STEP/IGES solids failed the closed-mesh check because that loader doesn't weld. Collapsed triangles and inside-out meshes failed too. Fixed in `meshIsClosedOutward` / `solidMeshForWorker`; `weldtest.js` §7 covers it.
+2. µm pockets where a lattice only shares a face with a solid (32 shells vs 1 at Med, fillet 0). Fixed by `dropTinyShells`; now 1 shell. `weldtest.js` §7 covers it.
+3. Estimate calibration included the shape re-bake and fallback runs. The estimate now runs before the re-bake, and calibration is skipped when the worker fell back.
+4. Bake hardening:
+   - stall watchdog (120 s without a slab) and `onmessageerror`;
+   - one pool per region with a settled flag;
+   - pool size capped by grid-copy memory (1.5 GB);
+   - the mesh worker builds the field only on a cache miss.
+5. The estimate can no longer fail an export (try/catch).
+
+Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy can poke up to ~0.03 mm past the exact mesh along concave edges inside the fine region. The cause is the shape-grid interpolation. It's a harmless bump. A larger inset would cost fillet size.
+
 ## Found, not fixed
 
 1. **Open edges after simplify.** meshopt simplify leaves some open or non-manifold edges on fragmented foam. This is pre-existing: the v0.9.2 export of the same scene had 5,176, v0.9.3 has 7,508. Manifold's own output is closed. Simplify is what opens it. Worth a look: skip collapses on tiny components, or re-check edges after simplify and keep the unsimplified mesh where they break.
 2. **Triangle estimate for foam is far off.** The shape-mode surface model said ~4.9 k; the real count is 395 k. The time estimate no longer depends on it, but the panel still shows the count.
 3. **Weld edge clamp.** The weld voxel cap still uses the whole group box, not the fine regions, so large mixed groups get a coarser edge than they need.
+4. **STEP/IGES bodies are imported without welding.** The faces of a STEP/IGES body don't share vertices (`30-shape-import.js` `loadCADFormat`). Exporting such a body on its own as a solid writes a mesh whose faces aren't stitched. Running `mergeVertices` at import (as STL does) would fix it. That would change single-body STEP exports, so it needs a decision.
 
 ## Next steps
 
 1. **Matt:** export the real foam + two solids design at Med. Paste the console lines starting `[export][weld]` (plan, timings, calibration). Compare the estimate before and after one or two exports.
 2. If the level set dominates at Med or High, split the lattice region into slabs and level-set them in parallel workers. Overlapping slabs plus a union would be needed to keep the seams closed. This costs some byte-identity, so it needs a decision first.
-3. Items 1–3 above.
+3. Items 1–4 above.
 
 ## Tests added
 

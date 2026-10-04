@@ -154,6 +154,7 @@ self.onmessage=async function(e){
     const sdfFn=(d.bodies&&d.bodies.length)?null:buildSDF(d.recipe,shapeCtx);
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
+    let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
     // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
     // main thread. Boolean CSG via Manifold.intersection no longer needed; the
     // implicit max(scaffold,-shape) composition in mode:'export' replaced it.
@@ -201,7 +202,10 @@ self.onmessage=async function(e){
             self.postMessage({type:'progress',stage:'solid mesh rejected ('+((err&&err.message)||err)+') — meshing the whole group...'});
           }
         }
-        const field=makeWeldField(bodies,d.blendK,w.reachMm||0);
+        // Built on first use: with every point pre-baked it may never be needed,
+        // and some fields are costly to set up (foam relaxation, RD).
+        let _field=null;
+        const field=function(p){ if(!_field) _field=makeWeldField(bodies,d.blendK,w.reachMm||0); return _field(p); };
         const tLevelSet=performance.now();
         const pieces=[], diag=[];
         for(let ri=0;ri<regions.length;ri++){
@@ -233,6 +237,7 @@ self.onmessage=async function(e){
           msUnion=Math.round(performance.now()-tU);
         }
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty weld mesh — check group overlap.');}
+        if(hybrid) weldDustMm3=0.1*edge*edge*edge;
         self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion}});
       } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
@@ -624,6 +629,13 @@ self.onmessage=async function(e){
     let vertProperties=new Float32Array(extractedMesh.vertProperties);
     let triVerts=new Uint32Array(extractedMesh.triVerts);
     mfld.delete();mfld=null;
+    if(weldDustMm3>0){
+      const r=dropTinyShells(vertProperties,triVerts,weldDustMm3);
+      if(r){
+        vertProperties=r.vertProperties; triVerts=r.triVerts;
+        self.postMessage({type:'diag',diag:{weld:true, tinyShellsDropped:r.dropped, ofShells:r.shells, droppedVolMm3:+r.droppedVol.toExponential(2)}});
+      }
+    }
     const preTris=triVerts.length/3;
     const simplifyTol=d.simplifyTol||0;
     let msSimplify=0;

@@ -28,6 +28,10 @@ async function _exportWeldGroup(gid){
   try{
     const gbb=computeGroupBbox(gid);
     if(!gbb) throw new Error('weld group has no geometry');
+    // v0.9.3: estimate before the member re-bakes, so the calibration below
+    // compares like with like. Diagnostic only — never fails the export.
+    let est=null;
+    try{ est=estimateWeldExport(gid, currentExportQual); }catch(e){ console.warn('[export][weld] estimate failed', e); }
     const exportN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
     coMain.textContent='preparing weld export...';
     coSub.textContent='refining member SDFs ('+exportN+'\u00b3)...';
@@ -88,14 +92,9 @@ async function _exportWeldGroup(gid){
     overlay.classList.remove('hidden');showCancelBtn(true);
     // v0.9.3 plan: exact solids, fine regions, far-member reach.
     const blendK=groupFilletMm(gid);
-    const est=estimateWeldExport(gid, currentExportQual);
     const plan=planWeld(specs, blendK, relEdgeMm, gbb);
     specs.forEach((sp,i)=>{ if(plan.solidOk[i]) sp.insetMm=plan.insetMm; });
-    const solidMeshes=specs.map((sp,i)=>{
-      if(!plan.solidOk[i]) return null;
-      const b=bodies.get(sp.bodyId);
-      return {pos:b.posArr.slice().buffer, idx:b.idxArr.slice().buffer};
-    });
+    const solidMeshes=specs.map((sp,i)=>plan.solidOk[i]?solidMeshForWorker(bodies.get(sp.bodyId)):null);
     // Pre-bake each fine region's field on the worker pool.
     const regions=[]; let bakeMs=0, bakeWorkers=0;
     for(let ri=0;ri<plan.regions.length;ri++){
@@ -120,6 +119,7 @@ async function _exportWeldGroup(gid){
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
     for(const m of solidMeshes){ if(m){ transfer.push(m.pos, m.idx); } }
+    let weldDiag=null;
     const worker=new Worker(getMeshWorkerUrl());
     meshWorker=worker;
     const EXPORT_TIMEOUT_MS=180000;
@@ -131,7 +131,7 @@ async function _exportWeldGroup(gid){
       _exportCancelReject=reject;
       worker.onmessage=e=>{ const dd=e.data; if(exportTimedOut)return;
         if(dd.type==='progress')coSub.textContent=dd.stage;
-        else if(dd.type==='diag')console.log(dd.diag&&dd.diag.weld?'[export][weld]':'[export][mem-guard]',dd.diag);
+        else if(dd.type==='diag'){ if(dd.diag&&dd.diag.weld&&dd.diag.hybrid!==undefined) weldDiag=dd.diag; console.log(dd.diag&&dd.diag.weld?'[export][weld]':'[export][mem-guard]',dd.diag); }
         else if(dd.type==='done'){clearTimeout(exportTimer);resolve(dd);}
         else if(dd.type==='error'){clearTimeout(exportTimer);reject(new Error(dd.message));} };
       worker.onerror=e=>{ clearTimeout(exportTimer); reject(new Error(e.message||'Worker error')); };
@@ -142,8 +142,10 @@ async function _exportWeldGroup(gid){
     if(elapsedTimer)clearInterval(elapsedTimer);
     _exportElapsedTimer=null;_exportTimeoutTimer=null;
     hideComputing();showCancelBtn(false);
-    // Self-calibrate the weld estimate against this export's wall time.
-    if(est) recordWeldTiming(est, performance.now()-tExport);
+    // Self-calibrate the weld estimate against this export's wall time —
+    // unless the worker had to drop the plan (rejected solid mesh), which the
+    // estimate didn't model.
+    if(est && !(plan.hybrid && weldDiag && !weldDiag.hybrid)) recordWeldTiming(est, performance.now()-tExport);
     btn.textContent='building 3MF...';
     const vertProps=new Float32Array(result.vertProperties);
     const triVerts=new Uint32Array(result.triVerts);

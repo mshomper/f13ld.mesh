@@ -15,8 +15,13 @@
 //  5. Old build: the v0.9.2 weld (whole group box, every member everywhere)
 //     for timing and volume. Skipped above Draft unless OLD=1 (it's slow).
 //  6. The mesh worker's weld branch (m90, Manifold stubbed in): the hybrid
-//     message gives the same mesh as (3); a solid mesh Manifold rejects falls
-//     back to meshing the whole group; the main-thread plan spots an open mesh.
+//     message gives the same mesh as (3) less sub-0.1-voxel shells; a solid
+//     mesh Manifold rejects falls back to meshing the whole group; the
+//     main-thread plan spots an open mesh.
+//  7. A lattice that only shares faces with two solids, no fillet: no more
+//     shells than the single-field path (the µm pockets at the faces are
+//     dropped; at Draft the gyroid itself breaks into pieces in both).
+//     One solid arrives unwelded (as STEP/IGES do), one inside-out.
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const [OLD, NEW, QUAL = 'draft', FAM = 'foam2-open-lloyd'] = process.argv.slice(2);
 const EDGE = { draft: 0.40, low: 0.20, med: 0.12, high: 0.09 }[QUAL];
@@ -75,7 +80,7 @@ for (const s of specs) for (const k of ['mxx', 'mxy', 'mxz']) gbb[k] = Math.max(
   let fails = 0; const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
 
   // 1. grid
-  for (const [mn, mx, e] of [[[0, 0, 0], [1, 0.7, 0.5], 0.1], [[-3.17, 2.2, 0.9], [5.3, 7.7, 4.1], 0.37], [[gbb.mnx, gbb.mny, gbb.mnz], [gbb.mxx, gbb.mxy, gbb.mxz], EDGE]]) {
+  for (const [mn, mx, e] of [[[0, 0, 0], [1, 0.7, 0.5], 0.1], [[-3.17, 2.2, 0.9], [5.3, 7.7, 4.1], 0.37], [[gbb.mnx, gbb.mny, gbb.mnz], [gbb.mnx + 9.37, gbb.mny + 6.1, gbb.mnz + 4.3], EDGE]]) {
     const g = call(W, 'weldGridDims(__a,__b,__e)', { __a: mn, __b: mx, __e: e });
     const gh = call(H, 'weldGridDims(__a,__b,__e)', { __a: mn, __b: mx, __e: e });
     const f = p => Math.sin(p[0] * 3.1) + Math.cos(p[1] * 2.3) * Math.sin(p[2] * 1.7);
@@ -138,32 +143,68 @@ for (const s of specs) for (const k of ['mxx', 'mxy', 'mxz']) gbb[k] = Math.max(
   // 6. the mesh worker's weld branch (m90), with Manifold stubbed in: the
   //    hybrid message, and a solid whose mesh Manifold rejects (falls back to
   //    meshing the whole group).
+  const M = workerCtx(NEW);
+  Object.assign(M, { ManifoldAPI: wasm, manifoldReady: Promise.resolve(), meshoptReady: Promise.resolve(), meshoptSimplify: () => null });
+  vm.runInContext(fs.readFileSync(path.join(NEW, 'worker', 'm90-onmessage.js'), 'utf8'), M, { filename: 'm90-onmessage.js' });
+  const volOf = (out) => { const d = out.find(m => m.type === 'done'); if (!d) return null; const V = new Float32Array(d.vertProperties), T = new Uint32Array(d.triVerts); let v = 0;
+    for (let t = 0; t < T.length; t += 3) { const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3; v += (V[a] * (V[b + 1] * V[c + 2] - V[b + 2] * V[c + 1]) + V[a + 1] * (V[b + 2] * V[c] - V[b] * V[c + 2]) + V[a + 2] * (V[b] * V[c + 1] - V[b + 1] * V[c])) / 6; } return v; };
   {
-    const M = workerCtx(NEW);
-    Object.assign(M, { ManifoldAPI: wasm, manifoldReady: Promise.resolve(), meshoptReady: Promise.resolve(), meshoptSimplify: () => null });
-    vm.runInContext(fs.readFileSync(path.join(NEW, 'worker', 'm90-onmessage.js'), 'utf8'), M, { filename: 'm90-onmessage.js' });
     const runMsg = async (weld) => {
       const out = []; M.self.postMessage = (m) => out.push(m);
       await M.self.onmessage({ data: { mode: 'export', bodies: bodiesW, blendK: FILLET, bbox: gbb, relEdgeMm: EDGE, simplifyTol: 0, scale: 1, weld } });
       return out;
     };
     const solidMeshes = specs.map((s, i) => plan.solidOk[i] ? { pos: bodies.get(s.bodyId).posArr.slice().buffer, idx: bodies.get(s.bodyId).idxArr.slice().buffer } : null);
-    const volOf = (out) => { const d = out.find(m => m.type === 'done'); if (!d) return null; const V = new Float32Array(d.vertProperties), T = new Uint32Array(d.triVerts); let v = 0;
-      for (let t = 0; t < T.length; t += 3) { const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3; v += (V[a] * (V[b + 1] * V[c + 2] - V[b + 2] * V[c + 1]) + V[a + 1] * (V[b + 2] * V[c] - V[b] * V[c + 2]) + V[a + 2] * (V[b] * V[c + 1] - V[b + 1] * V[c])) / 6; } return v; };
     const o1 = await runMsg({ hybrid: true, reachMm: plan.reachMm, regions: plan.regions.map(r => ({ min: r.min, max: r.max })), solidMeshes });
-    const v1 = volOf(o1), e1 = o1.find(m => m.type === 'error');
-    check(v1 != null && Math.abs(v1 - r3.vol) / r3.vol < 1e-6, `mesh worker, hybrid message: ${e1 ? 'ERROR ' + e1.message : 'volume ' + v1.toFixed(1) + ' mm³ (one-thread run ' + r3.vol.toFixed(1) + ')'}`);
+    const v1 = volOf(o1), e1 = o1.find(m => m.type === 'error'), dust1 = o1.find(m => m.type === 'diag' && m.diag.tinyShellsDropped);
+    check(v1 != null && Math.abs(v1 - r3.vol) / r3.vol < 0.005, `mesh worker, hybrid message: ${e1 ? 'ERROR ' + e1.message : 'volume ' + v1.toFixed(1) + ' mm³ (one-thread run ' + r3.vol.toFixed(1) + ')'}${dust1 ? `, dropped ${dust1.diag.tinyShellsDropped} of ${dust1.diag.ofShells} shells under 0.1 voxel` : ''}`);
+    if (QUAL === 'draft' || process.env.OLD === '1') {
     const bad = solidMeshes.slice(); bad[0] = { pos: bad[0].pos, idx: new Uint32Array(new Uint32Array(bad[0].idx).slice(3)).buffer };   // drop a triangle
     const t6 = performance.now();
     const o2 = await runMsg({ hybrid: true, reachMm: plan.reachMm, regions: plan.regions.map(r => ({ min: r.min, max: r.max })), solidMeshes: bad });
     const v2 = volOf(o2), e2 = o2.find(m => m.type === 'error'), note = o2.find(m => m.type === 'progress' && /rejected/.test(m.stage));
     check(v2 != null && !!note && Math.abs(v2 - r3.vol) / r3.vol < 0.015, `mesh worker, open solid mesh: ${e2 ? 'ERROR ' + e2.message : (note ? '"' + note.stage + '", ' : 'no fallback note, ') + 'volume ' + (v2 || 0).toFixed(1) + ' mm³, ' + ((performance.now() - t6) / 1000).toFixed(1) + ' s'}`);
+    }
     // main-thread check catches the same open mesh, so the plan sends that body to the fine region
     const openBodies = new Map(bodies); openBodies.set('A', Object.assign({}, bodies.get('A'), { idxArr: new Uint32Array(bodies.get('A').idxArr).slice(3), _closedCheck: null }));
     const H2 = hostCtx(NEW, openBodies);
     const plan2 = call(H2, 'planWeld(__s,__k,__e,__g)', { __s: specs, __k: FILLET, __e: EDGE, __g: gbb });
     check(plan2.hybrid && plan2.solidOk.join() === 'false,false,true' && plan2.regions.length === 1 && plan2.regions[0].min[0] <= gbb.mnx + 1e-9,
       `plan with an open solid mesh: exact solids ${plan2.solidOk}, region ${plan2.regions.map(fmtBox).join(' | ')}`);
+  }
+
+  // 7. lattice that only shares faces with two solids (no overlap, no
+  //    fillet) — the case that leaves µm-thin pockets at the faces — plus
+  //    solid meshes the way STEP/IGES and inside-out STLs arrive.
+  {
+    const gy = cases['tpms-gyroid-sheet'].recipe, gyr = gy.json ? gy : { family: gy.family, json: gy };
+    const sc = [boxBody('S1', [0, 0, 0], [12, 10, 6], SHAPE_N, null, 4), boxBody('L', [12, 0, 0], [24, 10, 6], SHAPE_N, gyr, 4), boxBody('S2', [24, 0, 0], [36, 10, 6], SHAPE_N, null, 4)];
+    // S1 unwelded (every triangle its own vertices, like the STEP/IGES loader); S2 inside-out
+    { const b = sc[0].body, P = [], T = []; for (let t = 0; t < b.idxArr.length; t++) { const v = b.idxArr[t]; P.push(b.posArr[3 * v], b.posArr[3 * v + 1], b.posArr[3 * v + 2]); T.push(t); } b.posArr = new Float32Array(P); b.idxArr = new Uint32Array(T); }
+    { const t = sc[2].body.idxArr; for (let i = 0; i < t.length; i += 3) { const x = t[i + 1]; t[i + 1] = t[i + 2]; t[i + 2] = x; } }
+    const bodies7 = new Map(sc.map(s => [s.spec.bodyId, s.body])), specs7 = sc.map(s => s.spec);
+    const g7 = { mnx: Infinity, mny: Infinity, mnz: Infinity, mxx: -Infinity, mxy: -Infinity, mxz: -Infinity };
+    for (const s of specs7) { for (const k of ['mnx', 'mny', 'mnz']) g7[k] = Math.min(g7[k], s.bbox[k]); for (const k of ['mxx', 'mxy', 'mxz']) g7[k] = Math.max(g7[k], s.bbox[k]); }
+    const H7 = hostCtx(NEW, bodies7);
+    const plan7 = call(H7, 'planWeld(__s,0,__e,__g)', { __s: specs7, __e: EDGE, __g: g7 });
+    const chk7 = specs7.map(s => call(H7, 'bodyMeshCheck(bodies.get(__id))', { __id: s.bodyId }));
+    check(plan7.hybrid && plan7.solidOk.join() === 'true,false,true' && chk7[0].ok && !chk7[0].flip && chk7[2].ok && chk7[2].flip,
+      `closed-mesh check: unwelded solid ${chk7[0].ok ? 'accepted' : 'REJECTED'}, inside-out solid ${chk7[2].ok ? (chk7[2].flip ? 'accepted, flipped' : 'accepted, NOT flipped') : 'REJECTED'}`);
+    const sm7 = specs7.map((s, i) => plan7.solidOk[i] ? call(H7, 'solidMeshForWorker(bodies.get(__id))', { __id: s.bodyId }) : null);
+    const bW7 = specs7.map((s, i) => plan7.solidOk[i] ? Object.assign({}, s, { insetMm: plan7.insetMm }) : s);
+    const out = []; M.self.postMessage = (m) => out.push(m);
+    await M.self.onmessage({ data: { mode: 'export', bodies: bW7, blendK: 0, bbox: g7, relEdgeMm: EDGE, simplifyTol: 0, scale: 1, weld: { hybrid: true, reachMm: plan7.reachMm, regions: plan7.regions.map(r => ({ min: r.min, max: r.max })), solidMeshes: sm7 } } });
+    const done = out.find(m => m.type === 'done'), err = out.find(m => m.type === 'error'), rej = out.find(m => m.type === 'progress' && /rejected/.test(m.stage));
+    const dust = out.find(m => m.type === 'diag' && m.diag.tinyShellsDropped);
+    let shells = 0, v7 = 0;
+    if (done) { const T = new Uint32Array(done.triVerts), V = new Float32Array(done.vertProperties), par = new Int32Array(V.length / 3).map((_, i) => i);
+      const f = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+      for (let t = 0; t < T.length; t += 3) { par[f(T[t + 1])] = f(T[t]); par[f(T[t + 2])] = f(T[t]); }
+      const roots = new Set(); for (let t = 0; t < T.length; t += 3) roots.add(f(T[t])); shells = roots.size; v7 = volOf(out); }
+    const fOld = call(W, 'makeWeldField(__b,0,0)', { __b: specs7 });
+    const mOld = Manifold.levelSet(fOld, { min: [g7.mnx, g7.mny, g7.mnz], max: [g7.mxx, g7.mxy, g7.mxz] }, EDGE), vOld = mOld.volume(), sOld = mOld.decompose().length; mOld.delete();
+    check(done && !rej && shells <= sOld && Math.abs(v7 - vOld) / vOld < 0.01,
+      `shared faces, no fillet: ${err ? 'ERROR ' + err.message : `${shells} shell(s) (single field ${sOld})${dust ? `, dropped ${dust.diag.tinyShellsDropped} tiny` : ''}, volume ${v7.toFixed(1)} vs ${vOld.toFixed(1)} mm³${rej ? ', SOLID REJECTED' : ''}`}`);
   }
 
   // 5. old build

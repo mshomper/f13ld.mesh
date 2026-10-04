@@ -84,3 +84,42 @@ function makeWeldField(bodies, blendK, reachMm){
   var asm=buildAssemblySDF(bodies, blendK, false, {reachMm:reachMm});
   return function(p){ var v=-asm(p); return (v>-1e20&&v<1e20)?v:-1e3; };
 }
+// Hybrid weld clean-up. Where a lattice body only touches an exact solid
+// (shared face, small or no fillet), the lattice's level-set cap and the
+// solid's exact face can enclose pockets a few µm thick, and the union keeps
+// them as tiny inverted shells; similar specks appear at corners. Drop every
+// connected shell whose |volume| is below minVol (0.1 voxel by default in
+// m90) — far below anything printable. Returns null if nothing was dropped.
+function dropTinyShells(vp, tv, minVol){
+  var nV=vp.length/3, nT=tv.length/3, i, t;
+  var parent=new Int32Array(nV); for(i=0;i<nV;i++) parent[i]=i;
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  for(t=0;t<nT;t++){
+    var a=find(tv[3*t]), b=find(tv[3*t+1]), c=find(tv[3*t+2]);
+    if(a!==b) parent[b]=a;
+    if(a!==c && find(c)!==a) parent[find(c)]=a;
+  }
+  var comp=new Int32Array(nV).fill(-1), nC=0, root=new Int32Array(nV);
+  for(i=0;i<nV;i++){ var r=find(i); if(comp[r]<0) comp[r]=nC++; root[i]=comp[r]; }
+  if(nC<2) return null;
+  var vol=new Float64Array(nC), has=new Uint8Array(nC);
+  for(t=0;t<nT;t++){
+    var A=3*tv[3*t], B=3*tv[3*t+1], C=3*tv[3*t+2];
+    has[root[tv[3*t]]]=1;
+    vol[root[tv[3*t]]]+=(vp[A]*(vp[B+1]*vp[C+2]-vp[B+2]*vp[C+1])+vp[A+1]*(vp[B+2]*vp[C]-vp[B]*vp[C+2])+vp[A+2]*(vp[B]*vp[C+1]-vp[B+1]*vp[C]))/6;
+  }
+  var drop=new Uint8Array(nC), nDrop=0, dropVol=0;
+  var shells=0;
+  for(i=0;i<nC;i++){ if(!has[i]) continue; shells++; if(Math.abs(vol[i])<minVol){ drop[i]=1; nDrop++; dropVol+=vol[i]; } }
+  if(!nDrop) return null;
+  var keepT=0; for(t=0;t<nT;t++) if(!drop[root[tv[3*t]]]) keepT++;
+  var map=new Int32Array(nV).fill(-1), nv=0;
+  var otv=new Uint32Array(keepT*3), o=0;
+  for(t=0;t<nT;t++){
+    if(drop[root[tv[3*t]]]) continue;
+    for(var e=0;e<3;e++){ var v=tv[3*t+e]; if(map[v]<0) map[v]=nv++; otv[o++]=map[v]; }
+  }
+  var ovp=new Float32Array(nv*3);
+  for(i=0;i<nV;i++){ var m=map[i]; if(m>=0){ ovp[3*m]=vp[3*i]; ovp[3*m+1]=vp[3*i+1]; ovp[3*m+2]=vp[3*i+2]; } }
+  return {vertProperties:ovp, triVerts:otv, dropped:nDrop, droppedVol:dropVol, shells:shells};
+}

@@ -17,45 +17,77 @@
 
 // ── Closed-mesh check ─────────────────────────────────────────────────────
 // A solid can be used as-is only if Manifold will accept its mesh: every
-// edge shared by exactly two triangles in opposite directions, outward
-// facing (positive volume). The mesh worker re-checks with Manifold itself
-// and falls back to meshing the whole group if this check was wrong.
-function meshIsClosedOutward(posArr, idxArr){
+// edge shared by exactly two triangles in opposite directions. Returns
+// {ok, flip}: flip = closed but inside-out (the export flips the winding of
+// its copy). Triangles that collapse to a line are skipped — their two real
+// edges cancel, and Manifold drops them too. The STEP/IGES loader doesn't
+// weld vertices between faces, so if the edges don't pair up as indexed, the
+// check welds identical positions and tries again (Manifold's merge() does
+// the same in the worker). The mesh worker re-checks with Manifold itself and
+// meshes the whole group the old way if this check was wrong.
+function _meshEdgeCheck(posArr, idxArr, remap){
   const nT=idxArr.length/3, nV=posArr.length/3;
-  if(!nT || nT!==Math.floor(nT)) return false;
+  if(!nT || nT!==Math.floor(nT) || nV>4e6) return {paired:false, vol:0};
   // key = 2·(min·nV + max) + (a>b): each undirected edge must appear exactly
   // as the pair {2e, 2e+1}, once in each direction. Float64 holds the keys
   // exactly up to ~4.7M vertices (2·nV² < 2^53).
-  if(nV>4e6) return false;
   const K=new Float64Array(nT*3);
-  let vol=0;
+  let nk=0, vol=0;
   for(let t=0;t<nT;t++){
-    const a=idxArr[3*t], b=idxArr[3*t+1], c=idxArr[3*t+2];
-    if(a>=nV||b>=nV||c>=nV||a===b||b===c||a===c) return false;
-    K[3*t]  =2*(Math.min(a,b)*nV+Math.max(a,b))+(a>b?1:0);
-    K[3*t+1]=2*(Math.min(b,c)*nV+Math.max(b,c))+(b>c?1:0);
-    K[3*t+2]=2*(Math.min(c,a)*nV+Math.max(c,a))+(c>a?1:0);
+    let a=idxArr[3*t], b=idxArr[3*t+1], c=idxArr[3*t+2];
+    if(a>=nV||b>=nV||c>=nV) return {paired:false, vol:0};
+    if(remap){ a=remap[a]; b=remap[b]; c=remap[c]; }
+    if(a===b||b===c||a===c) continue;
+    K[nk++]=2*(Math.min(a,b)*nV+Math.max(a,b))+(a>b?1:0);
+    K[nk++]=2*(Math.min(b,c)*nV+Math.max(b,c))+(b>c?1:0);
+    K[nk++]=2*(Math.min(c,a)*nV+Math.max(c,a))+(c>a?1:0);
     const ax=posArr[3*a],ay=posArr[3*a+1],az=posArr[3*a+2];
     const bx=posArr[3*b],by=posArr[3*b+1],bz=posArr[3*b+2];
     const cx=posArr[3*c],cy=posArr[3*c+1],cz=posArr[3*c+2];
     vol+=ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx);
   }
-  K.sort();
-  for(let i=0;i<K.length;i+=2){
-    if(K[i]%2!==0 || K[i+1]!==K[i]+1) return false;
-    if(i+2<K.length && K[i+2]===K[i]) return false;    // edge used by >2 triangles
+  if(!nk || nk%2) return {paired:false, vol};
+  const S=K.subarray(0,nk).sort();
+  for(let i=0;i<nk;i+=2){
+    if(S[i]%2!==0 || S[i+1]!==S[i]+1) return {paired:false, vol};
+    if(i+2<nk && S[i+2]===S[i]) return {paired:false, vol};    // edge used by >2 triangles
   }
-  return vol>0;
+  return {paired:true, vol};
+}
+function _weldIdenticalPositions(posArr){
+  const nV=posArr.length/3, seen=new Map(), remap=new Uint32Array(nV);
+  let merged=0;
+  for(let i=0;i<nV;i++){
+    const k=posArr[3*i]+','+posArr[3*i+1]+','+posArr[3*i+2];
+    const j=seen.get(k);
+    if(j===undefined){ seen.set(k,i); remap[i]=i; } else { remap[i]=j; merged++; }
+  }
+  return merged?remap:null;
+}
+function meshIsClosedOutward(posArr, idxArr){
+  let r=_meshEdgeCheck(posArr, idxArr, null);
+  if(!r.paired){
+    const remap=_weldIdenticalPositions(posArr);
+    if(remap) r=_meshEdgeCheck(posArr, idxArr, remap);
+  }
+  return {ok:r.paired && r.vol!==0, flip:r.paired && r.vol<0};
 }
 // Cached on the body record; re-checked if its mesh arrays are replaced.
-function bodyMeshClosed(b){
-  if(!b || !b.posArr || !b.idxArr) return false;
+function bodyMeshCheck(b){
+  if(!b || !b.posArr || !b.idxArr) return {ok:false, flip:false};
   const c=b._closedCheck;
-  if(c && c.pos===b.posArr && c.idx===b.idxArr) return c.ok;
-  let ok=false;
-  try{ ok=meshIsClosedOutward(b.posArr, b.idxArr); }catch(_){ ok=false; }
-  b._closedCheck={pos:b.posArr, idx:b.idxArr, ok};
-  return ok;
+  if(c && c.pos===b.posArr && c.idx===b.idxArr) return c.res;
+  let res={ok:false, flip:false};
+  try{ res=meshIsClosedOutward(b.posArr, b.idxArr); }catch(_){}
+  b._closedCheck={pos:b.posArr, idx:b.idxArr, res};
+  return res;
+}
+function bodyMeshClosed(b){ return bodyMeshCheck(b).ok; }
+// Copy of a solid's mesh for the mesh worker (transferable), outward-facing.
+function solidMeshForWorker(b){
+  const idx=b.idxArr.slice();
+  if(bodyMeshCheck(b).flip){ for(let t=0;t<idx.length;t+=3){ const x=idx[t+1]; idx[t+1]=idx[t+2]; idx[t+2]=x; } }
+  return {pos:b.posArr.slice().buffer, idx:idx.buffer};
 }
 
 // Mirror of worker/m31-weld-grid.js weldGridDims.
@@ -139,12 +171,10 @@ function cropSpecToRegion(sp, region, marginMm){
 }
 
 // ── Parallel bake ─────────────────────────────────────────────────────────
-let _weldBakeWorkers=[];
-let _weldBakeAbort=null;
+let _weldBakePool=null;   // {workers, abort} of the bake in progress, for Cancel
 window._cancelWeldBake=function(){
-  for(const w of _weldBakeWorkers){ try{ w.terminate(); }catch(_){} }
-  _weldBakeWorkers=[];
-  if(_weldBakeAbort){ const r=_weldBakeAbort; _weldBakeAbort=null; try{ r(new Error('cancelled')); }catch(_){} }
+  const p=_weldBakePool; _weldBakePool=null;
+  if(p) p.abort(new Error('cancelled'));
 };
 let _weldBakeUrl=null;
 function weldBakeWorkerCount(){
@@ -153,55 +183,70 @@ function weldBakeWorkerCount(){
 }
 const WELD_BAKE_MIN_POINTS=200000;   // below this the spawn cost outweighs the split
 const WELD_BAKE_F32_POINTS=25e6;     // above this store Float32 (memory), else Float64
-// bodies: specs as the mesh worker will see them (insetMm already set).
+const WELD_BAKE_COPY_BUDGET=1.5e9;   // bytes of member grids copied across all bake workers
+const WELD_BAKE_STALL_MS=120000;     // no slab for this long → give up on the pool
+// bodySpecs: specs as the mesh worker will see them (insetMm already set).
 // Resolves {main, off, f32, workers, ms} or null when the bake isn't worth it
-// or fails — the mesh worker then evaluates the field itself.
+// or fails — the mesh worker then evaluates the field itself. Rejects only
+// on Cancel ('cancelled').
 async function bakeWeldRegion(bodySpecs, region, blendK, reachMm, edge, onProgress){
   const g=weldGridDims(region.min, region.max, edge);
   const total=g.mainCount+g.offCount;
-  const nW=Math.min(weldBakeWorkerCount(), g.layers);
+  let nW=Math.min(weldBakeWorkerCount(), g.layers);
   if(!g.ok || nW<2 || total<WELD_BAKE_MIN_POINTS) return null;
   if(!_weldBakeUrl) _weldBakeUrl=meshAssetUrl('worker/weld-bake-worker.js');
   const t0=performance.now();
   const f32=total>WELD_BAKE_F32_POINTS;
   const Arr=f32?Float32Array:Float64Array;
-  const main=new Arr(g.mainCount), off=new Arr(g.offCount);
   const nx1=g.n[0]+1, ny1=g.n[1]+1, nx2=g.n[0]+2, ny2=g.n[1]+2;
   const k=blendK||0;
   const margin=Math.max(g.s[0],g.s[1],g.s[2])+Math.max(k*0.25,0.05)+1e-3;
   const cropped=bodySpecs.map(sp=>cropSpecToRegion(sp, region, margin));
+  // Every worker gets its own copy of the (cropped) grids; at High/Ultra a
+  // lattice member's grid is tens of MB, so cap the pool by memory.
+  const perWorker=cropped.reduce((a,sp)=>a+sp.shapeSdfData.byteLength,0);
+  nW=Math.min(nW, Math.max(2, Math.floor(WELD_BAKE_COPY_BUDGET/Math.max(1,perWorker))));
+  const main=new Arr(g.mainCount), off=new Arr(g.offCount);
   // ~6 jobs per worker so a slow (dense) slab doesn't leave the rest idle.
   const per=Math.max(1, Math.ceil(g.layers/(nW*6)));
   const jobs=[]; for(let q=0;q<g.layers;q+=per) jobs.push({id:jobs.length, qa:q, qb:Math.min(g.layers,q+per)});
   let next=0, done=0;
+  const workers=[];
+  let settled=false, watchdog=null;
+  const stopAll=()=>{ if(watchdog){ clearTimeout(watchdog); watchdog=null; } for(const w of workers){ try{ w.terminate(); }catch(_){} } };
   try{
     await new Promise((resolve,reject)=>{
-      _weldBakeAbort=reject;
-      const fail=err=>{ for(const w of _weldBakeWorkers){ try{ w.terminate(); }catch(_){} } _weldBakeWorkers=[]; reject(err); };
+      const finish=(err)=>{ if(settled) return; settled=true; stopAll(); if(_weldBakePool===pool) _weldBakePool=null; err?reject(err):resolve(); };
+      const pool={workers, abort:finish};
+      _weldBakePool=pool;
+      const kick=()=>{ if(watchdog) clearTimeout(watchdog); watchdog=setTimeout(()=>finish(new Error('weld bake stalled')), WELD_BAKE_STALL_MS); };
+      kick();
       const initMsg={type:'init', bodies:cropped, blendK:k, reachMm, grid:{min:region.min, max:region.max, edge}, f32};
       for(let i=0;i<nW;i++){
         let w;
-        try{ w=new Worker(_weldBakeUrl); }catch(err){ fail(err); return; }
-        _weldBakeWorkers.push(w);
+        try{ w=new Worker(_weldBakeUrl); }catch(err){ finish(err); return; }
+        workers.push(w);
         const dispatch=()=>{ if(next<jobs.length){ const j=jobs[next++]; w.postMessage({type:'job', id:j.id, qa:j.qa, qb:j.qb}); } };
         w.onmessage=e=>{
+          if(settled) return;
           const d=e.data;
           if(d.type==='ready'){
             // Main thread and worker must agree on the grid, or the slabs land
             // in the wrong place.
-            if(!d.n || d.n.join(',')!==g.n.join(',')){ fail(new Error('grid mismatch '+d.n+' vs '+g.n)); return; }
+            if(!d.n || d.n.join(',')!==g.n.join(',')){ finish(new Error('grid mismatch '+d.n+' vs '+g.n)); return; }
             dispatch(); return;
           }
-          if(d.type==='error'){ fail(new Error('weld bake worker: '+d.message)); return; }
+          if(d.type==='error'){ finish(new Error('weld bake worker: '+d.message)); return; }
           if(d.type==='slab'){
             if(d.main.byteLength) main.set(new Arr(d.main), d.kmA*nx1*ny1);
             if(d.off.byteLength)  off.set(new Arr(d.off),  d.koA*nx2*ny2);
-            done++;
-            if(onProgress) onProgress(done/jobs.length, _weldBakeWorkers.length);
-            if(done===jobs.length) resolve(); else dispatch();
+            done++; kick();
+            if(onProgress) onProgress(done/jobs.length, workers.length);
+            if(done===jobs.length) finish(); else dispatch();
           }
         };
-        w.onerror=e=>fail(new Error(e.message||'weld bake worker error'));
+        w.onerror=e=>finish(new Error(e.message||'weld bake worker error'));
+        w.onmessageerror=()=>finish(new Error('weld bake worker: message could not be read'));
         w.postMessage(initMsg);
       }
     });
@@ -209,9 +254,6 @@ async function bakeWeldRegion(bodySpecs, region, blendK, reachMm, edge, onProgre
     if(err && err.message==='cancelled') throw err;
     console.warn('[weld bake] falling back to single-thread evaluation:', err);
     return null;
-  }finally{
-    for(const w of _weldBakeWorkers){ try{ w.terminate(); }catch(_){} }
-    _weldBakeWorkers=[]; _weldBakeAbort=null;
   }
   return {main:main.buffer, off:off.buffer, f32, workers:nW, ms:Math.round(performance.now()-t0), points:total};
 }

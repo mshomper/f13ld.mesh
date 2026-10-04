@@ -152,9 +152,25 @@ Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy
    2. **Weld edge clamp**: a coarser edge than needed on large groups (item 3). Proposed:
       - Clamp the edge against the fine regions' total volume instead of the group box. The regions depend on the edge, so take one pass at the raw edge and, if the voxel cap is exceeded, a second pass at the enlarged edge.
       - Make the same change in `estimateWeldExport`.
+
+   **Decisions for Matt at the start of the next session** (the fixes are described under item 1 and above):
+   - **Open edges:** build the proposed fix (meshopt, then an edge check, then Manifold's simplify when something broke), or take a different option?
+     - Option A, the proposal: closed foam exports, about 1.2–1.8× the triangles, less volume loss, about 2–3× the simplify time.
+     - Option B, separate the same-spot vertices before meshopt only: fast and no holes, but some edges stay shared by more than two triangles.
+     - Option C, always use Manifold's simplify: closed, but it crashed above about 10 M triangles in the past.
+   - **Size ceiling for Manifold's simplify:** about 4 M triangles is suggested. Lower is safer on memory; higher keeps more exports closed.
+   - **Weld edge change:** ship it in the same release as the open-edges fix, or separately after?
    3. Then, still to schedule: STEP/IGES welding at import (item 4), foam triangle estimate (item 2).
 3. **If the level set dominates at Med or High:** split the lattice region into slabs and level-set them in parallel workers. The seams need overlapping slabs plus a union to stay closed. This costs byte-identity with a one-thread run, so it needs a decision first.
-4. **Housekeeping.** Matt approved deleting every branch except `main` (all are merged). Claude sessions can't delete branches (the proxy blocks it), so Matt deletes them himself, or turns on Settings → General → "Automatically delete head branches".
+4. **Housekeeping.** Matt approved deleting every branch except `main` (all are merged). Claude sessions can't delete branches (the proxy blocks it). Run this with `gh` on Matt's machine (Git Bash or WSL on Windows). It covers all three repos and turns on auto-delete for future merges:
+
+   ```bash
+   for r in f13ld.lab f13ld.foam f13ld.mesh; do
+     gh api "repos/mshomper/$r/branches?per_page=100" --jq '.[].name' | grep -v '^main$' |
+     while read b; do gh api -X DELETE "repos/mshomper/$r/git/refs/heads/$b" && echo "deleted $r/$b"; done
+     gh api -X PATCH "repos/mshomper/$r" -F delete_branch_on_merge=true >/dev/null
+   done
+   ```
 
 ## Tests added
 

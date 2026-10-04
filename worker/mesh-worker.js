@@ -19,5 +19,6 @@ importScripts(
   "m24-sdf-wave.js"+self.location.search,
   "m25-sdf-foam.js"+self.location.search,
   "m30-sdf-assembly.js"+self.location.search,
+  "m31-weld-grid.js"+self.location.search,
   "m90-onmessage.js"+self.location.search
 );

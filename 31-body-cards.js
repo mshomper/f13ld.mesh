@@ -148,6 +148,7 @@ function _refreshAfterWeld(prevSig){
   const ag=activeGroupId();
   if(ag && groupMembers(ag).length>=2) triggerPreview(rm&&rm._quality||'draft');         // show the weld
   else if(typeof reloadActiveRecipeIntoPreview==='function') reloadActiveRecipeIntoPreview(); // restore single body
+  updateExportEstimate();                  // v0.9.3: weld-aware estimate
 }
 function weldDropOnGroup(id, gid){
   if(!weldGroups.has(gid) || bodyGroup.get(id)===gid) return;
@@ -179,6 +180,7 @@ function weldSetFillet(gid, mm){
   g.filletMm=Math.max(0, mm||0);
   if(activeBodyId && bodyGroup.get(activeBodyId)===gid && groupMembers(gid).length>=2)
     triggerPreview(rm&&rm._quality||'draft');
+  updateExportEstimate();
 }
 
 function renderBodyCards(){

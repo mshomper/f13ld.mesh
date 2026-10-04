@@ -82,6 +82,15 @@ File naming: `[type]_[preset]_[size]mm_[date].3mf`
 
 A quality report appears after each export: triangle count, domain size, edge length, file size, and compute time.
 
+### Weld groups
+
+When the active body is in a weld group, Export writes the whole group as one part. Since v0.9.3:
+
+- **Solids with a closed mesh are exported exactly as imported.** Only the space around lattice bodies is meshed at the export resolution. Where a lattice meets such a solid, the fillet is about one voxel smaller.
+- **Contacts between two solids are a plain union.** This applies when the group also holds a lattice. An all-solid group keeps its fillets.
+- **The lattice field is computed on several cores** before meshing. The report shows how many were used.
+- **The estimate covers the whole group.** It learns from each finished weld export on that computer.
+
 ---
 
 ## Coordinate system
@@ -120,7 +129,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `loaders/ld-*.js` | One file per recipe source: `?queue=`, `?r=`, `#r=` |
 | `05-ui-chrome.js` | Spinner orb, status indicator |
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
-| `12-shape-sdf-bake.js` · `13-hu-bake.js` | Shape SDF and hyperuniform bake worker pools |
+| `12-shape-sdf-bake.js` · `13-hu-bake.js` · `14-weld-bake.js` | Shape SDF, hyperuniform and weld-field bake worker pools; weld export plan and estimate |
 | `20-raymarcher.js` · `21-gimbal.js` | WebGL2 preview · orientation gimbal |
 | `30-shape-import.js` · `31-body-cards.js` | Body file intake · body cards, weld drag/drop, recipe library |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
@@ -148,8 +157,9 @@ Nothing else should need to change; if it does, the registry is missing a field.
 | `m10-noise.js` · `m11-grain-fields.js` · `m12-reaction-diffusion.js` | Field primitives |
 | `m20-sdf-noise-tpms.js` · `m21-sdf-beam.js` · `m22-sdf-grain.js` · `m23-sdf-bundle.js` · `m24-sdf-wave.js` · `m25-sdf-foam.js` | One SDF builder per recipe family |
 | `m30-sdf-assembly.js` | Weld-group union and `buildSDF` (looks the family up in the registry) |
+| `m31-weld-grid.js` | Manifold `levelSet` grid points, weld field bake and cache lookup |
 | `m90-onmessage.js` | Bake / preview / export message handler |
-| `shape-sdf-worker.js` · `hu-bake-worker.js` | Shape SDF and hyperuniform slab bakes |
+| `shape-sdf-worker.js` · `hu-bake-worker.js` · `weld-bake-worker.js` | Shape SDF, hyperuniform and weld-field slab bakes |
 
 Worker files are requested with `?v=<version>` so a deploy never mixes a fresh page with stale cached worker code. Bump `F13LD_MESH_VERSION` in `01-config.js` (and the header label in `index.html`) on each release.
 

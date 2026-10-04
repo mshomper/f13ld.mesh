@@ -23,6 +23,8 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `harness.js <old> <new> [filter]` | Exports every case in `recipes.json` (all families + shape mode) at Draft from both builds; compares 3MF mesh data byte for byte. Main regression check. |
 | `fixtests.js <old> <new> [filter]` | v0.8.1 safety/crash fixes (escaping, `%` links, bad recipes, 2-core hyperuniform, warped bundle, large OBJ, overlapping exports, cancel, keep bodies, κ = 0). |
 | `fixtests2.js <old> <new> [filter]` | v0.8.3 fixes (stale preview range, cube voxel cap, body removal/import/camera, structure settings, preview quality, domain size, solid export). |
+| `weldtest.js <old> <new> [draft\|low\|med]` | v0.9.3 weld export, in Node: `levelSet` grid formula (bit-for-bit), weld plan, pre-baked vs one-thread mesh byte identity, mesh worker weld branch incl. the open-solid fallback, old vs new time and volume (old only at Draft unless `OLD=1`). |
+| `weldexport.js <old> <new> [low,med]` | v0.9.3 weld export in the browser: three STL boxes (solid, lattice, solid) welded and exported from both builds; time, volume, open edges, estimate, `[export][weld]` logs. `SKIP_OLD=1` runs the new build only. |
 
 ## Single-build checks
 

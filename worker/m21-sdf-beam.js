@@ -383,4 +383,4 @@ function buildBeamSDF(json, pruneCtx){
 }
 
 // ── Registry (v0.9.0) ───────────────────────────────────────────────────────
-registerSDF('beam', { build(recipe){ return buildBeamSDF(recipe.json); }, trimToNodes: true });
+registerSDF('beam', { build(recipe){ return buildBeamSDF(recipe.json); }, trimToNodes: true, metric: true });

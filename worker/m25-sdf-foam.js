@@ -946,4 +946,4 @@ function buildFoamSDF2(json){
 }
 
 // ── Registry ────────────────────────────────────────────────────────────────
-registerSDF('foam', { build(recipe){ return buildFoamSDF(recipe.json); } });
+registerSDF('foam', { build(recipe){ return buildFoamSDF(recipe.json); }, metric: true });

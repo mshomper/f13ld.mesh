@@ -62,6 +62,22 @@ function updateExportEstimate(){
   // determined by domain-size only and isn't meaningfully different across
   // qualities for the user's mental model.
   updateQualButtonVoxelSizes();
+  // v0.9.3: the active body is in a weld group → the export is the whole
+  // group, so estimate that (14-weld-bake.js), not the active body alone.
+  try{
+    const wg=activeGroupId();
+    if(wg && groupMembers(wg).length>=2){
+      const est=estimateWeldExport(wg, currentExportQual);
+      if(est){
+        const bits=[est.members+' bodies'];
+        if(est.exactSolids) bits.push(est.exactSolids+' solid'+(est.exactSolids===1?'':'s')+' exact');
+        if(est.workers>1) bits.push(est.workers+' cores');
+        el.textContent='~'+est.tris.toLocaleString()+' triangles · ~'+est.totalSec+'s · weld '+weldGroupLetter(wg)+' ('+bits.join(', ')+')'+
+          (est.sdfSec>0?' (includes ~'+est.sdfSec+'s SDF bake)':'');
+        return;
+      }
+    }
+  }catch(e){ console.warn('[estimate] weld estimate failed', e); }
   if(!currentRecipe){el.textContent='';return;}
   try{
     let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope

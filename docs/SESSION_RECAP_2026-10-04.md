@@ -114,17 +114,12 @@ Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy
    - Paste the console lines starting `[export][weld]`: plan, level-set timings, shells dropped, estimate calibration.
    - Note the estimate before the first export and after one or two exports; it should settle near the real time.
    - Check in a slicer that the solids look as imported and the foam joins them.
-2. **Decide on the found-not-fixed items above** (propose before building). Suggested order:
-   - **Open edges after simplify** (item 1): affects every fragmented foam export, not only welds.
-   - **Weld edge clamp** (item 3).
-   - **STEP/IGES welding at import** (item 4): changes single-body STEP exports.
-   - **Foam triangle estimate** (item 2).
+2. **Found-not-fixed items, in Matt's priority order (2026-10-04)** (propose before building):
+   1. **Open edges after simplify** (item 1).
+   2. **Weld edge clamp**: a coarser edge than needed on large groups (item 3).
+   3. Then, still to schedule: STEP/IGES welding at import (item 4), foam triangle estimate (item 2).
 3. **If the level set dominates at Med or High:** split the lattice region into slabs and level-set them in parallel workers. The seams need overlapping slabs plus a union to stay closed. This costs byte-identity with a one-thread run, so it needs a decision first.
-4. **Housekeeping (optional).** Merged branches still on GitHub:
-   - `chore/handoff-tests`, `fix/v0.8.1-safety`, `fix/v0.8.2-geometry`, `fix/v0.8.3-cleanup`;
-   - `refactor/split-files`, `v0.9.0-registry`, `v0.9.1-foam`, `foam-field-2`, `weld-hybrid`.
-
-   They're safe to delete.
+4. **Housekeeping.** Matt approved deleting every branch except `main` (all are merged). Claude sessions can't delete branches (the proxy blocks it), so Matt deletes them himself, or turns on Settings → General → "Automatically delete head branches".
 
 ## Tests added
 

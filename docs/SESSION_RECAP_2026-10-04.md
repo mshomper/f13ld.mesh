@@ -102,6 +102,39 @@ Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy
 ## Found, not fixed
 
 1. **Open edges after simplify.** meshopt simplify leaves some open or non-manifold edges on fragmented foam. This is pre-existing: the v0.9.2 export of the same scene had 5,176, v0.9.3 has 7,508. Manifold's own output is closed. Simplify is what opens it. Worth a look: skip collapses on tiny components, or re-check edges after simplify and keep the unsimplified mesh where they break.
+
+   **Analysis (2026-10-04, after the wrap-up; proposal awaiting approval).**
+
+   *Test:* one foam2-open-lloyd body, 20×20×10 mm, cell 10 mm, Low (0.2 mm), level set 629,640 triangles. The level set itself is closed.
+
+   *Cause 1, holes:* Manifold's level set snaps grid points onto the surface. Where thin foam walls nearly touch, this leaves 7,769 vertices sharing a position with another vertex. meshopt treats same-position vertices as one point, and its collapses tear them apart. 81 % of the bad edges touch one of these vertices.
+
+   *Cause 2, edges shared by more than two triangles:* collapses on very thin struts.
+
+   *Effect on volume:* simplify also thins the foam. At tolerance 0.03 mm the volume drops 7 %; at 0.015 mm, 2 %.
+
+   *Things that don't fix it:*
+   - meshopt's `Prune`, `Regularize` or `Sparse` flags;
+   - locking the shared-position vertices;
+   - dropping tiny shells first;
+   - a smaller tolerance (4,630 open edges remain at 0.0075 mm).
+
+   *Things that partly fix it:* separating the shared-position vertices by 0.1 µm first leaves 0 open edges, but 2,300–3,100 edges still shared by more than two triangles.
+
+   *Manifold's own simplify* gives 0 bad edges at every tolerance:
+
+   | Tolerance | meshopt (today): triangles · bad edges · volume · time | Manifold simplify: triangles · bad edges · volume · time |
+   |---|---|---|
+   | 0.03 mm | 208 k · 6,171 · −7.0 % · 0.7 s | 379 k · 0 · −4.4 % · 1.4 s |
+   | 0.015 mm | 325 k · 5,254 · −2.0 % · 0.7 s | 452 k · 0 · −1.0 % · 1.6 s |
+   | 0.0075 mm | 427 k · 4,887 · −0.5 % · 0.7 s | 505 k · 0 · −0.2 % · 1.3 s |
+
+   *Proposed fix:*
+   1. Simplify with meshopt as now, then check every edge (about 0.1 s).
+   2. If any edge is bad and the mesh is under about 4 M triangles, simplify the Manifold result with Manifold's own simplify instead. Manifold's simplify crashed above about 10 M triangles in the past, which is why meshopt replaced it.
+   3. Above that size, separate the shared-position vertices before meshopt (no holes; some edges still shared by more than two triangles), and show the count in the export report.
+
+   Meshes meshopt simplifies cleanly (TPMS and most other families) are unchanged byte for byte. Foam exports come out closed, with about 1.2–1.8× the triangles and less volume loss, at roughly 2–3× the simplify time.
 2. **Triangle estimate for foam is far off.** The shape-mode surface model said ~4.9 k; the real count is 395 k. The time estimate no longer depends on it, but the panel still shows the count.
 3. **Weld edge clamp.** The weld voxel cap still uses the whole group box, not the fine regions, so large mixed groups get a coarser edge than they need.
 4. **STEP/IGES bodies are imported without welding.** The faces of a STEP/IGES body don't share vertices (`30-shape-import.js` `loadCADFormat`). Exporting such a body on its own as a solid writes a mesh whose faces aren't stitched. Running `mergeVertices` at import (as STL does) would fix it. That would change single-body STEP exports, so it needs a decision.
@@ -116,7 +149,9 @@ Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy
    - Check in a slicer that the solids look as imported and the foam joins them.
 2. **Found-not-fixed items, in Matt's priority order (2026-10-04)** (propose before building):
    1. **Open edges after simplify** (item 1).
-   2. **Weld edge clamp**: a coarser edge than needed on large groups (item 3).
+   2. **Weld edge clamp**: a coarser edge than needed on large groups (item 3). Proposed:
+      - Clamp the edge against the fine regions' total volume instead of the group box. The regions depend on the edge, so take one pass at the raw edge and, if the voxel cap is exceeded, a second pass at the enlarged edge.
+      - Make the same change in `estimateWeldExport`.
    3. Then, still to schedule: STEP/IGES welding at import (item 4), foam triangle estimate (item 2).
 3. **If the level set dominates at Med or High:** split the lattice region into slabs and level-set them in parallel workers. The seams need overlapping slabs plus a union to stay closed. This costs byte-identity with a one-thread run, so it needs a decision first.
 4. **Housekeeping.** Matt approved deleting every branch except `main` (all are merged). Claude sessions can't delete branches (the proxy blocks it), so Matt deletes them himself, or turns on Settings → General → "Automatically delete head branches".

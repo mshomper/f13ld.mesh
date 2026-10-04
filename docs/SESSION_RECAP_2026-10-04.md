@@ -1,5 +1,12 @@
 # Session recap — 2026-10-04 (v0.9.3: fast weld export)
 
+**Main:** v0.9.3 (`bc72aee`). **Suite on main:** F13LD.lab v0.17.3 · F13LD.foam v0.6.0. **Pick up:** [Next steps](#next-steps) below.
+
+**Also merged today** (separate session, PR #8):
+- **v0.9.2:** F13LD.foam exact field (`geometry.field: 2`, `buildFoamSDF2`, byte-identical with F13LD.foam and F13LD.lab).
+- **v0.6.0 foams:** wet Plateau borders, fillet / node, two-size mix, symmetric seeds, FCC / C15.
+- **Tests:** six new foam cases in `tests/recipes.json`. Older foam recipes build exactly as before.
+
 ## Problem
 
 A weld group of two solid bodies with a foam body between them ran for 83 s and more at Med, while the export panel said about 3 s.
@@ -101,9 +108,23 @@ Left as is: on very large solids (≥ 100 mm at Med), the solid's level-set copy
 
 ## Next steps
 
-1. **Matt:** export the real foam + two solids design at Med. Paste the console lines starting `[export][weld]` (plan, timings, calibration). Compare the estimate before and after one or two exports.
-2. If the level set dominates at Med or High, split the lattice region into slabs and level-set them in parallel workers. Overlapping slabs plus a union would be needed to keep the seams closed. This costs some byte-identity, so it needs a decision first.
-3. Items 1–4 above.
+1. **Matt: check v0.9.3 on the real design.**
+   - Reload and check the header says v0.9.3.
+   - Export the foam + two solids weld group at Med.
+   - Paste the console lines starting `[export][weld]`: plan, level-set timings, shells dropped, estimate calibration.
+   - Note the estimate before the first export and after one or two exports; it should settle near the real time.
+   - Check in a slicer that the solids look as imported and the foam joins them.
+2. **Decide on the found-not-fixed items above** (propose before building). Suggested order:
+   - **Open edges after simplify** (item 1): affects every fragmented foam export, not only welds.
+   - **Weld edge clamp** (item 3).
+   - **STEP/IGES welding at import** (item 4): changes single-body STEP exports.
+   - **Foam triangle estimate** (item 2).
+3. **If the level set dominates at Med or High:** split the lattice region into slabs and level-set them in parallel workers. The seams need overlapping slabs plus a union to stay closed. This costs byte-identity with a one-thread run, so it needs a decision first.
+4. **Housekeeping (optional).** Merged branches still on GitHub:
+   - `chore/handoff-tests`, `fix/v0.8.1-safety`, `fix/v0.8.2-geometry`, `fix/v0.8.3-cleanup`;
+   - `refactor/split-files`, `v0.9.0-registry`, `v0.9.1-foam`, `foam-field-2`, `weld-hybrid`.
+
+   They're safe to delete.
 
 ## Tests added
 

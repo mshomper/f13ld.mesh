@@ -27,12 +27,12 @@ registerFamily({
     requireThat(typeof j.geometry.thickness==='number'&&j.geometry.thickness>0, 'Foam recipe needs a positive "geometry.thickness".');
     const pos=j.seeds.positions;
     if(pos!=null){
-      requireThat(Array.isArray(pos)&&pos.length>=12&&pos.length%3===0&&pos.length<=3*4096,
-        'Foam "seeds.positions" must be a flat list of x, y, z values for 4 to 4096 seeds.');
+      requireThat(Array.isArray(pos)&&pos.length>=3&&pos.length%3===0&&pos.length<=3*4096,
+        'Foam "seeds.positions" must be a flat list of x, y, z values for 1 to 4096 seeds.');
       requireThat(pos.every(v=>typeof v==='number'&&isFinite(v)&&v>=-5.0001&&v<=5.0001),
         'Foam "seeds.positions" must be numbers inside the cube from -5 to 5.');
     } else {
-      requireThat(FOAM_MODES.includes(j.seeds.mode)&&typeof j.seeds.count==='number'&&j.seeds.count>=4,
+      requireThat(FOAM_MODES.includes(j.seeds.mode)&&typeof j.seeds.count==='number'&&j.seeds.count>=1,
         'Foam recipe has no seed positions and no seed settings to rebuild them from.');
     }
   },
@@ -43,7 +43,8 @@ registerFamily({
     return `<div class="sec-lbl">foam scaffold</div><div class="meta-grid">`+
       card('topology',g.mode||'plateau')+card('seeds',mode)+card('cells',n)+
       card('thickness',g.thickness)+(g.mode==='plateau'?card('plateau k',g.plateau_k):'')+
-      (g.organic>0?card('organic',g.organic):'')+card('normalize',g.normalize===false?'off':'on')+
+      (g.organic>0?card('organic',g.organic):'')+
+      (g.field===2?card('field','exact'):card('normalize',g.normalize===false?'off':'on'))+
       (a.enabled&&Array.isArray(a.stretch)?card('stretch',a.stretch.map(v=>(+v).toFixed(2)).join(' · ')):'')+
       card('tile',g.tile_mm!=null?g.tile_mm:null,'mm')+
       card('seed source',Array.isArray(s.positions)?'embedded':'regenerated')+

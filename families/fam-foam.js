@@ -48,7 +48,7 @@ registerFamily({
       bimodal:'two-size mix',mirror:'mirror-symmetric',cubic:'cubic-symmetric',fcc:'FCC',c15:'C15 Laves'}[s.mode]||s.mode;
     return `<div class="sec-lbl">foam scaffold</div><div class="meta-grid">`+
       card('topology',g.mode||'plateau')+card('seeds',mode)+card('cells',n)+
-      (g.mode==='wet'?card('border',g.border):card('thickness',g.thickness))+(g.mode==='plateau'?card('plateau k',g.plateau_k):'')+
+      (g.mode==='wet'?card('border',g.border)+(g.edge_min>0?card('min edge',g.edge_min):''):card('thickness',g.thickness))+(g.mode==='plateau'?card('plateau k',g.plateau_k):'')+
       (g.fillet>0?card('fillet',g.fillet):'')+(g.node>0?card('node',g.node):'')+
       (s.mode==='bimodal'?card('size ratio',s.size_ratio)+card('large share',s.large_fraction):'')+
       (s.jitter>0?card('disorder',s.jitter):'')+

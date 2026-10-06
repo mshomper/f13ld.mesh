@@ -44,7 +44,7 @@
     </div>
     <div class="fh-right">
       <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.9.4</span>
+      <span class="fh-version">v0.9.5</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -95,6 +95,18 @@
         <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer">✕ cancel</button>
       </div>
       <div id="typeBadge"></div>
+      <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
+      <div id="viewOpts">
+        <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options">◐ view</button>
+        <div id="viewOptsPanel" hidden>
+          <label><input type="checkbox" data-vo="shadows">Shadows</label>
+          <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
+          <label><input type="checkbox" data-vo="warmCool">Warm / cool light</label>
+          <label><input type="checkbox" data-vo="cutFaces">Shade cut faces</label>
+          <label><input type="checkbox" data-vo="limeEdges">Lime edges</label>
+          <button type="button" id="viewOptsReset">reset</button>
+        </div>
+      </div>
       <button id="reloadBtn">↩ load different</button>
       <div id="resStrip">
         <button class="res-btn active" id="btnDraft">Draft</button>
@@ -198,6 +210,7 @@
 <script defer src="14-weld-bake.js"></script>
 <script defer src="20-raymarcher.js"></script>
 <script defer src="21-gimbal.js"></script>
+<script defer src="22-view-opts.js"></script>
 <script defer src="30-shape-import.js"></script>
 <script defer src="31-body-cards.js"></script>
 <script defer src="40-mesh-worker-host.js"></script>

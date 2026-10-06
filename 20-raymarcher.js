@@ -29,12 +29,29 @@ function MeshRaymarcher(canvas){
   this._assemblyMode=false;
   this.worldMin=[-5,-5,-5]; this.worldMax=[5,5,5]; this.isPeriodic=true;
   this._quality='draft';
+  // v0.9.5: viewer shading options, persisted per browser.
+  this.viewOpts=this._loadViewOpts(); this._interacting=false;
   this.quadBuf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   this._setupInteraction();
   this._startLoop();
 }
+// ── v0.9.5 · Viewer shading options ───────────────────────────────────────
+MeshRaymarcher.prototype.VIEW_DEFAULTS={shadows:true,occlusion:true,warmCool:true,cutFaces:true,limeEdges:false};
+MeshRaymarcher.prototype._loadViewOpts=function(){
+  var o=Object.assign({},this.VIEW_DEFAULTS);
+  try{var j=JSON.parse(localStorage.getItem('f13ld.mesh.view')||'null');if(j&&typeof j==='object'){for(var k in o){if(typeof j[k]==='boolean')o[k]=j[k];}}}catch(e){}
+  return o;
+};
+MeshRaymarcher.prototype.setViewOption=function(key,on){
+  if(!(key in this.VIEW_DEFAULTS))return;
+  this.viewOpts[key]=!!on; this._dirty=true;
+  try{localStorage.setItem('f13ld.mesh.view',JSON.stringify(this.viewOpts));}catch(e){}
+};
+// Interaction state: soft shadows pause while orbiting/panning/zooming.
+MeshRaymarcher.prototype._beginInteract=function(){this._interacting=true;};
+MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._dirty=true;}};
 MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
   var gl=this.gl;
   if(slot==='shape'){
@@ -190,12 +207,12 @@ MeshRaymarcher.prototype.setAssemblyMode=function(on){
 };
 
 // rc3.7: Set per-body color override for the active lattice render. Pass
-// null/undefined to clear the override (shader falls back to default
-// green-accented iridescent palette). Color is [r,g,b] in 0..1.
+// null/undefined to clear the override (v0.9.5: render falls back to the
+// recipe's family color). Color is [r,g,b] in 0..1.
 MeshRaymarcher.prototype.setBaseColor=function(color){
   if(color === null || color === undefined){
     // Sentinel value with negative red — shader detects this as "no override"
-    // and uses the default palette behavior.
+    // and render() substitutes the recipe family color.
     this._baseColor = [-1.0, 0.0, 0.0];
   } else {
     this._baseColor = color;
@@ -372,16 +389,22 @@ MeshRaymarcher.prototype._buildShader=function(){
     // constant (always-inside). implicit(p) = max(scaffold, shape) reduces
     // to just sampleShape(p), producing an opaque rendering of the body's
     // surface in a flat material color. uSolidColor is the base color used
-    // by the lighting tail (replaces the iridescent palette when solid).
+    // by the lighting tail.
     'uniform float uSolidMode;',
     'uniform vec3 uSolidColor;',
     // ── rc3.7 · Lattice base color override ───────────────────────────────
-    // When the user picks a per-body color via the palette, that color is
-    // pushed here for the active lattice render. The shader mixes it with
-    // the iridescent palette so the lattice keeps its iridescent shimmer
-    // while reading as the chosen color overall. A negative-R sentinel
-    // (-1,0,0) means "no override, use default green-accented palette."
+    // Body color for the active lattice render: the user's per-body pick,
+    // the weld-group color, or (v0.9.5) the recipe family color. Rendered
+    // as a flat material color. A negative-R sentinel (-1,0,0) means no
+    // color is known; the shader then uses a neutral clay.
     'uniform vec3 uBaseColor;',
+    // ── v0.9.5 · Viewer shading options (viewport "view" menu) ─────────────
+    // uShadowOn / uAOOn / uWarmCool / uCutShade / uLimeEdge are 0/1 toggles.
+    // uInteract = 1 while the user is orbiting/panning/zooming: soft shadows
+    // are skipped then and come back on release. uAOCell is the occlusion
+    // reach in world units (about one lattice cell).
+    'uniform float uShadowOn;uniform float uAOOn;uniform float uWarmCool;uniform float uCutShade;uniform float uLimeEdge;',
+    'uniform float uInteract;uniform float uAOCell;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
     // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
     // Each has its own world-mm bbox and family color. uGhostCount controls
@@ -445,7 +468,26 @@ MeshRaymarcher.prototype._buildShader=function(){
     // could come from the scaffold field gradient and "paint" lattice texture
     // onto an otherwise-correct solid surface.
     'vec3 nrmField(vec3 p){if(uSolidMode>0.5)return nrmShape(p);if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
-    'vec3 palette(float t){vec3 a=vec3(0.55,0.57,0.42),b=vec3(0.43,0.42,0.30),c=vec3(1.0,1.0,1.0),d=vec3(0.02,0.0,0.05);return clamp(a+b*cos(6.28318*(c*t+d)),0.0,1.0);}',
+    // ── v0.9.5 · Lighting helpers ─────────────────────────────────────────
+    // Colors are lit in linear light, then tone-mapped (ACES fit) and
+    // gamma-encoded. The view-box clip in mapL() keeps occlusion and shadow
+    // rays from "seeing" periodic lattice outside the visible domain.
+    'vec3 toLin(vec3 c){return pow(max(c,vec3(0.0)),vec3(2.2));}',
+    'vec3 toneMap(vec3 c){c=(c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14);return pow(clamp(c,0.0,1.0),vec3(1.0/2.2));}',
+    'float sdViewBox(vec3 p){vec3 q=abs(p)-vec3(uViewH);return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0);}',
+    'float mapL(vec3 p){return max(implicit(p)/max(uLipschitz,1e-4),sdViewBox(p));}',
+    // Ambient occlusion: 5 taps along the normal, reach scaled to ~1 cell.
+    // Taps start a couple of voxels out so 8-bit field quantization near the
+    // surface doesn't show up as blotches.
+    'float calcAO(vec3 p,vec3 n){float c=uAOCell;float occ=0.0,w=1.0;for(int i=0;i<5;i++){float h=c*(0.04+0.16*float(i)/4.0)+2.0*uNrmStep;float d=mapL(p+n*h);occ+=max(h-d,0.0)*w;w*=0.8;}return clamp(1.0-occ*(3.2/c),0.0,1.0);}',
+    // Soft shadow toward the key light (penumbra from closest approach).
+    'float softShadow(vec3 ro,vec3 ld){float res=1.0;float t=uNrmStep*1.5;float tMax=uViewH*1.6;for(int i=0;i<48;i++){float h=mapL(ro+ld*t);res=min(res,8.0*h/t);t+=clamp(h,uNrmStep*0.75,uViewH*0.08);if(res<0.02||t>tMax)break;}return clamp(res,0.0,1.0);}',
+    // Camera-anchored light rig (upper-left key, lower-right fill), shared by
+    // the main surface and opaque ghosts so every body reads the same way.
+    'vec3 keyDirV(){return normalize(-0.55*(rot*vec3(1.0,0.0,0.0))+0.75*(rot*vec3(0.0,1.0,0.0))+0.55*(rot*vec3(0.0,0.0,1.0)));}',
+    'vec3 fillDirV(){return normalize(0.7*(rot*vec3(1.0,0.0,0.0))-0.35*(rot*vec3(0.0,1.0,0.0))+0.25*(rot*vec3(0.0,0.0,1.0)));}',
+    'vec3 keyColV(){return uWarmCool>0.5?vec3(1.0,0.93,0.82)*1.35:vec3(1.3);}',
+    'vec3 fillColV(){return uWarmCool>0.5?vec3(0.30,0.42,0.62)*0.75:vec3(0.5);}',
     // ── rc3 · Ghost accumulation pass ─────────────────────────────────────
     // rc3.6: ghost normal via central differences on the ghost SDF. Used to
     // shade inactive-solid ghosts so they read as real opaque bodies, not
@@ -479,8 +521,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     // tangent-facing surfaces show visible stripes from voxel-aligned steps.
     '  float jit = hashJ(gl_FragCoord.xy);',
     // Surface lighting setup for solid ghosts (shared with main scaffold path).
-    '  vec3 l1 = normalize(vec3(1.0,1.8,2.0));',
-    '  vec3 l2 = normalize(vec3(-0.8,-0.3,0.6));',
+    '  vec3 gKey = keyDirV(); vec3 gFill = fillDirV();',
     '  for(int i = 0; i < GHOST_STEPS; i++){',
     '    float t = tEn + (float(i) + jit) * dtBase;',
     '    vec3 p = ro + rd * t;',
@@ -509,9 +550,10 @@ MeshRaymarcher.prototype._buildShader=function(){
     '          vec3 pHit = ro + rd * tHit;',
     '          vec3 n = ghostNormal(g, pHit, uViewH * 0.008);',
     '          if(dot(n, -rd) < 0.0) n = -n;',
-    '          float diff = 0.4 + max(dot(n, l1), 0.0) * 0.55 + max(dot(n, l2), 0.0) * 0.2;',
-    '          float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.5) * 0.4;',
-    '          vec3 surf = c * diff + vec3(1.0) * rim;',
+    // v0.9.5: same light rig as the active body (no shadows/occlusion here).
+    '          vec3 ga = toLin(c); float gvf = max(dot(n, -rd), 0.0);',
+    '          vec3 gLt = keyColV()*max(dot(n, gKey), 0.0) + fillColV()*max(dot(n, gFill), 0.0) + vec3(0.30)*gvf + vec3(0.15);',
+    '          vec3 surf = toneMap(ga*gLt + vec3(0.35)*pow(max(dot(n, normalize(gKey - rd)), 0.0), 48.0) + (ga*0.6+vec3(0.06))*pow(1.0-gvf,3.0)*0.5);',
     '          col += surf * (1.0 - alpha);',
     '          alpha = 1.0;',
     '          break;',
@@ -556,47 +598,39 @@ MeshRaymarcher.prototype._buildShader=function(){
     '      fragColor=vec4(clamp(finalCol,0.0,1.0),1.0); return;',
     '    }',
     '  }',
-    '  float dy=dot(n,vec3(0.0,1.0,0.0)),dz=dot(n,vec3(0.0,0.0,1.0));float hue=dy*dy*0.33+dz*dz*0.67;',
-    '  vec3 iridBase=palette(hue);vec3 iridShift=palette(hue+0.5);',
-    // rc3.7: detect whether uBaseColor is a real override or the no-op
-    // sentinel (-1, 0, 0). A negative red channel can't occur in a real
-    // color so it's a safe sentinel.
-    '  bool hasBaseOverride = (uBaseColor.r >= 0.0);',
-    // rc3.5: In solid mode, replace iridescent palette with the flat solid
-    // color. Lighting math stays the same so the body still has shading
-    // direction; just the base hue is a flat material instead of palette.
-    // rc3.7: For lattice mode (not solid) with a color override, mix the
-    // iridescent palette toward the body color so the lattice reads as the
-    // chosen color but keeps its iridescent shimmer.
+    // ── v0.9.5 · Surface shading ──────────────────────────────────────────
+    // Base color: solid color in solid mode, else the body color (per-body
+    // pick, weld-group color, or the recipe family color — all arrive via
+    // uBaseColor). Negative-R sentinel → neutral clay fallback.
+    // Cut faces (view-box caps, or where the shape clip is the active
+    // surface) are drawn slightly lighter/desaturated, like a CAD section.
+    '  bool isCut=false;',
+    '  if(uSolidMode<0.5){',
+    '    if(nearCap||!hit) isCut=true;',
+    '    else if(uHasShape>0.5&&sampleShape(pos)>sampleScaffoldSDF(pos)) isCut=true;',
+    '  }',
     '  vec3 baseCol;',
-    '  if(uSolidMode > 0.5){',
-    '    baseCol = uSolidColor;',
-    '  } else if(hasBaseOverride){',
-    // 0.6 blend toward chosen color, 0.4 iridescent → enough chroma to read
-    // as the picked color but the shimmer survives across surface normals.
-    '    baseCol = mix(iridBase, uBaseColor, 0.6);',
-    '  } else {',
-    '    baseCol = iridBase;',
-    '  }',
-    '  vec3 l1=normalize(vec3(1.0,1.8,2.0)),l2=normalize(vec3(-0.8,-0.3,0.6));',
-    '  float l3=max(dot(n,normalize(vec3(-0.5,-1.0,-1.5))),0.0)*0.3;',
-    '  float diff=0.35+max(dot(n,l1),0.0)*0.7+max(dot(n,l2),0.0)*0.25+l3;',
-    '  float spec1=pow(max(dot(reflect(-l1,n),-rd),0.0),120.0)*0.7;',
-    '  float spec2=pow(max(dot(reflect(-l1,n),-rd),0.0),20.0)*0.2;',
-    '  float rim=pow(1.0-max(dot(n,-rd),0.0),2.5)*0.8;',
-    '  vec3 green=vec3(0.784,0.961,0.259);',
-    // rc3.5: When solid, accent color is neutral white instead of scaffold green.
-    // rc3.7: When lattice has a color override, accent matches the override.
-    '  vec3 accent;',
-    '  if(uSolidMode > 0.5){',
-    '    accent = vec3(1.0);',
-    '  } else if(hasBaseOverride){',
-    '    accent = uBaseColor;',
-    '  } else {',
-    '    accent = green;',
-    '  }',
-    '  vec3 col=baseCol*diff+vec3(1.0)*spec1+accent*spec2*0.6+accent*rim*0.45;',
-    '  col=mix(bgCol,col,exp(-(t-tEn)*(0.075/uViewH)));',
+    '  if(uSolidMode>0.5) baseCol=uSolidColor;',
+    '  else if(uBaseColor.r>=0.0) baseCol=uBaseColor;',
+    '  else baseCol=vec3(0.78,0.73,0.67);',
+    '  vec3 alb=toLin(baseCol);',
+    '  if(uCutShade>0.5&&isCut){float lum=dot(alb,vec3(0.2126,0.7152,0.0722));alb=mix(alb,vec3(lum),0.35)*0.95;}',
+    '  vec3 keyDir=keyDirV(),fillDir=fillDirV();',
+    '  vec3 camUp=rot*vec3(0.0,1.0,0.0);',
+    '  float kd=max(dot(n,keyDir),0.0);',
+    '  float sh=(uShadowOn>0.5&&uInteract<0.5&&kd>0.0)?softShadow(pos+n*uNrmStep*2.0,keyDir):1.0;',
+    '  float ao=(uAOOn>0.5)?calcAO(pos,n):1.0;',
+    '  float hemi=0.5+0.5*dot(n,camUp);',
+    '  vec3 amb=mix(vec3(0.10,0.09,0.08),uWarmCool>0.5?vec3(0.20,0.23,0.30):vec3(0.24),hemi);',
+    '  float vf=max(dot(n,-rd),0.0);',
+    '  vec3 lightC=keyColV()*kd*sh+fillColV()*max(dot(n,fillDir),0.0)*mix(0.4,1.0,ao)+vec3(0.30)*vf*ao+amb*ao;',
+    '  vec3 col=alb*lightC;',
+    '  col+=vec3(0.35)*pow(max(dot(n,normalize(keyDir-rd)),0.0),48.0)*sh;',
+    '  float fres=pow(1.0-vf,3.0);',
+    '  vec3 rimC=uLimeEdge>0.5?toLin(vec3(0.784,0.961,0.259))*0.9:alb*0.6+vec3(0.06);',
+    '  col+=rimC*fres*ao*(uLimeEdge>0.5?1.0:0.5);',
+    '  col=toneMap(col);',
+    '  col=mix(bgCol,col,exp(-max(t-tEn,0.0)*(0.06/uViewH)));',
     // rc3: After scaffold rendered, accumulate ghost tint for the portion of
     // the ray BEFORE the scaffold hit. Ghosts behind opaque scaffold are
     // correctly occluded by this (we march tEn → t, not tEn → tEx).
@@ -665,6 +699,14 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uSolidColor = gl.getUniformLocation(p, 'uSolidColor');
   // rc3.7 · Lattice base-color override
   this._uBaseColor = gl.getUniformLocation(p, 'uBaseColor');
+  // v0.9.5 · viewer shading options
+  this._uShadowOn = gl.getUniformLocation(p, 'uShadowOn');
+  this._uAOOn = gl.getUniformLocation(p, 'uAOOn');
+  this._uWarmCool = gl.getUniformLocation(p, 'uWarmCool');
+  this._uCutShade = gl.getUniformLocation(p, 'uCutShade');
+  this._uLimeEdge = gl.getUniformLocation(p, 'uLimeEdge');
+  this._uInteract = gl.getUniformLocation(p, 'uInteract');
+  this._uAOCell = gl.getUniformLocation(p, 'uAOCell');
   // rc3 · Ghost envelope uniforms
   this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);
   for(var i = 0; i < this.GHOST_MAX; i++){
@@ -756,12 +798,29 @@ MeshRaymarcher.prototype.render=function(){
     var sc = this._solidColor || [0.8, 0.8, 0.8];
     gl.uniform3f(this._uSolidColor, sc[0], sc[1], sc[2]);
   }
-  // rc3.7: lattice base-color override. Defaults to the no-op sentinel
-  // (-1,0,0) if never set, which makes the shader use the green-accented
-  // default palette for lattice rendering.
+  // rc3.7: lattice base-color override.
+  // v0.9.5: with no override, the lattice renders in its recipe's family
+  // color (TPMS mint, Noise coral, Wave amber, …) instead of the old palette.
   if(this._uBaseColor){
-    var bc = this._baseColor || [-1.0, 0.0, 0.0];
+    var bc = this._baseColor;
+    if(!bc || bc[0] < 0){
+      bc = (typeof currentRecipe!=='undefined' && currentRecipe && typeof familyColor==='function')
+        ? _hexToRGB(familyColor(currentRecipe.family)) : [-1.0, 0.0, 0.0];
+    }
     gl.uniform3f(this._uBaseColor, bc[0], bc[1], bc[2]);
+  }
+  var vo = this.viewOpts;
+  if(this._uShadowOn) gl.uniform1f(this._uShadowOn, vo.shadows?1.0:0.0);
+  if(this._uAOOn)     gl.uniform1f(this._uAOOn,     vo.occlusion?1.0:0.0);
+  if(this._uWarmCool) gl.uniform1f(this._uWarmCool, vo.warmCool?1.0:0.0);
+  if(this._uCutShade) gl.uniform1f(this._uCutShade, vo.cutFaces?1.0:0.0);
+  if(this._uLimeEdge) gl.uniform1f(this._uLimeEdge, vo.limeEdges?1.0:0.0);
+  if(this._uInteract) gl.uniform1f(this._uInteract, this._interacting?1.0:0.0);
+  // Occlusion reach ≈ one lattice cell. Shape/weld mode: a cell is 10 world
+  // units. Cube mode: the [-5,5] tile, assume ~1.5 cells across.
+  if(this._uAOCell){
+    var aoCell = (this.hasShape && this.shapeData) ? Math.min(10.0, this.viewH*1.33) : this.viewH*2.0/1.5;
+    gl.uniform1f(this._uAOCell, Math.max(aoCell, 1e-3));
   }
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
   gl.uniform1f(this._uHasShape, this._assemblyMode?0.0:(this.hasShape&&this.shapeTex?1.0:0.0));

@@ -85,12 +85,13 @@ MeshRaymarcher.prototype._setupInteraction=function(){
     var isPan = (e.ctrlKey||e.metaKey) && (e.button===0 || e.button===2);
     if(isPan){ panning=true; drag=false; e.preventDefault(); }
     else if(e.button===0 || e.button===1 || e.button===2){ drag=true; panning=false; self.autoRot=false; if(e.button!==0) e.preventDefault(); }
+    if(drag||panning) self._beginInteract();
     lx=e.clientX; ly=e.clientY;
   };
   // Suppress the browser context menu over the canvas so right-drag (rotate)
   // and Ctrl+right-drag (pan) don't pop a menu mid-gesture.
   this.canvas.addEventListener('contextmenu',function(e){e.preventDefault();});
-  window.addEventListener('mouseup',function(){drag=false;panning=false;});
+  window.addEventListener('mouseup',function(){drag=false;panning=false;self._endInteract();});
   window.addEventListener('mousemove',function(e){
     if(panning){
       var k=panScale();
@@ -107,9 +108,10 @@ MeshRaymarcher.prototype._setupInteraction=function(){
       ly=(e.touches[0].clientY+e.touches[1].clientY)*0.5;
     } else { drag=true; panning=false; self.autoRot=false;
       lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+    self._beginInteract();
     e.preventDefault();
   },{passive:false});
-  window.addEventListener('touchend',function(){drag=false;panning=false;});
+  window.addEventListener('touchend',function(e){drag=false;panning=false;if(!e.touches||e.touches.length===0)self._endInteract();});
   window.addEventListener('touchmove',function(e){
     if(panning && e.touches.length===2){
       var cx=(e.touches[0].clientX+e.touches[1].clientX)*0.5;
@@ -122,7 +124,7 @@ MeshRaymarcher.prototype._setupInteraction=function(){
       lx=e.touches[0].clientX; ly=e.touches[0].clientY; e.preventDefault();
     }
   },{passive:false});
-  this.canvas.addEventListener('wheel',function(e){var maxZ=Math.max(80,self.viewH*8);self.camZoom=Math.max(self.viewH*0.3,Math.min(maxZ,self.camZoom+e.deltaY*0.04));self._dirty=true;e.preventDefault();},{passive:false});
+  this.canvas.addEventListener('wheel',function(e){var maxZ=Math.max(80,self.viewH*8);self.camZoom=Math.max(self.viewH*0.3,Math.min(maxZ,self.camZoom+e.deltaY*0.04));self._dirty=true;self._beginInteract();clearTimeout(self._wheelT);self._wheelT=setTimeout(function(){self._endInteract();},180);e.preventDefault();},{passive:false});
 };
 // Instantiate global raymarcher
 const rm = new MeshRaymarcher(document.getElementById('rmCanvas'));

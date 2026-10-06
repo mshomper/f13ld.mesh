@@ -38,6 +38,7 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `loadorder.js <build>` | Static check that no load-time code uses something from a later-numbered file. |
 | `foamseeds.js <build> <F13LD.foam index.html> [recipes.json]` | The FoamSeeds generator block is byte-identical in mesh and F13LD.foam; for each foam recipe, regenerated seeds match the embedded positions and the field tiles seamlessly. |
 | `viewshot.js <build> <outDir> [case,…] [quality]` | Saves a viewport screenshot per `recipes.json` case, for shader/viewer work. Run once per build and compare. `VIEW='{"shadows":false}'` presets the view menu. |
+| `shadesync.js <file-or-folder> …` | The shared F13LD-SHADE (GLSL) and F13LD-VIEW (view menu) blocks are byte-identical in this repo and the other tool checkouts passed in. |
 
 ## Notes
 

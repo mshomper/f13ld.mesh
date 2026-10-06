@@ -398,13 +398,11 @@ MeshRaymarcher.prototype._buildShader=function(){
     // as a flat material color. A negative-R sentinel (-1,0,0) means no
     // color is known; the shader then uses a neutral clay.
     'uniform vec3 uBaseColor;',
-    // ── v0.9.5 · Viewer shading options (viewport "view" menu) ─────────────
-    // uShadowOn / uAOOn / uWarmCool / uCutShade / uLimeEdge are 0/1 toggles.
-    // uInteract = 1 while the user is orbiting/panning/zooming: soft shadows
-    // are skipped then and come back on release. uAOCell is the occlusion
-    // reach in world units (about one lattice cell).
-    'uniform float uShadowOn;uniform float uAOOn;uniform float uWarmCool;uniform float uCutShade;uniform float uLimeEdge;',
-    'uniform float uInteract;uniform float uAOCell;',
+    // ── Viewer shading (shared F13LD-SHADE block, 19-f13-shade.js) ─────────
+    // The block declares the uF13* view-menu toggles and uF13Interact
+    // (1 while orbiting/panning/zooming: shadows pause). uAOCell is the
+    // occlusion reach in world units (about one lattice cell).
+    'uniform float uAOCell;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
     // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
     // Each has its own world-mm bbox and family color. uGhostCount controls
@@ -468,26 +466,15 @@ MeshRaymarcher.prototype._buildShader=function(){
     // could come from the scaffold field gradient and "paint" lattice texture
     // onto an otherwise-correct solid surface.
     'vec3 nrmField(vec3 p){if(uSolidMode>0.5)return nrmShape(p);if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
-    // ── v0.9.5 · Lighting helpers ─────────────────────────────────────────
-    // Colors are lit in linear light, then tone-mapped (ACES fit) and
-    // gamma-encoded. The view-box clip in mapL() keeps occlusion and shadow
-    // rays from "seeing" periodic lattice outside the visible domain.
-    'vec3 toLin(vec3 c){return pow(max(c,vec3(0.0)),vec3(2.2));}',
-    'vec3 toneMap(vec3 c){c=(c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14);return pow(clamp(c,0.0,1.0),vec3(1.0/2.2));}',
+    // ── Lighting (shared F13LD-SHADE block) ───────────────────────────────
+    // f13Map: implicit in world units, clipped to the view box so occlusion
+    // and shadow rays don't "see" periodic lattice outside the domain.
     'float sdViewBox(vec3 p){vec3 q=abs(p)-vec3(uViewH);return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0);}',
-    'float mapL(vec3 p){return max(implicit(p)/max(uLipschitz,1e-4),sdViewBox(p));}',
-    // Ambient occlusion: 5 taps along the normal, reach scaled to ~1 cell.
-    // Taps start a couple of voxels out so 8-bit field quantization near the
-    // surface doesn't show up as blotches.
-    'float calcAO(vec3 p,vec3 n){float c=uAOCell;float occ=0.0,w=1.0;for(int i=0;i<5;i++){float h=c*(0.04+0.16*float(i)/4.0)+2.0*uNrmStep;float d=mapL(p+n*h);occ+=max(h-d,0.0)*w;w*=0.8;}return clamp(1.0-occ*(3.2/c),0.0,1.0);}',
-    // Soft shadow toward the key light (penumbra from closest approach).
-    'float softShadow(vec3 ro,vec3 ld){float res=1.0;float t=uNrmStep*1.5;float tMax=uViewH*1.6;for(int i=0;i<48;i++){float h=mapL(ro+ld*t);res=min(res,8.0*h/t);t+=clamp(h,uNrmStep*0.75,uViewH*0.08);if(res<0.02||t>tMax)break;}return clamp(res,0.0,1.0);}',
-    // Camera-anchored light rig (upper-left key, lower-right fill), shared by
-    // the main surface and opaque ghosts so every body reads the same way.
-    'vec3 keyDirV(){return normalize(-0.55*(rot*vec3(1.0,0.0,0.0))+0.75*(rot*vec3(0.0,1.0,0.0))+0.55*(rot*vec3(0.0,0.0,1.0)));}',
-    'vec3 fillDirV(){return normalize(0.7*(rot*vec3(1.0,0.0,0.0))-0.35*(rot*vec3(0.0,1.0,0.0))+0.25*(rot*vec3(0.0,0.0,1.0)));}',
-    'vec3 keyColV(){return uWarmCool>0.5?vec3(1.0,0.93,0.82)*1.35:vec3(1.3);}',
-    'vec3 fillColV(){return uWarmCool>0.5?vec3(0.30,0.42,0.62)*0.75:vec3(0.5);}',
+    'float f13Map(vec3 p){return max(implicit(p)/max(uLipschitz,1e-4),sdViewBox(p));}',
+    F13_SHADE_GLSL,
+    // Light colors for opaque ghosts (same rig as f13Shade).
+    'vec3 keyColV(){return uF13WarmCool>0.5?vec3(1.0,0.93,0.82)*1.35:vec3(1.3);}',
+    'vec3 fillColV(){return uF13WarmCool>0.5?vec3(0.30,0.42,0.62)*0.75:vec3(0.5);}',
     // ── rc3 · Ghost accumulation pass ─────────────────────────────────────
     // rc3.6: ghost normal via central differences on the ghost SDF. Used to
     // shade inactive-solid ghosts so they read as real opaque bodies, not
@@ -521,7 +508,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     // tangent-facing surfaces show visible stripes from voxel-aligned steps.
     '  float jit = hashJ(gl_FragCoord.xy);',
     // Surface lighting setup for solid ghosts (shared with main scaffold path).
-    '  vec3 gKey = keyDirV(); vec3 gFill = fillDirV();',
+    '  vec3 gKey = f13KeyDir(rot); vec3 gFill = f13FillDir(rot);',
     '  for(int i = 0; i < GHOST_STEPS; i++){',
     '    float t = tEn + (float(i) + jit) * dtBase;',
     '    vec3 p = ro + rd * t;',
@@ -551,9 +538,9 @@ MeshRaymarcher.prototype._buildShader=function(){
     '          vec3 n = ghostNormal(g, pHit, uViewH * 0.008);',
     '          if(dot(n, -rd) < 0.0) n = -n;',
     // v0.9.5: same light rig as the active body (no shadows/occlusion here).
-    '          vec3 ga = toLin(c); float gvf = max(dot(n, -rd), 0.0);',
+    '          vec3 ga = f13Lin(c); float gvf = max(dot(n, -rd), 0.0);',
     '          vec3 gLt = keyColV()*max(dot(n, gKey), 0.0) + fillColV()*max(dot(n, gFill), 0.0) + vec3(0.30)*gvf + vec3(0.15);',
-    '          vec3 surf = toneMap(ga*gLt + vec3(0.35)*pow(max(dot(n, normalize(gKey - rd)), 0.0), 48.0) + (ga*0.6+vec3(0.06))*pow(1.0-gvf,3.0)*0.5);',
+    '          vec3 surf = f13Tone(ga*gLt + vec3(0.35)*pow(max(dot(n, normalize(gKey - rd)), 0.0), 48.0) + (ga*0.6+vec3(0.06))*pow(1.0-gvf,3.0)*0.5);',
     '          col += surf * (1.0 - alpha);',
     '          alpha = 1.0;',
     '          break;',
@@ -613,23 +600,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  if(uSolidMode>0.5) baseCol=uSolidColor;',
     '  else if(uBaseColor.r>=0.0) baseCol=uBaseColor;',
     '  else baseCol=vec3(0.78,0.73,0.67);',
-    '  vec3 alb=toLin(baseCol);',
-    '  if(uCutShade>0.5&&isCut){float lum=dot(alb,vec3(0.2126,0.7152,0.0722));alb=mix(alb,vec3(lum),0.35)*0.95;}',
-    '  vec3 keyDir=keyDirV(),fillDir=fillDirV();',
-    '  vec3 camUp=rot*vec3(0.0,1.0,0.0);',
-    '  float kd=max(dot(n,keyDir),0.0);',
-    '  float sh=(uShadowOn>0.5&&uInteract<0.5&&kd>0.0)?softShadow(pos+n*uNrmStep*2.0,keyDir):1.0;',
-    '  float ao=(uAOOn>0.5)?calcAO(pos,n):1.0;',
-    '  float hemi=0.5+0.5*dot(n,camUp);',
-    '  vec3 amb=mix(vec3(0.10,0.09,0.08),uWarmCool>0.5?vec3(0.20,0.23,0.30):vec3(0.24),hemi);',
-    '  float vf=max(dot(n,-rd),0.0);',
-    '  vec3 lightC=keyColV()*kd*sh+fillColV()*max(dot(n,fillDir),0.0)*mix(0.4,1.0,ao)+vec3(0.30)*vf*ao+amb*ao;',
-    '  vec3 col=alb*lightC;',
-    '  col+=vec3(0.35)*pow(max(dot(n,normalize(keyDir-rd)),0.0),48.0)*sh;',
-    '  float fres=pow(1.0-vf,3.0);',
-    '  vec3 rimC=uLimeEdge>0.5?toLin(vec3(0.784,0.961,0.259))*0.9:alb*0.6+vec3(0.06);',
-    '  col+=rimC*fres*ao*(uLimeEdge>0.5?1.0:0.5);',
-    '  col=toneMap(col);',
+    '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,uNrmStep,1.6*uViewH);',
     '  col=mix(bgCol,col,exp(-max(t-tEn,0.0)*(0.06/uViewH)));',
     // rc3: After scaffold rendered, accumulate ghost tint for the portion of
     // the ray BEFORE the scaffold hit. Ghosts behind opaque scaffold are
@@ -700,12 +671,12 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   // rc3.7 · Lattice base-color override
   this._uBaseColor = gl.getUniformLocation(p, 'uBaseColor');
   // v0.9.5 · viewer shading options
-  this._uShadowOn = gl.getUniformLocation(p, 'uShadowOn');
-  this._uAOOn = gl.getUniformLocation(p, 'uAOOn');
-  this._uWarmCool = gl.getUniformLocation(p, 'uWarmCool');
-  this._uCutShade = gl.getUniformLocation(p, 'uCutShade');
-  this._uLimeEdge = gl.getUniformLocation(p, 'uLimeEdge');
-  this._uInteract = gl.getUniformLocation(p, 'uInteract');
+  this._uShadowOn = gl.getUniformLocation(p, 'uF13Shadow');
+  this._uAOOn = gl.getUniformLocation(p, 'uF13AO');
+  this._uWarmCool = gl.getUniformLocation(p, 'uF13WarmCool');
+  this._uCutShade = gl.getUniformLocation(p, 'uF13Cut');
+  this._uLimeEdge = gl.getUniformLocation(p, 'uF13Lime');
+  this._uInteract = gl.getUniformLocation(p, 'uF13Interact');
   this._uAOCell = gl.getUniformLocation(p, 'uAOCell');
   // rc3 · Ghost envelope uniforms
   this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);

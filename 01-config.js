@@ -5,7 +5,7 @@
    ============================================================ */
 'use strict';
 
-const F13LD_MESH_VERSION='0.9.5';
+const F13LD_MESH_VERSION='0.9.6';
 function meshAssetUrl(path){
   return new URL(path+'?v='+F13LD_MESH_VERSION, document.baseURI).href;
 }

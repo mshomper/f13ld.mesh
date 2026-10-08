@@ -11,4 +11,4 @@
 
 ## Testing
 - `tests/` holds a dev-only browser harness (see `tests/README.md`). Before merging any change, run `tests/harness.js <old build> <new build>`: open-cube exports for families the change doesn't touch should stay byte-identical.
-- Latest session recap and next steps: `docs/SESSION_RECAP_2026-10-04.md` (previous: `docs/SESSION_RECAP_2026-10-02.md`). Findings history: `docs/REVIEW_v0.8.0.md`.
+- Latest session recap: `docs/SESSION_RECAP_2026-10-08.md` (v0.9.7 grain generator). Next steps: `docs/SESSION_RECAP_2026-10-04.md` (previous: `docs/SESSION_RECAP_2026-10-02.md`). Findings history: `docs/REVIEW_v0.8.0.md`.

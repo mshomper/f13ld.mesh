@@ -1,15 +1,9 @@
 /* F13LD.mesh · worker/hu-bake-worker.js
    Hyperuniform field Z-slab bake worker. Launched by 13-hu-bake.js.
    (Moved verbatim from the former inline Blob source.) */
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    var t = seed;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
+// Same PRNG as worker/m11-grain-fields.js: copied byte-for-byte from F13LD.grain
+// (an xorshift32 named mulberry32). Keep the two copies identical.
+function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
 function sampleVMF(rng,kappa){
   if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
   var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);

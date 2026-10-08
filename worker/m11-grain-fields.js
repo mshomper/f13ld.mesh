@@ -1,18 +1,13 @@
 /* F13LD.mesh · worker/m11-grain-fields.js — Grain primitives: spinodoid / GRF waves, HU kernels. */
 // ── Grain primitives (verbatim port from spinodoid-field-explorer) ─────────
-// v0.5.0-rc15: canonical mulberry32 (replaces mislabeled xorshift32). Required
-// for bitwise determinism with f13ld.grain v0.9.1+ exports — see RD handoff §2.1
-// and §5. Negligible perf cost (~5-15% slower per call, but PRNG is only invoked
-// during init, not in the time-stepping loop where 99.9% of bake wall-time lives).
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    var t = seed;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
+// v0.9.7: grain PRNG copied byte-for-byte from F13LD.grain (index.html, main
+// thread and worker copies). Despite its name it is a 32-bit xorshift (13/17/5),
+// not the standard mulberry32 — F13LD.grain, F13LD.sweep and F13LD.lab all use
+// this exact function for spinodoid, GRF, hyperuniform and reaction-diffusion
+// seeding, so mesh must too to export the geometry the user designed. Keep its
+// quirks (seed 0 stays 0 forever; first draw for seed 42 is 0.002644...).
+// v0.5.0-rc15 to v0.9.6 used the standard mulberry32 here, which did NOT match.
+function mulberry32(seed){var s=seed|0;return function(){s=(s^(s<<13))>>>0;s=(s^(s>>17))>>>0;s=(s^(s<<5))>>>0;return s/4294967296;};}
 function sampleVMF(rng,kappa){
   if(kappa<0.05){var z=2*rng()-1,phi=2*Math.PI*rng(),sr=Math.sqrt(Math.max(0,1-z*z));return[sr*Math.cos(phi),sr*Math.sin(phi),z];}
   var w,iter=0;do{var xi=rng();w=1+Math.log(Math.max(xi+(1-xi)*Math.exp(-2*kappa),1e-30))/kappa;iter++;}while((w<-1||w>1)&&iter<2000);

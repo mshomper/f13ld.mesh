@@ -25,7 +25,7 @@ function evalNoiseRaw(surf,nx,ny,nz){
   if(t==='strut')   return Noise.strut(nx,ny,nz,dm,j);
   if(t==='veined')  return Noise.veined(nx,ny,nz,surf.vein_turbulence??3.0,surf.vein_frequency??3.0,o,l,g);
   if(t==='curl')    return Noise.curl(nx,ny,nz,surf.curl_step||.1,surf.potential_scale||1);
-  return Noise.warp(nx,ny,nz,surf.warp_strength||1,o,l,g);
+  return Noise.warp(nx,ny,nz,surf.warp_strength??1,o,l,g);
 }
 
 function buildNoiseSDF(json,normOverride){

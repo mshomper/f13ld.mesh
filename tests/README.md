@@ -36,6 +36,7 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `fieldtest.js <build> <label>` | Loads the worker SDF code in Node; checks preview-vs-export agreement for hyperuniform/RD, RD tile seam, weld hyperuniform tiling. |
 | `radtest.js <build>` | Trim-to-nodes strut radius vs measured radius. |
 | `loadorder.js <build>` | Static check that no load-time code uses something from a later-numbered file. |
+| `grainrng.js <build> [F13LD.grain index.html] [F13LD.lab dir]` | Node, no browser. Grain PRNG is byte-identical to F13LD.grain's (`hu-bake-worker.js` too) and gives the same draws for seeds 0, 1, 42, 12345, 2³¹−1; reaction-diffusion grids match grain's builders exactly; spinodoid/GRF/hyperuniform SDFs agree with F13LD.lab's grain rasterizer on a 32³ grid (inside/outside mismatch %). |
 | `foamseeds.js <build> <F13LD.foam index.html> [recipes.json]` | The FoamSeeds generator block is byte-identical in mesh and F13LD.foam; for each foam recipe, regenerated seeds match the embedded positions and the field tiles seamlessly. |
 | `viewshot.js <build> <outDir> [case,…] [quality]` | Saves a viewport screenshot per `recipes.json` case, for shader/viewer work. Run once per build and compare. `VIEW='{"shadows":false}'` presets the view menu. |
 | `shadesync.js <file-or-folder> …` | The shared F13LD-SHADE (GLSL) and F13LD-VIEW (view menu) blocks are byte-identical in this repo and the other tool checkouts passed in. |

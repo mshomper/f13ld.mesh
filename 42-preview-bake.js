@@ -150,8 +150,11 @@ function waveSuperCell(recipe){
 }
 function computeWaveBakeBounds(recipe){
   const S=waveSuperCell(recipe);
-  const h=5*S;
-  return {wMin:[-h,-h,-h],wMax:[+h,+h,+h],S:S};
+  // v0.9.8 — a stretched cell (field.stretch) is 10·s_i wide along axis i
+  const st0=recipe&&recipe.json&&recipe.json.field&&recipe.json.field.stretch;
+  const st=(Array.isArray(st0)&&st0.length===3&&st0.every(v=>typeof v==='number'&&isFinite(v)&&v>0))?st0:[1,1,1];
+  const hx=5*S*st[0],hy=5*S*st[1],hz=5*S*st[2];
+  return {wMin:[-hx,-hy,-hz],wMax:[+hx,+hy,+hz],S:S};
 }
 
 // ── Wave tiling diagnosis (preview-only "seams" badge) ─────────────────────

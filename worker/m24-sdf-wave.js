@@ -1,4 +1,9 @@
 /* F13LD.mesh · worker/m24-sdf-wave.js — F13LD.wave SDF builder. */
+// Relative cell edges of a wave recipe (field.stretch), or [1,1,1].
+function waveStretch(json){
+  const st=json&&json.field&&json.field.stretch;
+  return (Array.isArray(st)&&st.length===3&&st.every(v=>typeof v==='number'&&isFinite(v)&&v>0))?st.slice():[1,1,1];
+}
 function buildWaveSDF(json){
   const f=json.field||{};
   const modes=Array.isArray(f.modes)?f.modes:[];
@@ -11,6 +16,11 @@ function buildWaveSDF(json){
   const signFlip=!!f.signFlip;
   const t=(typeof f.phaseTime==='number')?f.phaseTime:0;
   const WS=(json.coordinate&&typeof json.coordinate.worldScale==='number')?json.coordinate.worldScale:(Math.PI/5.0);
+  // v0.9.8 — field.stretch [sx,sy,sz]: the cell's relative edges (F13LD.wave
+  // stretch sliders, F13LD.sweep v0.29.0). One cell spans world 10·s_i along
+  // axis i, so q_i = p_i·WS / s_i. Absent or invalid → a cube.
+  const st=waveStretch(json);
+  const WX=WS/st[0],WY=WS/st[1],WZ=WS/st[2];
   function evalRaw(qx,qy,qz){
     let acc=0;
     for(let i=0;i<modes.length;i++){
@@ -31,7 +41,7 @@ function buildWaveSDF(json){
     return acc;
   }
   return p=>{
-    const qx=p[0]*WS,qy=p[1]*WS,qz=p[2]*WS;
+    const qx=p[0]*WX,qy=p[1]*WY,qz=p[2]*WZ;
     const fr=evalRaw(qx,qy,qz);
     let cym=sheet?(Math.abs(iso-fr)-thickness):(iso-fr);
     if(signFlip)cym=-cym;

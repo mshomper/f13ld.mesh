@@ -10,7 +10,15 @@ function seedToOffset(s){
   return [h(s*127.1+11.7), h(s*269.5+53.3), h(s*113.5+97.1)];
 }
 const _seedOffCache=new WeakMap();       // memoize per-surf: computed once, not per-voxel
+// Noise revision of a surface block: 1 when absent (pre-v0.12 F13LD.noise recipes). Throws on a
+// revision newer than this build knows, rather than printing a part with the wrong field.
+function noiseRevOf(surf){
+  const r=surf.noise_rev==null?1:+surf.noise_rev;
+  if(!(r===1||r===2)) throw new Error('This noise recipe uses noise revision '+surf.noise_rev+'; update F13LD.mesh (it knows up to '+NOISE_REV_LATEST+').');
+  return r;
+}
 function evalNoiseRaw(surf,nx,ny,nz){
+  Noise.setRev(surf.noise_rev==null?1:+surf.noise_rev);
   const t=surf.noise_type||'simplex',o=surf.octaves||4,l=surf.lacunarity||2,g=surf.gain||.5;
   const j=surf.jitter??0.6,dm=surf.distance_metric||'euclidean';
   let so=_seedOffCache.get(surf);
@@ -30,6 +38,7 @@ function evalNoiseRaw(surf,nx,ny,nz){
 
 function buildNoiseSDF(json,normOverride){
   const surf=json.surface,geom=json.geometry||{};
+  noiseRevOf(surf);
   const freq=surf.frequency||.3,sx=surf.scale_x??1,sy=surf.scale_y??1,sz=surf.scale_z??1;
   // v0.5.0-rc27: SCALE2=5/π removed. The canonical F13LD.noise tool's preview
   // cube is solver-space [-π, π] and applies SCALE=5/π to map solver→noise-input,
@@ -376,6 +385,7 @@ registerSDF('noise', {
   rawEval(d){
     const json=d.recipe.json;
     const surf=json.surface,geom=json.geometry||{};
+    noiseRevOf(surf);
     const freq=surf.frequency||.3,ex=surf.scale_x??1,ey=surf.scale_y??1,ez=surf.scale_z??1;
     // v0.5.0-rc27: noise input = world * freq * scale (was world * SCALE2 * freq * scale;
     // SCALE2 = 5/π applied to world coords was double-scaling — see buildNoiseSDF

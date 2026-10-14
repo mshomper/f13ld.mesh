@@ -82,21 +82,70 @@ function buildHUKernels(params){
   kernels.cross=params.huCross||2;kernels.sharp=params.huSharp||1;kernels.blend=params.huBlend||1;
   return kernels;
 }
+// v0.9.10 — spatial index for HU kernels (same rule as F13LD.lab v0.29.2
+// GrainKernel._indexHUKernels). Each sample used to visit every kernel; now it
+// visits only those whose cut-off shape reaches its bin. Terms below e^-40
+// after the blend root (R^m >= 40*max(1,1/P)) are skipped at every point, so
+// the result never depends on the index: identical to the old field to the
+// last bit or one rounding step. Bins span the cell [-pi,pi]^3 + 0.5; queries
+// outside fall back to the full loop. The periodic variant lists a kernel in
+// every bin one of its 27 images reaches (min-image picks one of them).
+var HU_CUT=40,HU_BINS=24,HU_MARGIN=.5;
+function buildHUIndex(kernels,periodic){
+  var p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,TP=2*Math.PI;
+  var Rcut=Math.pow(HU_CUT*Math.max(1,1/P),1/m),B=HU_BINS,lo=-Math.PI-HU_MARGIN,bs=2*(Math.PI+HU_MARGIN)/B,h=bs*Math.sqrt(3)*.5;
+  var sa=Math.sqrt(Rcut),sb=Math.pow(Rcut,1/p),nB=B*B*B,lists=new Array(nB),off=periodic?[-1,0,1]:[0];
+  for(var i=0;i<kernels.length;i++){
+    var k=kernels[i],ra=k.a*sa,r1=k.b1*sb,r2=k.b2*sb;
+    var ex=Math.abs(ra*k.tx)+Math.abs(r1*k.n1x)+Math.abs(r2*k.n2x)+h,ey=Math.abs(ra*k.ty)+Math.abs(r1*k.n1y)+Math.abs(r2*k.n2y)+h,ez=Math.abs(ra*k.tz)+Math.abs(r1*k.n1z)+Math.abs(r2*k.n2z)+h;
+    for(var oz=0;oz<off.length;oz++)for(var oy=0;oy<off.length;oy++)for(var ox=0;ox<off.length;ox++){
+      var cx=k.px+off[ox]*TP,cy=k.py+off[oy]*TP,cz=k.pz+off[oz]*TP;
+      var x0=Math.max(0,Math.floor((cx-ex-lo)/bs)),x1=Math.min(B-1,Math.floor((cx+ex-lo)/bs));
+      var y0=Math.max(0,Math.floor((cy-ey-lo)/bs)),y1=Math.min(B-1,Math.floor((cy+ey-lo)/bs));
+      var z0=Math.max(0,Math.floor((cz-ez-lo)/bs)),z1=Math.min(B-1,Math.floor((cz+ez-lo)/bs));
+      for(var bz=z0;bz<=z1;bz++){var dz=lo+(bz+.5)*bs-cz;
+        for(var by=y0;by<=y1;by++){var dy=lo+(by+.5)*bs-cy;
+          for(var bx=x0;bx<=x1;bx++){var dx=lo+(bx+.5)*bs-cx;
+            if(Math.abs(dx*k.tx+dy*k.ty+dz*k.tz)>ra+h)continue;
+            if(Math.abs(dx*k.n1x+dy*k.n1y+dz*k.n1z)>r1+h)continue;
+            if(Math.abs(dx*k.n2x+dy*k.n2y+dz*k.n2z)>r2+h)continue;
+            var b=bx+B*(by+B*bz),L=lists[b]||(lists[b]=[]);
+            if(L[L.length-1]!==i)L.push(i);   // kernel order kept; an image twice in one bin counts once
+          }}}
+    }
+  }
+  var start=new Int32Array(nB+1),tot=0;
+  for(var j=0;j<nB;j++){start[j]=tot;tot+=lists[j]?lists[j].length:0;}
+  start[nB]=tot;var idx=new Int32Array(tot);
+  for(var j2=0;j2<nB;j2++)if(lists[j2])idx.set(lists[j2],start[j2]);
+  return {B:B,lo:lo,inv:1/bs,start:start,idx:idx,Rcut:Rcut};
+}
+function _huBin(hx,x,y,z){
+  var gx=Math.floor((x-hx.lo)*hx.inv),gy=Math.floor((y-hx.lo)*hx.inv),gz=Math.floor((z-hx.lo)*hx.inv);
+  return (gx>=0&&gy>=0&&gz>=0&&gx<hx.B&&gy<hx.B&&gz<hx.B)?gx+hx.B*(gy+hx.B*gz):-1;
+}
 function evalHUField(kernels,x,y,z){
   x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
   var p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);
+  var hx=kernels._huIdx||(kernels._huIdx=buildHUIndex(kernels,false)),Rc=hx.Rcut,g=_huBin(hx,x,y,z);
+  var list=g>=0?hx.idx:null,q0=g>=0?hx.start[g]:0,q1=g>=0?hx.start[g+1]:kernels.length;
   var s=0;
-  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
+  for(var q=q0;q<q1;q++){var k=kernels[list?list[q]:q],dx=x-k.px,dy=y-k.py,dz=z-k.pz;var dt=dx*k.tx+dy*k.ty+dz*k.tz;var u=dt/k.a,uu=u*u;if(uu>=Rc)continue;var dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var w1=dn1/k.b1,w2=dn2/k.b2,R=uu+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p)));if(R>=Rc)continue;var Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
   if(!bl)s=Math.pow(s,1/P);return s-.3;
 }
 // Periodic variant: wraps each displacement component to the nearest cell image
 // via min-image convention. Kernels near cell boundaries "see" query points on
 // the opposite side, eliminating tile seams. Cost: 3 extra Math.round per kernel
 // (negligible). Used for HU+shape preview where shader tiles via GL_REPEAT.
+// v0.9.10: indexed like evalHUField; the bin comes from the query folded into
+// the cell, the displacements from the query itself (as before).
 function evalHUFieldPeriodic(kernels,x,y,z){
   x=x*2*Math.PI-Math.PI;y=y*2*Math.PI-Math.PI;z=z*2*Math.PI-Math.PI;
   var p=kernels.cross||2,m=kernels.sharp||1,P=kernels.blend||1,rnd=(p===2),shp=(m===1),bl=(P===1);var s=0,TP=2*Math.PI;
-  for(var i=0;i<kernels.length;i++){var k=kernels[i],dx=x-k.px,dy=y-k.py,dz=z-k.pz;dx-=Math.round(dx/TP)*TP;dy-=Math.round(dy/TP)*TP;dz-=Math.round(dz/TP)*TP;var dt=dx*k.tx+dy*k.ty+dz*k.tz,dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var u=dt/k.a,w1=dn1/k.b1,w2=dn2/k.b2,R=u*u+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p))),Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
+  var hx=kernels._huIdxP||(kernels._huIdxP=buildHUIndex(kernels,true)),Rc=hx.Rcut;
+  var fx=x-Math.floor((x+Math.PI)/TP)*TP,fy=y-Math.floor((y+Math.PI)/TP)*TP,fz=z-Math.floor((z+Math.PI)/TP)*TP,g=_huBin(hx,fx,fy,fz);
+  var list=g>=0?hx.idx:null,q0=g>=0?hx.start[g]:0,q1=g>=0?hx.start[g+1]:kernels.length;
+  for(var q=q0;q<q1;q++){var k=kernels[list?list[q]:q],dx=x-k.px,dy=y-k.py,dz=z-k.pz;dx-=Math.round(dx/TP)*TP;dy-=Math.round(dy/TP)*TP;dz-=Math.round(dz/TP)*TP;var dt=dx*k.tx+dy*k.ty+dz*k.tz;var u=dt/k.a,uu=u*u;if(uu>=Rc)continue;var dn1=dx*k.n1x+dy*k.n1y+dz*k.n1z,dn2=dx*k.n2x+dy*k.n2y+dz*k.n2z;var w1=dn1/k.b1,w2=dn2/k.b2,R=uu+(rnd?(w1*w1+w2*w2):(Math.pow(Math.abs(w1),p)+Math.pow(Math.abs(w2),p)));if(R>=Rc)continue;var Rm=shp?R:Math.pow(R,m);s+=bl?Math.exp(-Rm):Math.exp(-P*Rm);}
   if(!bl)s=Math.pow(s,1/P);return s-.3;
 }
 function evalField(waves,x,y,z,kernels){

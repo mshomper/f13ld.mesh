@@ -97,7 +97,7 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
   if (process.env.LIFT) {
     const S = process.env.LIFT;
     const { browser, page } = await open(FULL, 'box50.stl', 5);
-    await page.evaluate(() => { ppTogglePrintView(); });
+    await page.evaluate(k => { window.SHADE_K = k; ppTogglePrintView(); }, +(process.env.K || 1));
     for (const [so, sh] of [[0, 1], [3, 1], [3, 0]]) {
       await page.evaluate(([v, shd]) => { ppSetStandoff(v); const c = document.querySelector('[data-vo="shadows"]'); if (c && c.checked !== !!shd) c.click(); }, [so, sh]);
       await page.waitForTimeout(3000);

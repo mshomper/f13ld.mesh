@@ -191,6 +191,30 @@ select:hover,.num:hover{border-color:var(--hair2)}
 .sw.on{background:var(--mesh-deep);box-shadow:inset 0 0 0 1px var(--mesh-ring)}
 .sw.on::after{left:15px;background:var(--mesh-tile)}
 
+/* part / weld editor (v2) */
+.ed{background:var(--panel);border:1px solid var(--mesh-ring);border-radius:12px;min-width:0;box-shadow:0 0 0 1px rgba(228,107,176,.08)}
+.ed .card-h .lbl{color:var(--mesh)}
+.ed .card-b{display:flex;flex-direction:column;gap:12px}
+.erow{display:flex;flex-direction:column;gap:6px}
+.erow>label{font:600 9.5px var(--mono);color:var(--sec);letter-spacing:.14em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
+.erow>label em{font-style:normal;color:var(--t1);font-family:var(--mono);letter-spacing:0;text-transform:none;font-weight:500}
+.sl{display:grid;grid-template-columns:16px minmax(0,1fr) 52px;gap:8px;align-items:center;font:500 10.5px var(--mono);color:var(--t3)}
+.sl input[type=range]{width:100%;min-width:0}
+.sl output{color:var(--t1);text-align:right}
+.sl.one{grid-template-columns:minmax(0,1fr)}.sl.one span,.sl.one output{display:none}
+.seg.full{display:flex}.seg.full button{flex:1}
+#floatSlot{position:absolute;left:10px;bottom:44px;width:270px;max-width:calc(100% - 20px);max-height:calc(100% - 100px);overflow-y:auto;z-index:5}
+#floatSlot .ed{background:rgba(11,13,21,.86);backdrop-filter:blur(6px)}
+.part{cursor:pointer}
+.part.on{border-color:var(--mesh-ring);box-shadow:inset 2px 0 0 var(--mesh)}
+.part.drop{border-color:var(--neon)}
+.part .fillsw{width:8px;height:22px;border-radius:3px}
+.weld{cursor:pointer;border-radius:0 8px 8px 0}
+.weld.on .wl{color:var(--mesh-tile)}
+.weld .wl{display:flex;justify-content:space-between;align-items:center}
+.weld .wl span{color:var(--t3);font-weight:500;letter-spacing:.04em}
+.place{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+
 /* review notes */
 .nb{display:none;position:absolute;z-index:40;width:18px;height:18px;border-radius:50%;background:var(--neon);color:#0b0d15;font:700 10px var(--mono);place-items:center;box-shadow:0 0 0 2px #0b0d15;pointer-events:none}
 body.notes .nb{display:grid}
@@ -272,15 +296,12 @@ body.notes .notesPanel{display:block}
       </div>
       <div class="card" id="partCard">
         <div class="card-h"><span class="lbl">PARTS</span><div class="r"><button class="ibtn" title="Fold" data-fold><span data-i="chev"></span></button></div></div>
-        <div class="card-b">
-          <div class="weld"><div class="wl">WELD A · ONE PART</div>
-            <div class="part"><span data-i="partSm"></span><div style="min-width:0"><div class="nm">cage_body.stl</div><div class="as">gyroid sheet · cell 3 mm</div></div><button class="ibtn" title="Hide"><span data-i="eye"></span></button></div>
-            <div class="part"><span data-i="partSm"></span><div style="min-width:0"><div class="nm">endplate_cap.stl</div><div class="as">solid</div></div><button class="ibtn" title="Hide"><span data-i="eye"></span></button></div>
-          </div>
+        <div class="card-b"><div id="parts"></div>
           <div class="addtile" id="dropTile"><span data-i="part"></span>Drop a part · STL OBJ 3MF STEP</div>
-          <p class="note">Drag one part onto another to weld them. With no part, the recipe fills an open cube.</p>
+          <p class="note">Drag a recipe onto a part to fill it. Drag one part onto another to weld them.</p>
         </div>
       </div>
+      <div id="railSlot"></div>
     </div>
 
     <!-- viewport -->
@@ -289,6 +310,7 @@ body.notes .notesPanel{display:block}
       <div class="ov tl"><span class="fam" id="famBadge">TPMS · GYROID SHEET</span></div>
       <div class="ov tr"><svg width="44" height="44" viewBox="0 0 44 44"><g stroke-width="2" stroke-linecap="round"><path d="M22 24 L22 6" stroke="#18f370"/><path d="M22 24 L38 32" stroke="#f87171"/><path d="M22 24 L7 32" stroke="#60a5fa"/></g><circle cx="22" cy="24" r="2.5" fill="#e4e6f2"/></svg></div>
       <div class="ov bl"><span class="glass" id="vpInfo">drag to orbit · 10 mm cube</span></div>
+      <div id="floatSlot"></div>
       <div class="ov br">
         <div class="legend glass"><span><i style="background:#ef4444"></i>needs support</span><span><i style="background:#f59e0b"></i>near limit</span><span><i style="background:#34d399"></i>on plate</span></div>
         <div class="secslider glass"><span>cut</span><input type="range" id="secR" min="-100" max="100" value="0" aria-label="Section position"></div>
@@ -296,7 +318,8 @@ body.notes .notesPanel{display:block}
     </div>
 
     <!-- inspector -->
-    <div class="col">
+    <div class="col" id="inspector">
+      <div id="inspSlot"></div>
       <div class="card" id="estCard">
         <div class="card-h"><span class="lbl">ESTIMATE <b>· from preview</b></span></div>
         <div class="card-b">
@@ -331,7 +354,6 @@ body.notes .notesPanel{display:block}
     <div class="drawer" id="drawer">
       <div class="dtabs" id="dtabs">
         <div class="dtab on" data-p="prep"><span data-i="plate"></span><span class="nm">Part prep</span><span class="mv" id="mvPrep">LPBF</span></div>
-        <div class="dtab" data-p="struct"><span data-i="cube"></span><span class="nm">Structure</span><span class="mv" id="mvStruct">cell 3 mm</span></div>
         <div class="dtab" data-p="exp"><span data-i="export"></span><span class="nm">Export</span><span class="mv" id="mvExp">High</span></div>
       </div>
       <div>
@@ -344,16 +366,6 @@ body.notes .notesPanel{display:block}
             <div class="f" style="grid-column:span 2"><label>Tilt</label><div class="pair"><span>about X</span><input class="num" type="number" id="tiltX" value="0" step="5"><span>about Y</span><input class="num" type="number" id="tiltY" value="0" step="5"><span>°</span></div></div>
             <div class="f"><label>Overhang limit</label><div class="pair"><input class="num" type="number" id="crit" value="45" min="0" max="89"><span>° from the plate</span></div></div>
             <div class="f"><label>Standoff</label><div class="pair"><input class="num" type="number" id="stand" value="0" min="0" step="0.5"><span>mm · view and support numbers only</span></div></div>
-          </div>
-        </div>
-        <div class="dpane" id="p-struct">
-          <div class="dph"><div class="dpt">Structure</div><div class="dps">How the recipe fills the part: cell size, wall offset and the lattice's own rotation and shift.</div></div>
-          <div class="grid">
-            <div class="f"><label>Cell size</label><div class="pair"><input class="num" type="number" id="cell" value="3" min="0.5" step="0.5"><span>mm</span></div><div class="hint">Open cube: the cube is one design cell; domain size is under Export.</div></div>
-            <div class="f"><label>Wall offset (iso)</label><div class="pair"><input class="num" type="number" id="iso" value="0" step="0.05"><span>mm · + thicker</span></div></div>
-            <div class="f"><label>Rotation</label><div class="pair"><span>X</span><input class="num" type="number" value="0" step="5"><span>Y</span><input class="num" type="number" value="0" step="5"><span>Z</span><input class="num" type="number" value="0" step="5"><span>°</span></div></div>
-            <div class="f"><label>Shift</label><div class="pair"><span>X</span><input class="num" type="number" value="0" step="0.1"><span>Y</span><input class="num" type="number" value="0" step="0.1"><span>Z</span><input class="num" type="number" value="0" step="0.1"><span>mm</span></div></div>
-            <div class="f"><label>Trim to nodes</label><div class="pair"><button class="sw on" id="trimSw" aria-label="Trim struts to nodes"></button><span>beam lattices: drop struts cut by the part surface</span></div></div>
           </div>
         </div>
         <div class="dpane" id="p-exp">
@@ -372,7 +384,7 @@ body.notes .notesPanel{display:block}
       <div class="tags" id="tags">
         <span class="tag" data-p="prep"><span class="ti" data-i="plate"></span><b id="tProc">LPBF</b><span id="tMat">Ti-6Al-4V ELI</span></span>
         <span class="tag" data-p="prep"><span class="ti" data-i="orient"></span><b id="tOri">+Z</b><span id="tTilt">0° · 0°</span></span>
-        <span class="tag" data-p="struct"><span class="ti" data-i="cube"></span><b id="tCell">3 mm</b><span id="tIso">iso 0</span></span>
+        <span class="tag" id="selTag"><span class="ti" data-i="cube"></span><b id="tSel">cage_body</b><span id="tSelFill">gyroid · 3 mm</span></span>
         <span class="tag" data-p="exp"><span class="ti" data-i="export"></span><b id="tQual">High</b><span id="tDom">0.09 mm · 10 mm</span></span>
       </div>
       <div class="meta" id="meta">~<b id="mTris">1.2 M</b> tris <span>·</span> ~<b id="mSec">6 s</b> <span>·</span> <span id="mCores">15 cores</span></div>
@@ -392,7 +404,12 @@ body.notes .notesPanel{display:block}
       <li><b>Export is the primary action</b> at the bottom right with its estimate beside it, and a progress strip with stages and Cancel above the dock while it runs.</li>
       <li><b>Mesh colour.</b> Tool name, active tabs and the Export button use the Mesh brand pair (tile #FCEAF5, stroke #6B0A4C) with a lighter on-dark accent, as Lab does with its red.</li>
       <li><b>Phone.</b> One column: viewport first, rails below, the dock stays at the bottom, the drawer opens as a sheet. No horizontal scrolling anywhere.</li>
+      <li><b>Structure is edited next to the view, not in the drawer.</b> Select a part and its editor opens beside the viewport (right column by default; try the other two placements below). Every slider updates the preview live.</li>
+      <li><b>Each part owns its fill.</b> Solid, Lattice, or Lattice + skin, with its own recipe, cell size, wall offset, rotation and shift — the same recipe can fill two parts at different cell sizes. Drag a recipe card onto a part to fill it.</li>
+      <li><b>Welds are objects you can select.</b> Click the weld header to edit how its parts join: fillet radius, and a join rule — Union (plain fillet), Anchor (lattice runs into the solid by a set depth so it bonds) or Graded (walls thicken toward the solid over a set distance). Show joins highlights the contact zone.</li>
     </ol>
+    <div class="mini" style="margin-top:10px">EDITOR PLACEMENT · try each</div>
+    <div class="place" id="placeSeg"><button class="chip on" data-pl="insp">Right column</button><button class="chip" data-pl="rail">Left rail, under parts</button><button class="chip" data-pl="float">Floating over view</button></div>
   </div>
 </div>
 
@@ -433,6 +450,7 @@ function renderRecipes(){
     '<div class="addtile"><span data-i="file"></span>Add recipe · JSON or link</div>';
   paintIcons($('recipes'));
   for(const el of $('recipes').querySelectorAll('.rc')) el.onclick=()=>{ activeRecipe=el.dataset.id; renderRecipes(); const r=RECIPES.find(x=>x.id===activeRecipe); $('famBadge').textContent=r.fam+' · '+r.name.toUpperCase(); $('famBadge').style.color=r.col; $('famBadge').style.borderColor=r.col; shapeMode=({g:0,f:1,b:2})[activeRecipe]; updateEstimate(); };
+  for(const el of $('recipes').querySelectorAll('.rc')){ el.draggable=true; el.ondragstart=e=>{ e.dataTransfer.setData('text/recipe',el.dataset.id); }; }
 }
 
 // ── state, dock tags, estimate ────────────────────────────────────────
@@ -452,8 +470,8 @@ function updateEstimate(){
   $('tMat').textContent=$('material').selectedOptions[0].textContent.split(' (')[0].split(' ·')[0];
   const rho=+$('material').selectedOptions[0].dataset.r; $('rhoHint').textContent=rho.toFixed(2)+' g/cm³ · same list as F13LD.lab';
   $('tOri').textContent=S.orient; $('tTilt').textContent=(+$('tiltX').value||0)+'° · '+(+$('tiltY').value||0)+'°';
-  $('tCell').textContent=(+$('cell').value||3)+' mm'; $('mvStruct').textContent='cell '+(+$('cell').value||3)+' mm';
-  const iso=+$('iso').value||0; $('tIso').textContent='iso '+(iso>0?'+':'')+iso;
+  const sp=PARTS.find(x=>x.id===SEL)||PARTS[0]; const iso=sp.iso||0;
+  $('tSel').textContent=sp.name.replace(/\.stl$/,''); $('tSelFill').textContent=sp.fill==='solid'?'solid':(recipeOf(sp).name.split(' ')[0].toLowerCase()+' · '+sp.cell+' mm'+(sp.fill==='skin'?' · skin':''));
   const qn=S.qual[0].toUpperCase()+S.qual.slice(1); $('tQual').textContent=qn; $('mvExp').textContent=qn;
   $('tDom').textContent=e+' mm · '+dom+' mm';
   const fill=({g:18.4,f:6.2,b:9.8})[activeRecipe]*(1+iso*2);
@@ -464,10 +482,9 @@ function updateEstimate(){
   $('fname').textContent=({g:'tpms_gyroid',f:'foam_open',b:'beam_bcc'})[activeRecipe]+'_'+S.qual+'_'+dom+'mm'+(S.orient!=='+Z'?'_'+S.orient.replace('+','p').replace('-','n')+'up':'')+'_2026-10-15.3mf';
   updateUniforms();
 }
-for(const id of ['process','material','tiltX','tiltY','crit','stand','cell','iso','domain','cores']) $(id).addEventListener('input',updateEstimate);
+for(const id of ['process','material','tiltX','tiltY','crit','stand','domain','cores']) $(id).addEventListener('input',updateEstimate);
 function chipGroup(id,key,attr){ for(const b of $(id).querySelectorAll('.chip')) b.onclick=()=>{ for(const x of $(id).querySelectorAll('.chip')) x.classList.toggle('on',x===b); S[key]=b.dataset[attr]; updateEstimate(); }; }
 chipGroup('orient','orient','o'); chipGroup('qual','qual','q');
-$('trimSw').onclick=e=>e.currentTarget.classList.toggle('on');
 
 // drawer
 function openDrawer(p){ $('drawer').classList.add('open'); $('cfgBtn').classList.add('open'); if(p) selTab(p); }
@@ -486,7 +503,7 @@ for(const f of document.querySelectorAll('[data-fold]')) f.onclick=()=>f.closest
 $('notesBtn').onclick=()=>{ const on=document.body.classList.toggle('notes'); $('notesBtn').classList.toggle('on',on); placeNotes(); };
 
 // numbered review badges
-const NOTE_AT=[['openBtn',1],['vtabs',2],['recCard',3],['vp',4],['estCard',5],['cfgBtn',6],['runBtn',7],['status',8]];
+const NOTE_AT=[['openBtn',1],['vtabs',2],['recCard',3],['vp',4],['estCard',5],['cfgBtn',6],['runBtn',7],['status',8],['partCard',10],['editorHost',11]];
 function placeNotes(){ for(const b of document.querySelectorAll('.nb')) b.remove(); if(!document.body.classList.contains('notes')) return;
   const app=$('app').getBoundingClientRect();
   for(const [id,n] of NOTE_AT){ const r=$(id).getBoundingClientRect(); if(!r.width) continue; const b=document.createElement('div'); b.className='nb'; b.textContent=n; b.style.left=(r.left-app.left-6)+'px'; b.style.top=(r.top-app.top-6)+'px'; $('app').appendChild(b); } }
@@ -532,36 +549,50 @@ const cv=$('cv'); const gl=cv.getContext('webgl',{antialias:false});
 let prog=null, U={}, yaw=0.7, pitch=0.45, shapeMode=0, drag=null;
 const VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
 const FS=`precision highp float;
-uniform vec2 res; uniform float yaw,pitch,view,cut,crit,stand,mode,iso; uniform mat3 R; uniform vec3 col;
+uniform vec2 res; uniform float yaw,pitch,view,cut,crit,stand,mode,iso,cellk,fill,skin,fillet,rule,anchor,grade,joins,plateOn; uniform mat3 R,L; uniform vec3 col,shift;
 float box(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
-float lat(vec3 p){
-  vec3 q=p*6.2832;
-  if(mode<0.5){ float g=sin(q.x)*cos(q.y)+sin(q.y)*cos(q.z)+sin(q.z)*cos(q.x); return (abs(g)-0.42-iso*4.)/9.; }
-  if(mode<1.5){ vec3 c=fract(p*1.5)-0.5; float d=min(min(length(c.xy),length(c.yz)),length(c.zx)); vec3 c2=fract(p*1.5+0.5)-0.5; d=min(d,min(min(length(c2.xy),length(c2.yz)),length(c2.zx))); return (d-0.07-iso)/1.5; }
-  vec3 c=fract(p*1.5)-0.5; vec3 a=abs(c); float d=length(a-dot(a,vec3(0.57735))*vec3(0.57735)); return (d-0.09-iso)/1.5;
+float smin(float a,float b,float k){ if(k<=0.) return min(a,b); float h=clamp(.5+.5*(b-a)/k,0.,1.); return mix(b,a,h)-k*h*(1.-h); }
+float lat(vec3 p,float w){
+  vec3 q=(L*(p-shift))*cellk*6.2832;
+  if(mode<0.5){ float g=sin(q.x)*cos(q.y)+sin(q.y)*cos(q.z)+sin(q.z)*cos(q.x); return (abs(g)-0.42-w*4.)/(cellk*9.4); }
+  vec3 u=q/6.2832;
+  if(mode<1.5){ vec3 c=fract(u)-0.5; float d=min(min(length(c.xy),length(c.yz)),length(c.zx)); return (d-0.07-w)/cellk; }
+  vec3 c=fract(u)-0.5; vec3 a=abs(c); float d=length(a-dot(a,vec3(0.57735))*vec3(0.57735)); return (d-0.09-w)/cellk;
 }
-float scene(vec3 p){ vec3 q=R*p; float d=max(box(q,vec3(1.)),lat(q)); if(view>1.5) d=max(d,q.x-cut); return d; }
+float plate(vec3 p){ return box(p-vec3(0.,-1.16,0.),vec3(1.3,.16,1.3))-.02; }
+float part(vec3 p){
+  float bot=-1.-(rule>.5&&rule<1.5?anchor:0.);
+  vec3 bc=vec3(0.,(1.+bot)*.5,0.), bh=vec3(1.,(1.-bot)*.5,1.);
+  float b=box(p-bc,bh);
+  if(fill<0.5) return b;
+  float w=iso; if(rule>1.5) w+=0.06*(1.-smoothstep(0.,grade,p.y+1.));
+  float d=max(b,lat(p,w));
+  if(fill>1.5){ float sx=max(abs(p.x),abs(p.z))-1.; d=min(d,max(b,-(sx+skin))); }
+  return d;
+}
+float scene(vec3 p){ vec3 q=R*p; float d=part(q); if(plateOn>.5) d=smin(d,plate(q),fillet); if(view>1.5) d=max(d,q.x-cut); return d; }
 vec3 nrm(vec3 p){vec2 e=vec2(.0015,0.);return normalize(vec3(scene(p+e.xyy)-scene(p-e.xyy),scene(p+e.yxy)-scene(p-e.yxy),scene(p+e.yyx)-scene(p-e.yyx)));}
 void main(){
   vec2 uv=(gl_FragCoord.xy-0.5*res)/res.y;
   float cy=cos(yaw),sy=sin(yaw),cp=cos(pitch),sp=sin(pitch);
-  vec3 ro=6.4*vec3(cp*sy,sp,cp*cy); vec3 fw=normalize(-ro), rt=normalize(cross(fw,vec3(0.,1.,0.))), up=cross(rt,fw);
+  vec3 ro=7.*vec3(cp*sy,sp,cp*cy); vec3 fw=normalize(-ro), rt=normalize(cross(fw,vec3(0.,1.,0.))), up=cross(rt,fw);
   vec3 rd=normalize(fw*1.9+uv.x*rt+uv.y*up);
   vec3 bg=mix(vec3(.015,.018,.03),vec3(.05,.055,.08),uv.y+.5);
-  float t=0.; bool hit=false;
-  float floorY=-1.75-stand*0.2;
-  for(int i=0;i<160;i++){ vec3 p=ro+rd*t; float d=scene(p); if(d<.0008){hit=true;break;} t+=d*0.9; if(t>9.)break; }
+  float t=0.; bool hit=false; float floorY=-1.75-stand*0.2;
+  for(int i=0;i<180;i++){ vec3 p=ro+rd*t; float d=scene(p); if(d<.0008){hit=true;break;} t+=d*0.9; if(t>12.)break; }
   vec3 c=bg;
   if(view>0.5&&view<1.5){ float tp=(floorY-ro.y)/rd.y; if(tp>0.&&(!hit||tp<t)){ vec3 pp=ro+rd*tp; float g=step(.96,fract(pp.x*2.))+step(.96,fract(pp.z*2.)); c=mix(vec3(.09,.1,.13),vec3(.2,.22,.28),min(g,1.)); c=mix(c,bg,smoothstep(2.,6.,length(pp.xz))); } }
-  if(hit){ vec3 p=ro+rd*t; vec3 n=nrm(p); vec3 L=normalize(vec3(.6,.9,.4));
-    float dif=max(dot(n,L),0.), amb=.35+.25*n.y, rim=pow(1.-max(dot(n,-rd),0.),3.);
-    vec3 base=col*.72+.16;
-    if(view>0.5&&view<1.5){ float down=-n.y; float lim=cos(radians(90.-crit)); vec3 q=R*p;
+  if(hit){ vec3 p=ro+rd*t; vec3 n=nrm(p); vec3 Ld=normalize(vec3(.6,.9,.4)); vec3 q=R*p;
+    float dif=max(dot(n,Ld),0.), amb=.35+.25*n.y, rim=pow(1.-max(dot(n,-rd),0.),3.);
+    bool onPlate=plateOn>.5&&plate(q)<part(q);
+    vec3 base=onPlate?vec3(.55,.57,.62):(fill<0.5?vec3(.6,.62,.68):col*.72+.16);
+    if(joins>.5&&plateOn>.5){ float band=max(fillet,.04)+.05; if(abs(plate(q))<band&&part(q)<band) base=mix(base,vec3(.89,.42,.69),.85); }
+    if(view>0.5&&view<1.5){ float down=-n.y; float lim=cos(radians(90.-crit));
       base=vec3(.62,.64,.7);
-      if(p.y<floorY+0.02+(stand>0.?0.:0.) && down>.9) base=vec3(.2,.83,.6);
+      if(p.y<floorY+0.02 && down>.9) base=vec3(.2,.83,.6);
       else if(down>lim) base=vec3(.94,.27,.27);
       else if(down>lim-.17) base=vec3(.96,.62,.04); }
-    if(view>1.5){ vec3 q=R*p; if(abs(q.x-cut)<.002) base=vec3(.89,.42,.69); }
+    if(view>1.5&&abs(q.x-cut)<.002) base=vec3(.89,.42,.69);
     c=base*(amb+dif*.85)+rim*.25*vec3(.9,.6,.8); c=pow(c,vec3(.9)); }
   gl_FragColor=vec4(c,1.);
 }`;
@@ -569,7 +600,7 @@ function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShade
 function initGL(){ if(!gl) return; prog=gl.createProgram(); gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS)); gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS)); gl.linkProgram(prog); gl.useProgram(prog);
   const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const l=gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);
-  for(const n of ['res','yaw','pitch','view','cut','crit','stand','mode','iso','R','col']) U[n]=gl.getUniformLocation(prog,n); }
+  for(const n of ['res','yaw','pitch','view','cut','crit','stand','mode','iso','R','col','L','shift','cellk','fill','skin','fillet','rule','anchor','grade','joins','plateOn']) U[n]=gl.getUniformLocation(prog,n); }
 function rotM(){ // part orientation (+Z up in part frame → which axis faces up) then tilt
   const o=S.orient, tx=(+$('tiltX').value||0)*Math.PI/180, ty=(+$('tiltY').value||0)*Math.PI/180;
   const base={'+Z':[1,0,0,0,1,0,0,0,1],'-Z':[1,0,0,0,-1,0,0,0,-1],'+X':[0,1,0,-1,0,0,0,0,1],'-X':[0,-1,0,1,0,0,0,0,1],'+Y':[1,0,0,0,0,1,0,-1,0],'-Y':[1,0,0,0,0,-1,0,1,0]}[o];
@@ -584,14 +615,100 @@ let raf=0;
 function draw(){ if(!gl||!prog) return; cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>{
   gl.viewport(0,0,cv.width,cv.height); gl.uniform2f(U.res,cv.width,cv.height); gl.uniform1f(U.yaw,yaw); gl.uniform1f(U.pitch,pitch);
   gl.uniform1f(U.view,S.view==='print'?1:S.view==='section'?2:0); gl.uniform1f(U.cut,(+$('secR').value)/100);
-  gl.uniform1f(U.crit,+$('crit').value||45); gl.uniform1f(U.stand,+$('stand').value||0); gl.uniform1f(U.mode,shapeMode); gl.uniform1f(U.iso,(+$('iso').value||0)*0.05);
-  gl.uniformMatrix3fv(U.R,false,new Float32Array(rotM())); gl.uniform3fv(U.col,famRGB[activeRecipe]);
+  gl.uniform1f(U.crit,+$('crit').value||45); gl.uniform1f(U.stand,+$('stand').value||0); const sp=PARTS[0], wd=WELD;
+  gl.uniform1f(U.mode,({g:0,f:1,b:2})[sp.recipe]); gl.uniform1f(U.iso,sp.iso*0.25); gl.uniform1f(U.cellk,5/sp.cell);
+  gl.uniform1f(U.fill,({solid:0,lattice:1,skin:2})[sp.fill]); gl.uniform1f(U.skin,sp.skin/5);
+  gl.uniformMatrix3fv(U.L,false,new Float32Array(eulerM(sp.rx,sp.ry,sp.rz))); gl.uniform3f(U.shift,sp.sx*sp.cell/5,sp.sy*sp.cell/5,sp.sz*sp.cell/5);
+  gl.uniform1f(U.plateOn,PARTS[1].visible?1:0); gl.uniform1f(U.fillet,wd.fillet/5); gl.uniform1f(U.rule,({union:0,anchor:1,graded:2})[wd.rule]);
+  gl.uniform1f(U.anchor,wd.anchor/5); gl.uniform1f(U.grade,Math.max(.05,wd.grade/5)); gl.uniform1f(U.joins,wd.joins?1:0);
+  gl.uniformMatrix3fv(U.R,false,new Float32Array(rotM())); gl.uniform3fv(U.col,famRGB[PARTS[0].recipe]);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }); }
 cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);});
 cv.addEventListener('pointermove',e=>{ if(!drag) return; yaw-=(e.clientX-drag.x)*0.008; pitch=Math.max(-1.3,Math.min(1.3,pitch+(e.clientY-drag.y)*0.008)); drag={x:e.clientX,y:e.clientY}; draw(); });
 cv.addEventListener('pointerup',()=>drag=null);
 
-paintIcons(); renderRecipes(); initGL(); resize(); updateEstimate();
+// ── parts, weld, editor (v2) ──────────────────────────────────────────
+const PARTS=[
+  {id:'p1', name:'cage_body.stl', fill:'lattice', recipe:'g', cell:3, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
+  {id:'p2', name:'endplate_cap.stl', fill:'solid', recipe:'g', cell:3, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
+];
+const WELD={id:'A', members:['p1','p2'], fillet:0.4, rule:'anchor', anchor:0.6, grade:1.5, joins:true};
+let SEL='p1', PLACE='insp';
+const recipeOf=pt=>RECIPES.find(r=>r.id===pt.recipe);
+function eulerM(ax,ay,az){ const r=Math.PI/180, a=ax*r,b=ay*r,c=az*r, ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(c),sc=Math.sin(c);
+  const X=[1,0,0,0,ca,-sa,0,sa,ca], Y=[cb,0,sb,0,1,0,-sb,0,cb], Z=[cc,-sc,0,sc,cc,0,0,0,1];
+  const mul=(m,n)=>{const o=new Array(9);for(let i=0;i<3;i++)for(let j=0;j<3;j++){let v=0;for(let k=0;k<3;k++)v+=m[i*3+k]*n[k*3+j];o[i*3+j]=v;}return o;}; return mul(Z,mul(Y,X)); }
+function partRow(pt){
+  const r=recipeOf(pt), col=pt.fill==='solid'?'#8a8fa8':r.col;
+  const fillTxt=pt.fill==='solid'?'solid':r.name.toLowerCase()+' · cell '+pt.cell+' mm'+(pt.fill==='skin'?' · skin '+pt.skin+' mm':'');
+  return '<div class="part'+(SEL===pt.id?' on':'')+'" data-id="'+pt.id+'"><span class="fillsw" style="background:'+col+'"></span><div style="min-width:0"><div class="nm">'+pt.name+'</div><div class="as">'+fillTxt+'</div></div><button class="ibtn eye" title="'+(pt.visible?'Hide':'Show')+'" style="opacity:'+(pt.visible?1:.4)+'"><span data-i="eye"></span></button></div>';
+}
+function renderParts(){
+  $('parts').innerHTML='<div class="weld'+(SEL==='weld'?' on':'')+'" id="weldA"><div class="wl">WELD A · ONE PART<span>fillet '+WELD.fillet.toFixed(1)+' · '+WELD.rule+'</span></div>'+PARTS.map(partRow).join('')+'</div>';
+  paintIcons($('parts'));
+  $('weldA').onclick=e=>{ if(e.target.closest('.part')) return; SEL='weld'; refresh(); };
+  for(const el of $('parts').querySelectorAll('.part')){
+    const pt=PARTS.find(x=>x.id===el.dataset.id);
+    el.onclick=e=>{ if(e.target.closest('.eye')){ pt.visible=!pt.visible; refresh(); return; } SEL=pt.id; refresh(); };
+    el.ondragover=e=>{ e.preventDefault(); el.classList.add('drop'); };
+    el.ondragleave=()=>el.classList.remove('drop');
+    el.ondrop=e=>{ e.preventDefault(); const rid=e.dataTransfer.getData('text/recipe'); if(rid){ pt.recipe=rid; if(pt.fill==='solid') pt.fill='lattice'; SEL=pt.id; refresh(); } };
+  }
+}
+function slider(key,label,min,max,step,val,unit,sym){ return '<div class="sl'+(sym?'':' one')+'"><span>'+(sym||'')+'</span><input type="range" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'" data-k="'+key+'" aria-label="'+label+'"><output id="o-'+key+'">'+fmtv(val,step)+(unit||'')+'</output></div>'; }
+function fmtv(v,step){ return (+v).toFixed(step<1?(step<0.1?2:1):0); }
+function editorHtml(){
+  if(SEL==='weld'){
+    const w=WELD;
+    return '<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">WELD A · 2 parts</span><div class="r"><span class="mini">one part on export</span></div></div><div class="card-b">'+
+      '<div class="erow"><label>Fillet radius <em id="e-fillet">'+w.fillet.toFixed(1)+' mm</em></label>'+slider('w.fillet','Fillet radius',0,1.5,0.1,w.fillet,'','')+'</div>'+
+      '<div class="erow"><label>Join rule</label><div class="seg full" id="ruleSeg"><button data-r="union"'+(w.rule==='union'?' class="on"':'')+'>Union</button><button data-r="anchor"'+(w.rule==='anchor'?' class="on"':'')+'>Anchor</button><button data-r="graded"'+(w.rule==='graded'?' class="on"':'')+'>Graded</button></div>'+
+        '<div class="hint" style="font-size:10.5px;color:var(--t3);line-height:1.45">'+({union:'Plain union with the fillet above.',anchor:'The lattice runs into the solid by the depth below, so it bonds through the joint rather than touching at a face.',graded:'Lattice walls thicken toward the solid over the distance below, so stiffness steps up gradually.'})[w.rule]+'</div></div>'+
+      (w.rule==='anchor'?'<div class="erow"><label>Anchor depth <em>'+w.anchor.toFixed(1)+' mm</em></label>'+slider('w.anchor','Anchor depth',0,2,0.1,w.anchor,'','')+'</div>':'')+
+      (w.rule==='graded'?'<div class="erow"><label>Grade over <em>'+w.grade.toFixed(1)+' mm</em></label>'+slider('w.grade','Grade distance',0.2,5,0.1,w.grade,'','')+'</div>':'')+
+      '<div class="erow"><label>Show joins</label><div class="pair"><button class="sw'+(w.joins?' on':'')+'" id="joinSw" aria-label="Show joins"></button><span style="font:500 11px var(--mono);color:var(--t3)">highlight where parts meet</span></div></div>'+
+      '<div class="hint" style="font-size:10.5px;color:var(--t3)">Solids with a closed mesh export exactly as imported; only the lattice is meshed.</div>'+
+    '</div></div>';
+  }
+  const pt=PARTS.find(x=>x.id===SEL), r=recipeOf(pt);
+  const fillSeg='<div class="seg full" id="fillSeg"><button data-f="solid"'+(pt.fill==='solid'?' class="on"':'')+'>Solid</button><button data-f="lattice"'+(pt.fill==='lattice'?' class="on"':'')+'>Lattice</button><button data-f="skin"'+(pt.fill==='skin'?' class="on"':'')+'>Lattice + skin</button></div>';
+  let h='<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">'+pt.name.replace(/\.stl$/,'').toUpperCase()+'</span><div class="r"><span class="mini">'+(pt.fill==='solid'?'solid':r.fam)+'</span></div></div><div class="card-b">'+
+    '<div class="erow"><label>Fill</label>'+fillSeg+'</div>';
+  if(pt.fill!=='solid'){
+    h+='<div class="erow"><label>Recipe</label><select id="recSel">'+RECIPES.map(x=>'<option value="'+x.id+'"'+(x.id===pt.recipe?' selected':'')+'>'+x.fam+' · '+x.name+'</option>').join('')+'</select></div>';
+    if(pt.fill==='skin') h+='<div class="erow"><label>Skin thickness <em>'+pt.skin.toFixed(1)+' mm</em></label>'+slider('skin','Skin thickness',0.2,1.5,0.1,pt.skin,'','')+'</div>';
+    h+='<div class="erow"><label>Cell size <em>'+pt.cell.toFixed(1)+' mm</em></label>'+slider('cell','Cell size',1,8,0.1,pt.cell,'','')+'</div>'+
+       '<div class="erow"><label>Wall offset <em>'+(pt.iso>0?'+':'')+pt.iso.toFixed(2)+' mm</em></label>'+slider('iso','Wall offset',-0.3,0.3,0.01,pt.iso,'','')+'</div>'+
+       '<div class="erow"><label>Rotation <em>°</em></label>'+slider('rx','Rotate X',-90,90,1,pt.rx,'°','X')+slider('ry','Rotate Y',-90,90,1,pt.ry,'°','Y')+slider('rz','Rotate Z',-90,90,1,pt.rz,'°','Z')+'</div>'+
+       '<div class="erow"><label>Shift <em>cells</em></label>'+slider('sx','Shift X',-0.5,0.5,0.05,pt.sx,'','X')+slider('sy','Shift Y',-0.5,0.5,0.05,pt.sy,'','Y')+slider('sz','Shift Z',-0.5,0.5,0.05,pt.sz,'','Z')+'</div>';
+    if(r.fam==='BEAM') h+='<div class="erow"><label>Trim to nodes</label><div class="pair"><button class="sw'+(pt.trim?' on':'')+'" id="trimSw" aria-label="Trim struts"></button><span style="font:500 11px var(--mono);color:var(--t3)">drop struts cut by the surface</span></div></div>';
+  } else h+='<div class="hint" style="font-size:11px;color:var(--t3);line-height:1.5">Exported exactly as imported. Drag a recipe onto this part, or pick Lattice, to fill it.</div>';
+  return h+'</div></div>';
+}
+function renderEditor(){
+  for(const id of ['inspSlot','railSlot','floatSlot']) $(id).innerHTML='';
+  const slot=({insp:'inspSlot',rail:'railSlot',float:'floatSlot'})[PLACE];
+  $(slot).innerHTML=editorHtml(); paintIcons($(slot));
+  const host=$(slot);
+  for(const rng of host.querySelectorAll('input[type=range]')) rng.oninput=()=>{
+    const k=rng.dataset.k, v=+rng.value;
+    if(k.startsWith('w.')) WELD[k.slice(2)]=v; else PARTS.find(x=>x.id===SEL)[k]=v;
+    const lab=rng.closest('.erow').querySelector('label em'); const out=$('o-'+k);
+    if(out) out.textContent=fmtv(v,+rng.step)+(k.startsWith('r')&&k.length===2?'°':'');
+    if(lab&&!['rx','ry','rz','sx','sy','sz'].includes(k)) lab.textContent=(k==='iso'?(v>0?'+':'')+v.toFixed(2):v.toFixed(1))+' mm';
+    renderParts(); updateEstimate(); };
+  const fs=host.querySelector('#fillSeg'); if(fs) for(const b of fs.querySelectorAll('button')) b.onclick=()=>{ PARTS.find(x=>x.id===SEL).fill=b.dataset.f; refresh(); };
+  const rs=host.querySelector('#ruleSeg'); if(rs) for(const b of rs.querySelectorAll('button')) b.onclick=()=>{ WELD.rule=b.dataset.r; refresh(); };
+  const sel=host.querySelector('#recSel'); if(sel) sel.onchange=()=>{ PARTS.find(x=>x.id===SEL).recipe=sel.value; refresh(); };
+  const js=host.querySelector('#joinSw'); if(js) js.onclick=()=>{ WELD.joins=!WELD.joins; refresh(); };
+  const ts=host.querySelector('#trimSw'); if(ts) ts.onclick=()=>{ const pt=PARTS.find(x=>x.id===SEL); pt.trim=!pt.trim; refresh(); };
+}
+function refresh(){ renderParts(); renderEditor(); updateEstimate(); const r=recipeOf(PARTS[0]);
+  $('famBadge').textContent=PARTS[0].fill==='solid'?'SOLID':r.fam+' · '+r.name.toUpperCase(); $('famBadge').style.color=r.col; $('famBadge').style.borderColor=r.col; placeNotes(); }
+for(const b of $('placeSeg').querySelectorAll('.chip')) b.onclick=()=>{ for(const x of $('placeSeg').querySelectorAll('.chip')) x.classList.toggle('on',x===b); PLACE=b.dataset.pl; refresh(); };
+$('selTag').onclick=()=>{ SEL=PARTS[0].id; refresh(); };
+
+paintIcons(); renderRecipes(); initGL(); resize(); refresh();
 $('famBadge').style.color='var(--fam-tpms)'; $('famBadge').style.borderColor='var(--fam-tpms)';
 </script>
 </body>

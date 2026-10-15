@@ -1,6 +1,6 @@
 # F13LD.mesh — session recap, 2026-10-15 · v0.10.0 part prep
 
-**Branch:** `part-prep` (not merged — Matt click-tests first, then approves the push to main).
+**Main:** v0.10.0, merged from `part-prep` after Matt's click-test (part prep, compact sidebar, standoff, shadow banding fix).
 
 ## Why
 Matt wanted part-preparation numbers typical of 3D-print prep (weight, % volume filled, support areas). Proposal approved with these decisions:

@@ -30,7 +30,7 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 
 | Script | What it checks |
 |---|---|
-| `partprep.js <build> [outDir]` | v0.10.0 part prep: live estimate vs measured volume filled, panel stats vs an independent read of the 3MF, box volume / area / plate / support at three orientations, solid-body export, print report. `outDir` saves print-view screenshots. |
+| `partprep.js <build> [outDir]` | v0.10.0 part prep: live estimate vs measured volume filled, panel stats vs an independent read of the 3MF, box volume / area / plate / support at three orientations, solid-body export, print report. `outDir` saves print-view screenshots. `SIDEBAR=<dir>` runs the sidebar checks instead (overflow, details card, collapse, readouts) and saves screenshots there. |
 | `measure.js <build> <label> [draft,med,…]` | Exports a fully solid fill clipped to a 50 × 14 × 6 mm box and a Ø20 × 20 mm cylinder; reports size error per side and radial error. Set `ONLY=box` or `ONLY=cyl` to run one. |
 | `importtest.js <build> <label>` | STL with real normals welds watertight; inch-unit, moved 3MF lands in mm at the right place. |
 | `a6test.js <build> <label>` | Thin-strut beam in shape mode exports (coarse pass fallback). |

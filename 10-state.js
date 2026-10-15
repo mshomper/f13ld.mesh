@@ -545,6 +545,7 @@ function reloadActiveRecipeIntoPreview(){
   // Update the summary panel.
   if(typeof summaryEl !== 'undefined' && summaryEl && typeof renderSummary === 'function'){
     summaryEl.innerHTML=renderSummary(recipe);
+    if(typeof sidebarEnhance==='function') sidebarEnhance(summaryEl);   // v0.10.0
   }
   // Refresh trim-toggle visibility for the new family (beam-only).
   const trimWrap=document.getElementById('trimNodesWrap');
@@ -610,6 +611,7 @@ function showNoRecipeState(){
       'Add a recipe with the <b>+ add recipe</b> tile or drop a recipe JSON anywhere, '+
       'then click its chip to fill the active body.</div>'+
       (typeof exportPanel==='function'?exportPanel():'');
+    if(typeof sidebarEnhance==='function') sidebarEnhance(summaryEl);   // v0.10.0
   }
   const trimWrap=document.getElementById('trimNodesWrap'); if(trimWrap) trimWrap.style.display='none';
   renderRecipeLibrary();

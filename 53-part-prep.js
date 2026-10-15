@@ -23,7 +23,7 @@
 const PP_STORE_KEY='f13ld.mesh.partPrep.v1';
 const PP_UP_CODES=['+Z','-Z','+X','-X','+Y','-Y'];
 const partPrep=(function(){
-  const d={proc:'lpbf', mat:'ti64-g23-lpbf-asbuilt', customRho:1.15, up:'+Z', tiltX:0, tiltY:0, critDeg:45, printView:false};
+  const d={proc:'lpbf', mat:'ti64-g23-lpbf-asbuilt', customRho:1.15, up:'+Z', tiltX:0, tiltY:0, critDeg:45, printView:false, plateOpacity:90};
   try{
     const s=JSON.parse(localStorage.getItem(PP_STORE_KEY)||'null');
     if(s && typeof s==='object'){
@@ -34,13 +34,14 @@ const partPrep=(function(){
       if(isFinite(s.tiltX)) d.tiltX=+s.tiltX;
       if(isFinite(s.tiltY)) d.tiltY=+s.tiltY;
       if(isFinite(s.critDeg)) d.critDeg=+s.critDeg;
+      if(isFinite(s.plateOpacity)) d.plateOpacity=Math.max(0,Math.min(100,+s.plateOpacity));
     }
   }catch(_){}
   return d;
 })();
 function ppSave(){
   try{ localStorage.setItem(PP_STORE_KEY, JSON.stringify({proc:partPrep.proc, mat:partPrep.mat, customRho:partPrep.customRho,
-    up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg})); }catch(_){}
+    up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg, plateOpacity:partPrep.plateOpacity})); }catch(_){}
 }
 let ppLast=null;          // exact stats of the last export (rendered in the panel)
 let ppLastEst=null;       // last live estimate
@@ -378,7 +379,10 @@ function _ppSizeStr(s){ return s?(_ppSig(s[0])+' × '+_ppSig(s[1])+' × '+_ppSig
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 function partPrepPanel(){
-  return '<hr class="div"><div class="sec-lbl">part prep</div><div id="ppBox">'+ppInner()+'</div>';
+  // v0.10.0: three sidebar groups (54-sidebar.js makes them collapsible).
+  return '<hr class="div"><div class="sec-lbl">part prep</div><div id="ppBox">'+ppInner()+'</div>'+
+    '<hr class="div"><div class="sec-lbl">estimate · from preview</div><div id="ppEst">'+ppEstimateHtml()+'</div>'+
+    '<hr class="div"><div class="sec-lbl">measured · exported part</div><div id="ppExact">'+ppExactHtml()+'</div>';
 }
 const PP_ICON_PRINT='<svg class="pp-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2 17.5h16" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".5"/><rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.5v2.4M8.4 3.9 10 2.5l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const PP_ICON_DOC='<svg class="pp-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3 3v12H5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7.5 9h5M7.5 11.5h5M7.5 14h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
@@ -418,10 +422,9 @@ function ppInner(){
     h+='<div class="pp-note">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div>';
   }
   h+='<button type="button" id="ppViewBtn" class="pp-btn'+(partPrep.printView?' on':'')+'" onclick="ppTogglePrintView()">'+PP_ICON_PRINT+'<span>'+(partPrep.printView?'Print view on':'Print view')+'</span></button>';
+  if(partPrep.printView) h+='<div class="exp-row"><span class="exp-label">plate opacity</span><input type="range" class="pp-range" min="0" max="100" step="5" value="'+partPrep.plateOpacity+'" oninput="ppSetPlateOpacity(this.value)" aria-label="Build plate opacity"><span class="exp-unit" id="ppPlateOpVal">'+partPrep.plateOpacity+' %</span></div>';
   if(partPrep.printView) h+='<div class="pp-legend">'+(p.supports?'<span><span class="pp-sw pp-sw-red"></span>needs support</span><span><span class="pp-sw pp-sw-amb"></span>within 10° of limit</span>':'')+'<span><span class="pp-sw pp-sw-jade"></span>on plate</span></div>';
   h+='<div class="pp-note" id="ppOrientNote">'+ppOrientNote()+'</div>';
-  h+='<div id="ppEst">'+ppEstimateHtml()+'</div>';
-  h+='<div id="ppExact">'+ppExactHtml()+'</div>';
   return h;
 }
 function ppOrientNote(){
@@ -429,8 +432,8 @@ function ppOrientNote(){
 }
 function ppEstimateHtml(){
   const e=ppLastEst;
-  let h='<div class="pp-sub">estimate · from preview</div>';
-  if(!e){ return h+'<div class="pp-note">Waiting for the preview…</div>'; }
+  let h='';
+  if(!e){ return '<div class="pp-note">Waiting for the preview…</div>'; }
   h+='<div class="pp-grid">';
   if(e.ok){
     const rho=ppDensity();
@@ -448,8 +451,8 @@ function ppEstimateHtml(){
   return h;
 }
 function ppExactHtml(){
-  const s=ppLast; if(!s) return '';
-  let h='<div class="pp-sub">measured · exported part</div><div class="pp-grid">';
+  const s=ppLast; if(!s) return '<div class="pp-note">Export the part to measure it.</div>';
+  let h='<div class="pp-grid">';
   h+=_ppCard('part volume',_ppSig(s.volMm3),'mm³');
   h+=_ppCard('mass',_ppSig(s.massG),'g');
   if(s.vfPct!=null){ h+=_ppCard('volume filled',_ppFmt(s.vfPct,2),'%'); h+=_ppCard('porosity',_ppFmt(100-s.vfPct,2),'%'); }
@@ -482,8 +485,15 @@ function ppExactHtml(){
   h+='<button type="button" class="pp-btn" onclick="ppDownloadReport()">'+PP_ICON_DOC+'<span>Download print report (.md)</span></button>';
   return h;
 }
-function ppRenderEstimate(){ const b=document.getElementById('ppEst'); if(b) b.innerHTML=ppEstimateHtml(); }
-function ppRenderExact(){ const b=document.getElementById('ppExact'); if(b) b.innerHTML=ppExactHtml(); }
+function ppRenderEstimate(){ const b=document.getElementById('ppEst'); if(b) b.innerHTML=ppEstimateHtml(); ppPeeks(); }
+function ppRenderExact(){ const b=document.getElementById('ppExact'); if(b) b.innerHTML=ppExactHtml(); ppPeeks(); }
+// One-line readouts shown on the group headers while collapsed (54-sidebar.js).
+function ppPeeks(){
+  if(typeof sidebarPeek!=='function') return;
+  const e=ppLastEst, rho=ppDensity();
+  sidebarPeek('estimate', e&&e.ok?('≈ '+_ppFmt(e.vfPct,1)+' % · '+_ppSig(e.volMm3*rho/1000)+' g'):'');
+  sidebarPeek('measured', ppLast?(_ppSig(ppLast.volMm3)+' mm³ · '+_ppSig(ppLast.massG)+' g'):'');
+}
 function ppRerender(){ const b=document.getElementById('ppBox'); if(b) b.innerHTML=ppInner(); }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -503,6 +513,8 @@ window.ppSetTilt=function(axis,v){ const x=parseFloat(v); if(!isFinite(x)) retur
   // Keep focus in the input: refresh only the dependent parts.
   ppScheduleEstimate(); ppApplyView(true); };
 window.ppSetCrit=function(v){ const x=parseFloat(v); if(!isFinite(x)) return; partPrep.critDeg=Math.max(0,Math.min(89,x)); ppSave(); ppApplyView(); };
+window.ppSetPlateOpacity=function(v){ const x=parseFloat(v); if(!isFinite(x)) return; partPrep.plateOpacity=Math.max(0,Math.min(100,x)); ppSave();
+  const o=document.getElementById('ppPlateOpVal'); if(o) o.textContent=Math.round(partPrep.plateOpacity)+' %'; ppApplyView(); };
 window.ppTogglePrintView=function(){
   partPrep.printView=!partPrep.printView;
   ppRerender(); ppApplyView(true, partPrep.printView);
@@ -545,7 +557,8 @@ function ppApplyView(_orientChanged, snapCamera){
     buildDir:b, plateU:U, plateV:V, plateLevel:plate,
     critCos:(crit==null||crit<=0)?2.0:Math.cos(crit*Math.PI/180),
     tint:crit!=null && crit>0,
-    gridStep:stepMm*worldPerMm
+    gridStep:stepMm*worldPerMm,
+    plateAlpha:partPrep.plateOpacity/100
   }, !!snapCamera);
 }
 

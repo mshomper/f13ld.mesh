@@ -94,6 +94,42 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     await page.screenshot({ path: S + '/dbg-print.png' });
     await browser.close(); return;
   }
+  if (process.env.SIDEBAR) {
+    const S = process.env.SIDEBAR;
+    for (const name of ['foam2-plateau-lloyd8-stretch', 'tpms-gyroid-sheet', 'beam-bcc']) {
+      const { browser, page, errors } = await open(R[name].recipe);
+      await page.waitForTimeout(1000);
+      const info = await page.evaluate(() => {
+        const p = document.getElementById('panel');
+        return { overflowX: p.scrollWidth - p.clientWidth, card: (document.querySelector('.sb-card') || {}).innerText,
+          groups: [...document.querySelectorAll('.sb-group')].map(g => g.dataset.key + (g.classList.contains('collapsed') ? ' (collapsed)' : '')) };
+      });
+      console.log(name, JSON.stringify(info));
+      check(name + ': no sideways overflow', info.overflowX <= 0, info.overflowX);
+      await page.screenshot({ path: S + '/sb-' + name + '.png' });
+      await page.hover('.sb-card'); await page.waitForTimeout(300);
+      const pop = await page.evaluate(() => { const p = document.getElementById('sbDetails'); const r = p.getBoundingClientRect(); return { shown: !p.hidden, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth }; });
+      check(name + ': details on hover, inside the window', pop.shown && pop.left >= 0 && pop.right <= pop.vw, JSON.stringify(pop));
+      await page.screenshot({ path: S + '/sb-' + name + '-hover.png' });
+      if (name === 'tpms-gyroid-sheet') {
+        await page.mouse.move(5, 5);
+        await page.click('.sb-group[data-key="part-prep"] .sb-gh');
+        const c = await page.evaluate(() => document.querySelector('.sb-group[data-key="part-prep"]').classList.contains('collapsed'));
+        check('part prep collapses', c);
+        await page.click('.sb-group[data-key="part-prep"] .sb-gh');
+        await page.evaluate(() => { ppTogglePrintView(); ppSetPlateOpacity(35); });
+        await page.waitForTimeout(2500);
+        const r = await exportNow(page, 'draft');
+        const peek = await page.evaluate(() => document.getElementById('sbPeek-measured').textContent);
+        check('measured peek after export', /mm³/.test(peek), peek);
+        await page.screenshot({ path: S + '/sb-printview-op35.png' });
+        void r;
+      }
+      check(name + ': no page errors', !errors.length, errors.slice(0, 3).join(' | '));
+      await browser.close();
+    }
+    console.log(fails ? fails + ' FAILED' : 'ALL PASS'); return;
+  }
   // 1 — open cube
   {
     const { browser, page, errors } = await open(R['tpms-gyroid-sheet'].recipe, null, null, true);
@@ -162,6 +198,7 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     check('solid: powder bed needs no supports', s.critDeg == null && s.supportArea === 0);
     check('solid: PA12 density', Math.abs(s.rho - 0.93) < 1e-9 && Math.abs(s.massG - 4200 * 0.93 / 1000) < 1e-6, s.massG);
     const dl = page.waitForEvent('download', { timeout: 30000 });
+    await page.click('.sb-group[data-key="measured"] .sb-gh');   // starts collapsed
     await page.click('#ppExact .pp-btn');
     const d = await dl; const md = fs.readFileSync(await d.path(), 'utf8');
     check('report: downloaded .md', /_print-report\.md$/.test(d.suggestedFilename()) && md.includes('| Part volume | 4,200 mm³ |'), d.suggestedFilename());

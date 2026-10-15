@@ -69,6 +69,7 @@ async function showRecipe(recipe){
   document.getElementById('shapeStrip').style.display='block';
   applyTypeBadge(typeBadge, recipe);
   summaryEl.innerHTML=renderSummary(recipe);
+  if(typeof sidebarEnhance==='function') sidebarEnhance(summaryEl);   // v0.10.0
   // v0.5.0-rc17: refresh trim-to-nodes toggle visibility for the new family.
   // setShapeUI only fires on shape state changes, so if a shape was already
   // loaded when this recipe arrives, the toggle wouldn't update otherwise.

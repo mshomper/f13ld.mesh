@@ -428,7 +428,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     'uniform float uAOCell;',
     // ── v0.10.0 · Print view: build plate + overhang tint ─────────────────
     'uniform float uPrintOn;uniform float uTintOn;uniform vec3 uBuildDir;uniform vec3 uPlateU;uniform vec3 uPlateV;',
-    'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;',
+    'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;uniform float uPlateAlpha;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
     // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
     // Each has its own world-mm bbox and family color. uGhostCount controls
@@ -602,7 +602,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  float line=(1.0-min(min(d.x,d.y),1.0))*clamp(1.5-max(fw.x,fw.y)*2.0,0.0,1.0);',
     '  float fade=1.0-smoothstep(ext*0.72,ext,m);',
     '  tp=tq;',
-    '  return vec4(mix(vec3(0.075,0.09,0.11),vec3(0.22,0.27,0.33),line),0.92*fade);',
+    '  return vec4(mix(vec3(0.075,0.09,0.11),vec3(0.22,0.27,0.33),line),uPlateAlpha*fade);',
     '}',
     'void main(){',
     '  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
@@ -745,6 +745,7 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uCritCos = gl.getUniformLocation(p, 'uCritCos');
   this._uWarnCos = gl.getUniformLocation(p, 'uWarnCos');
   this._uGridStep = gl.getUniformLocation(p, 'uGridStep');
+  this._uPlateAlpha = gl.getUniformLocation(p, 'uPlateAlpha');
   // rc3 · Ghost envelope uniforms
   this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);
   for(var i = 0; i < this.GHOST_MAX; i++){
@@ -801,6 +802,7 @@ MeshRaymarcher.prototype.render=function(){
     var wc=2.0; if(pv&&cc<=1.0){ var ang=Math.acos(Math.max(-1,Math.min(1,cc)))+10*Math.PI/180; wc=ang>=Math.PI/2?0.0:Math.cos(ang); }
     gl.uniform1f(this._uWarnCos,wc);
     gl.uniform1f(this._uGridStep,pv?pv.gridStep:1.0);
+    gl.uniform1f(this._uPlateAlpha,pv&&pv.plateAlpha!=null?pv.plateAlpha:0.9);
   }
   if(this._updateGimbal) this._updateGimbal();
   gl.uniform1f(this._uZoom,this.camZoom);

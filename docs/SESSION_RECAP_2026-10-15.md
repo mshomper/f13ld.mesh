@@ -33,7 +33,7 @@ Matt wanted part-preparation numbers typical of 3D-print prep (weight, % volume 
 - `tests/partprep.js` (new): cube gyroid estimate 19.13 % vs measured 19.05 %; panel volume and area equal an independent read of the 3MF; 50 × 14 × 6 box solid fill: 4,192 mm³ (−0.2 %), plate 692 mm²; part +X up → 6 × 14 × 50 on Z = 0; 35° tilt puts the 700 mm² bottom face in the 30–45° band as needing support; solid body exact 4,200 mm³ / 2,168 mm² and −Y up → 50 × 6 × 14; PA12 mass; report downloads.
 - `tests/loadorder.js`: no forward references.
 - Standoff 3 mm on the box: export identical to no standoff, plate contact 0, bottom face 694 mm² needs support.
-- Known, not from this work: soft shadows band the lower edge of thin solid shapes in the preview (shadows off removes it).
+- Shadow banding on bounding-shape surfaces (pre-existing on main): shadow/occlusion rays started one lattice-voxel off the surface, but the shape SDF grid is coarser (64 steps across the longest side), so the ray hit its own interpolated surface and striped it. Fix in `20-raymarcher.js`: `uShapeEps` = shape grid step in world units; on hits where the shape is the surface (solid mode, or shape ≥ scaffold) `f13Shade` gets eps = max(uNrmStep, uShapeEps). Lattice surfaces keep uNrmStep; the shared F13LD-SHADE block is untouched. Viewshots: open cube and lattice surfaces unchanged; solid box and shape cut faces lose the stripes. Harness shape + TPMS cases byte-identical.
 
 - `SIDEBAR=<dir> node tests/partprep.js <build>`: foam, TPMS and beam sidebars have no sideways overflow, details card opens on hover inside the window, groups collapse, Measured readout after export.
 

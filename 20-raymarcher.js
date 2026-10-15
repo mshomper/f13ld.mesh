@@ -426,6 +426,10 @@ MeshRaymarcher.prototype._buildShader=function(){
     // (1 while orbiting/panning/zooming: shadows pause). uAOCell is the
     // occlusion reach in world units (about one lattice cell).
     'uniform float uAOCell;',
+    // v0.10.0: shape SDF grid step (world). Shadow/occlusion rays leaving a
+    // bounding-shape surface start at least this far out, so the coarser
+    // shape grid does not shadow its own surface (banding).
+    'uniform float uShapeEps;',
     // ── v0.10.0 · Print view: build plate + overhang tint ─────────────────
     'uniform float uPrintOn;uniform float uTintOn;uniform vec3 uBuildDir;uniform vec3 uPlateU;uniform vec3 uPlateV;',
     'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;uniform float uPlateAlpha;uniform float uLifted;',
@@ -656,7 +660,9 @@ MeshRaymarcher.prototype._buildShader=function(){
     '    else if(uTintOn>0.5&&dn>uCritCos) baseCol=mix(baseCol,vec3(0.95,0.26,0.26),0.85);',
     '    else if(uTintOn>0.5&&dn>uWarnCos) baseCol=mix(baseCol,vec3(0.96,0.62,0.04),0.7);',
     '  }',
-    '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,uNrmStep,1.6*uViewH);',
+    '  float sEps=uNrmStep;',
+    '  if(uHasShape>0.5&&uShapeEps>0.0&&(uSolidMode>0.5||sampleShape(pos)>=sampleScaffoldSDF(pos))) sEps=max(uNrmStep,uShapeEps);',
+    '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,sEps,1.6*uViewH);',
     '  col=mix(bgCol,col,exp(-max(t-tEn,0.0)*(0.06/uViewH)));',
     // rc3: After scaffold rendered, accumulate ghost tint for the portion of
     // the ray BEFORE the scaffold hit. Ghosts behind opaque scaffold are
@@ -735,6 +741,7 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uLimeEdge = gl.getUniformLocation(p, 'uF13Lime');
   this._uInteract = gl.getUniformLocation(p, 'uF13Interact');
   this._uAOCell = gl.getUniformLocation(p, 'uAOCell');
+  this._uShapeEps = gl.getUniformLocation(p, 'uShapeEps');
   // v0.10.0 · print view
   this._uPrintOn = gl.getUniformLocation(p, 'uPrintOn');
   this._uTintOn = gl.getUniformLocation(p, 'uTintOn');
@@ -816,6 +823,11 @@ MeshRaymarcher.prototype.render=function(){
   // nrmStep = half voxel size in world units — matches local surface scale, not global field gradient
   var voxelSize=(wx[0]-wn[0])/Math.max(this.bakeN,1);
   gl.uniform1f(this._uNrmStep,Math.max(voxelSize,0.01));
+  // Shape grid step in world units (0 when there is no active shape).
+  var shapeEps=0.0;
+  if(this.hasShape&&this.shapeData&&!this._assemblyMode){ var sdv=this.shapeData;
+    shapeEps=Math.max(sdv.bboxSize[0],sdv.bboxSize[1],sdv.bboxSize[2])/Math.max(sdv.N,1)*(10.0/sdv.cellSizeMm); }
+  if(this._uShapeEps) gl.uniform1f(this._uShapeEps,shapeEps);
   // Shape SDF Lipschitz in world units = 10/cellSizeMm (from d_mm*(10/cellSizeMm) scaling).
   // Using 1.0 causes 5× overshoot at 2mm cells, jumping past boundaries into phantom hits.
   var shapeLip=(this.hasShape&&this.shapeData)?(10.0/this.shapeData.cellSizeMm):0.0;

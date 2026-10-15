@@ -23,7 +23,7 @@
 const PP_STORE_KEY='f13ld.mesh.partPrep.v1';
 const PP_UP_CODES=['+Z','-Z','+X','-X','+Y','-Y'];
 const partPrep=(function(){
-  const d={proc:'lpbf', mat:'ti64-g23-lpbf-asbuilt', customRho:1.15, up:'+Z', tiltX:0, tiltY:0, critDeg:45, printView:false, plateOpacity:90};
+  const d={proc:'lpbf', mat:'ti64-g23-lpbf-asbuilt', customRho:1.15, up:'+Z', tiltX:0, tiltY:0, critDeg:45, printView:false, plateOpacity:90, standoff:0};
   try{
     const s=JSON.parse(localStorage.getItem(PP_STORE_KEY)||'null');
     if(s && typeof s==='object'){
@@ -35,13 +35,14 @@ const partPrep=(function(){
       if(isFinite(s.tiltY)) d.tiltY=+s.tiltY;
       if(isFinite(s.critDeg)) d.critDeg=+s.critDeg;
       if(isFinite(s.plateOpacity)) d.plateOpacity=Math.max(0,Math.min(100,+s.plateOpacity));
+      if(isFinite(s.standoff)) d.standoff=Math.max(0,+s.standoff);
     }
   }catch(_){}
   return d;
 })();
 function ppSave(){
   try{ localStorage.setItem(PP_STORE_KEY, JSON.stringify({proc:partPrep.proc, mat:partPrep.mat, customRho:partPrep.customRho,
-    up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg, plateOpacity:partPrep.plateOpacity})); }catch(_){}
+    up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg, plateOpacity:partPrep.plateOpacity, standoff:partPrep.standoff})); }catch(_){}
 }
 let ppLast=null;          // exact stats of the last export (rendered in the panel)
 let ppLastEst=null;       // last live estimate
@@ -169,6 +170,10 @@ function ppComputeStats(vp, tv, scale, ctx){
   const critDeg=ppCritDeg();
   const critCos=(critDeg==null||critDeg<=0)?2:Math.cos(critDeg*Math.PI/180);
   const plateTol=Math.max(0.02, 0.6*((ctx&&ctx.edgeMm)||0.05));
+  // Standoff: the part is lifted off the plate (analysis and view only — the
+  // export is never moved), so nothing rests on the plate and the lowest
+  // downward faces need support like any other overhang.
+  const standoff=ppStandoff();
   const plateCos=Math.cos(30*Math.PI/180);
   const bins=new Float64Array(PP_BINS.length-1);
   let supportArea=0, footprint=0, plateArea=0, downArea=0;
@@ -191,7 +196,7 @@ function ppComputeStats(vp, tv, scale, ctx){
     if(down<=1e-6) continue;
     const A=len*0.5;
     const zc=(az+bz+cz)/3;
-    if(down>plateCos && zc-mnz<plateTol){ plateArea+=A; continue; }
+    if(!(standoff>0) && down>plateCos && zc-mnz<plateTol){ plateArea+=A; continue; }
     downArea+=A;
     const tilt=Math.acos(Math.min(1,down))*180/Math.PI;   // from horizontal
     for(let k=0;k<bins.length;k++){ if(tilt<PP_BINS[k+1]||k===bins.length-1){ bins[k]+=A; break; } }
@@ -215,9 +220,11 @@ function ppComputeStats(vp, tv, scale, ctx){
     proc:partPrep.proc, procName:ppProcess(partPrep.proc).name, matLabel:ppMaterialLabel(),
     orient:ppOrientLabel(), oriented:!ppIsIdentity(),
     recipeVf:(ctx&&ctx.kind==='cube')?ppRecipeVf():null,
-    edgeMm:ctx&&ctx.edgeMm
+    edgeMm:ctx&&ctx.edgeMm, standoff
   };
 }
+// Standoff from the plate in mm (0 when the process needs no supports).
+function ppStandoff(){ return ppProcess(partPrep.proc).supports ? Math.max(0,+partPrep.standoff||0) : 0; }
 function ppCritDeg(){
   const p=ppProcess(partPrep.proc);
   if(!p.supports && !(partPrep.critDeg>0)) return null;
@@ -418,6 +425,8 @@ function ppInner(){
   if(p.supports){
     h+='<div class="exp-row"><span class="exp-label">overhang limit</span><input type="number" class="exp-num" min="0" max="89" step="1" value="'+partPrep.critDeg+'" oninput="ppSetCrit(this.value)"><span class="exp-unit">°</span></div>';
     h+='<div class="pp-note">Measured from the plate: a downward face tilted less than this needs support.</div>';
+    h+='<div class="exp-row"><span class="exp-label">standoff</span><input type="number" class="exp-num" min="0" max="50" step="0.5" value="'+partPrep.standoff+'" oninput="ppSetStandoff(this.value)"><span class="exp-unit">mm</span></div>';
+    h+='<div class="pp-note">Gap between the plate and the part, filled with support. Changes the view and the support numbers; the export is not moved.</div>';
   } else {
     h+='<div class="pp-note">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div>';
   }
@@ -460,7 +469,7 @@ function ppExactHtml(){
   h+=_ppCard('area ÷ volume',_ppSig(s.volMm3>0?s.areaMm2/s.volMm3:null),'1/mm');
   h+=_ppCard('build size X × Y × Z',_ppSizeStr(s.size),'mm',true);
   h+=_ppCard('pieces',String(s.pieces),'');
-  h+=_ppCard('build height',_ppSig(s.size[2]),'mm');
+  h+=_ppCard('build height',_ppSig(s.size[2]+(s.standoff||0)),'mm');
   h+='</div>';
   if(s.recipeVf!=null && s.vfPct!=null) h+='<div class="pp-note">Design tool reported '+_ppFmt(s.recipeVf,1)+' % volume filled.</div>';
   if(s.pieces>1) h+='<div class="pp-warn">'+s.pieces+' separate pieces — the largest holds '+_ppFmt(s.largestPct,1)+' % of the volume'+(s.smallPieces?'; '+s.smallPieces+' are tiny fragments':'')+'. Loose pieces will not print attached.</div>';
@@ -512,6 +521,7 @@ window.ppSetTilt=function(axis,v){ const x=parseFloat(v); if(!isFinite(x)) retur
   const on=document.getElementById('ppOrientNote'); if(on) on.textContent=ppOrientNote();
   // Keep focus in the input: refresh only the dependent parts.
   ppScheduleEstimate(); ppApplyView(true); };
+window.ppSetStandoff=function(v){ const x=parseFloat(v); if(!isFinite(x)) return; partPrep.standoff=Math.max(0,Math.min(50,x)); ppSave(); ppApplyView(); };
 window.ppSetCrit=function(v){ const x=parseFloat(v); if(!isFinite(x)) return; partPrep.critDeg=Math.max(0,Math.min(89,x)); ppSave(); ppApplyView(); };
 window.ppSetPlateOpacity=function(v){ const x=parseFloat(v); if(!isFinite(x)) return; partPrep.plateOpacity=Math.max(0,Math.min(100,x)); ppSave();
   const o=document.getElementById('ppPlateOpVal'); if(o) o.textContent=Math.round(partPrep.plateOpacity)+' %'; ppApplyView(); };
@@ -547,6 +557,7 @@ function ppApplyView(_orientChanged, snapCamera){
     }
   }catch(e){ console.warn('[part prep] plate level', e); }
   if(plate==null||!isFinite(plate)) plate=-5;
+  plate-=ppStandoff()*worldPerMm;   // standoff gap under the part
   // Grid step: 1 / 2 / 5 / 10 … mm so the plate shows at most ~24 lines per side.
   const reachMm=(rm.viewH||5)*1.8/worldPerMm;
   let stepMm=1; const steps=[1,2,5,10,20,50,100];
@@ -558,7 +569,8 @@ function ppApplyView(_orientChanged, snapCamera){
     critCos:(crit==null||crit<=0)?2.0:Math.cos(crit*Math.PI/180),
     tint:crit!=null && crit>0,
     gridStep:stepMm*worldPerMm,
-    plateAlpha:partPrep.plateOpacity/100
+    plateAlpha:partPrep.plateOpacity/100,
+    lifted:ppStandoff()>0
   }, !!snapCamera);
 }
 
@@ -577,6 +589,7 @@ window.ppDownloadReport=function(){
   L.push('| Density | '+_ppFmt(s.rho,3)+' g/cm³ |');
   L.push('| Build orientation | '+s.orient+(s.oriented?' (exported rotated, centred, on the plate at Z = 0)':' (design position)')+' |');
   L.push('| Overhang limit | '+(s.critDeg==null?'none (no supports for this process)':s.critDeg+'° from the plate')+' |');
+  if(s.standoff>0) L.push('| Standoff from plate | '+_ppFmt(s.standoff,2)+' mm (support height; not applied to the exported file) |');
   if(s.edgeMm) L.push('| Mesh edge length | '+_ppFmt(s.edgeMm,3)+' mm |');
   L.push('| Triangles | '+s.tris.toLocaleString()+' |','');
   L.push('## Part', '');
@@ -591,7 +604,7 @@ window.ppDownloadReport=function(){
   L.push('| Surface area | '+_ppSig(s.areaMm2)+' mm² |');
   L.push('| Area ÷ volume | '+_ppSig(s.volMm3>0?s.areaMm2/s.volMm3:null)+' 1/mm |');
   L.push('| Build size X × Y × Z | '+_ppSizeStr(s.size)+' mm |');
-  L.push('| Build height | '+_ppSig(s.size[2])+' mm |');
+  L.push('| Build height | '+_ppSig(s.size[2]+(s.standoff||0))+' mm'+(s.standoff>0?' (part '+_ppSig(s.size[2])+' mm + standoff)':'')+' |');
   L.push('| Separate pieces | '+s.pieces+(s.pieces>1?' (largest '+_ppFmt(s.largestPct,1)+' % of volume)':'')+' |','');
   L.push('## Downward-facing surfaces', '');
   if(s.critDeg==null) L.push('No supports needed for this process.','');

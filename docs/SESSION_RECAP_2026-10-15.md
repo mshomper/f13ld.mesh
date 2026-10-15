@@ -26,16 +26,18 @@ Matt wanted part-preparation numbers typical of 3D-print prep (weight, % volume 
 - `54-sidebar.js` — `sidebarEnhance(summaryEl)` after every summary render (10-state ×2, 70-view-state). The recipe title + settings cards become one small card in the family colour with a one-line summary (first four settings with a value; numbers carry their label). Hover (mouse) or tap (touch) opens the full settings as a key/value list in a fixed card beside the sidebar, kept inside the window. Every `hr.div + sec-lbl` section becomes a collapsible group (drawn chevron, state in `localStorage f13ld.mesh.sidebar.v1`); Homogenization and Measured start collapsed. Collapsed Estimate / Measured show a one-line readout (`sidebarPeek`). Builders unchanged — DOM is rearranged, ids and handlers kept.
 - Part prep split into three groups: part prep, estimate · from preview, measured · exported part.
 - Plate opacity slider (print view on), 0–100 %, default 90 %, remembered (`uPlateAlpha`).
+- Standoff from the plate (mm, default 0, processes with supports only). Analysis and view only — the export is never lifted (Matt's call). With a standoff nothing counts as on the plate: the lowest downward faces count as needing support, the plate in print view drops by the standoff (`uLifted` turns off the on-plate tint), build height and the report include it.
 
 ## Checks
 - `tests/harness.js` old (v0.9.10) vs new: all 23 cases byte-identical (default orientation).
 - `tests/partprep.js` (new): cube gyroid estimate 19.13 % vs measured 19.05 %; panel volume and area equal an independent read of the 3MF; 50 × 14 × 6 box solid fill: 4,192 mm³ (−0.2 %), plate 692 mm²; part +X up → 6 × 14 × 50 on Z = 0; 35° tilt puts the 700 mm² bottom face in the 30–45° band as needing support; solid body exact 4,200 mm³ / 2,168 mm² and −Y up → 50 × 6 × 14; PA12 mass; report downloads.
 - `tests/loadorder.js`: no forward references.
+- Standoff 3 mm on the box: export identical to no standoff, plate contact 0, bottom face 694 mm² needs support.
+- Known, not from this work: soft shadows band the lower edge of thin solid shapes in the preview (shadows off removes it).
 
 - `SIDEBAR=<dir> node tests/partprep.js <build>`: foam, TPMS and beam sidebars have no sideways overflow, details card opens on hover inside the window, groups collapse, Measured readout after export.
 
 ## Open / next
-- Standoff height from the plate: proposed, waiting on Matt's answers (export position, how lifted bottom faces count).
 - Phase 3: islands (layer-by-layer unsupported starts) and support volume with a ray cast to the part below (three-mesh-bvh is loaded).
 - Phase 4: trapped powder / resin (void flood fill), cross-section area vs Z, powder-removal channel check, 3MF metadata.
 - Weld-group "volume filled" is not reported (members can overlap); volume and mass are.

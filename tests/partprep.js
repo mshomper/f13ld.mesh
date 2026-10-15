@@ -94,6 +94,17 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     await page.screenshot({ path: S + '/dbg-print.png' });
     await browser.close(); return;
   }
+  if (process.env.LIFT) {
+    const S = process.env.LIFT;
+    const { browser, page } = await open(FULL, 'box50.stl', 5);
+    await page.evaluate(() => { ppTogglePrintView(); });
+    for (const [so, sh] of [[0, 1], [3, 1], [3, 0]]) {
+      await page.evaluate(([v, shd]) => { ppSetStandoff(v); const c = document.querySelector('[data-vo="shadows"]'); if (c && c.checked !== !!shd) c.click(); }, [so, sh]);
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: S + '/lift-' + so + '-sh' + sh + '.png', clip: { x: 300, y: 200, width: 450, height: 260 } });
+    }
+    await browser.close(); return;
+  }
   if (process.env.SIDEBAR) {
     const S = process.env.SIDEBAR;
     for (const name of ['foam2-plateau-lloyd8-stretch', 'tpms-gyroid-sheet', 'beam-bcc']) {
@@ -163,6 +174,14 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     check('box +Z: plate ≈ 700 mm²', Math.abs(s.plateArea - 700) / 700 < 0.05, s.plateArea.toFixed(1));
     check('box +Z: no support', s.supportArea < 5, s.supportArea.toFixed(2));
     const posIdentity = r.model.mn;
+    await page.evaluate(() => ppSetStandoff(3));
+    const r3 = await exportNow(page, 'med'); const s3 = r3.stats;
+    console.log('     box +Z standoff 3:', JSON.stringify({ plate: s3.plateArea, support: s3.supportArea, min: r3.model.mn, standoff: s3.standoff }));
+    check('standoff 3: export not moved', JSON.stringify(r3.model.mn) === JSON.stringify(posIdentity), JSON.stringify(r3.model.mn));
+    check('standoff 3: nothing on plate, bottom needs support', s3.plateArea === 0 && Math.abs(s3.supportArea - 700) / 700 < 0.05, s3.supportArea.toFixed(1));
+    check('standoff 3: recorded in stats', s3.standoff === 3);
+    if (OUT) { await page.evaluate(() => ppTogglePrintView()); await page.waitForTimeout(3000); await page.screenshot({ path: path.join(OUT, 'pp-box-standoff3.png') }); await page.evaluate(() => ppTogglePrintView()); }
+    await page.evaluate(() => ppSetStandoff(0));
     await page.evaluate(() => ppSetUp('+X'));
     r = await exportNow(page, 'med'); s = r.stats;
     console.log('     box +X up:', JSON.stringify({ size: s.size, plate: s.plateArea, support: s.supportArea, min: r.model.mn, file: r.name }));

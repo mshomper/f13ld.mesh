@@ -1,6 +1,6 @@
 # F13LD.mesh — session recap, 2026-10-15 (b) · v0.11.0 multi-core field bake
 
-**Branch:** `perf-multicore-bake` (not merged; waiting on Matt's click-test).
+**Main:** v0.11.0, merged from `perf-multicore-bake` on 2026-10-15 after Matt's bench run and click-test.
 
 Matt felt the mesher was far slower than other tools. Profiling (one core, 10 mm cube, 0.1 world edge, 2.09 M levelSet grid points):
 

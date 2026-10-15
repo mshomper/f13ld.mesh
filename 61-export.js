@@ -151,9 +151,11 @@ async function _exportWeldGroup(gid){
     const triVerts=new Uint32Array(result.triVerts);
     // CAD-space restore: every member shares sceneCenter (== importCenter).
     if(sceneCenter){ for(let i=0;i<vertProps.length;i+=3){ vertProps[i]+=sceneCenter.x; vertProps[i+1]+=sceneCenter.y; vertProps[i+2]+=sceneCenter.z; } }
-    const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??1.0);
+    // v0.10.0: build orientation (53-part-prep.js). +Z / no tilt = unchanged.
+    const _po=ppOrientForExport(vertProps, result.scale??1.0);
+    const blob=await buildMinimal3MF(_po.vp,triVerts,_po.scale);
     const ts=new Date().toISOString().slice(0,10);
-    const filename='weld_'+letter+'_'+specs.length+'bodies_'+ts+'.3mf';
+    const filename='weld_'+letter+'_'+specs.length+'bodies'+ppOrientTag()+'_'+ts+'.3mf';
     downloadBlob(blob, filename);
     report.innerHTML='<div class="exp-report">'+
       expChip('part','weld '+letter)+
@@ -165,6 +167,7 @@ async function _exportWeldGroup(gid){
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';
+    ppAfterExport(_po.vp, triVerts, _po.scale, {kind:'weld', edgeMm:relEdgeMm, name:filename});
     if(elapsedEl)elapsedEl.style.display='none';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
   }catch(e){
@@ -243,15 +246,18 @@ async function _triggerExportImpl(){
       const tris = (importedShape.idxArr instanceof Uint32Array)
         ? importedShape.idxArr
         : new Uint32Array(importedShape.idxArr);
-      const blob = await buildMinimal3MF(verts, tris, 1.0);
+      const _po = ppOrientForExport(verts, 1.0);   // v0.10.0 build orientation
+      const blob = await buildMinimal3MF(_po.vp, tris, _po.scale);
       const name = (importedShape.meta && importedShape.meta.name) || 'body';
       const baseName = name.replace(/\.[^.]+$/, '');
       const ts = (function(){ const d=new Date(); const p=n=>String(n).padStart(2,'0');
         return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes()); })();
-      const fname = safeFilePart(baseName) + '_solid_' + ts + '.3mf';
+      const fname = safeFilePart(baseName) + '_solid' + ppOrientTag() + '_' + ts + '.3mf';
       downloadBlob(blob, fname);
       const rep=document.getElementById('expReport');
       if(rep) rep.innerHTML='<div class="exp-report">'+expChip('part','solid body')+expChip('triangles',(tris.length/3).toLocaleString())+expChip('file',(blob.size/1024).toFixed(1)+' KB')+'</div>';
+      const _sc=ppCtxSolid(); _sc.name=fname;
+      ppAfterExport(_po.vp, tris, _po.scale, _sc);
     } catch(e) {
       // v0.8.3: show the failure in the export report, not just the console.
       console.error('[export] solid body export failed:', e);
@@ -278,6 +284,7 @@ async function _triggerExportImpl(){
 
   // Compute params on main thread (lightweight math only)
   let workerMsg, scale, domainLabel, edgeLabel;
+  let ppCtx=null;   // v0.10.0 part-prep context for the measured stats
   if(importedShape){
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     const rawRelEdgeMm=QUAL_EDGE_MM[currentExportQual]||0.10;
@@ -472,6 +479,7 @@ async function _triggerExportImpl(){
     scale=1.0;
     domainLabel=importedShape.meta.bbox;
     edgeLabel=relEdgeMm.toFixed(2)+'mm';
+    ppCtx={kind:'shape', shapeVolMm3:ppShapeVolume(importedShape), edgeMm:relEdgeMm};
     // Transfer a COPY of the SDF buffer so the cache survives in main thread.
     const shapeSdfBuffer=importedShape.sdfGrid.data.buffer.slice(0);
     // Same pattern for HU grid: clone so the recipe-level cache survives the
@@ -543,6 +551,7 @@ async function _triggerExportImpl(){
     scale=domainMm/10;
     domainLabel=domainMm+'mm';
     edgeLabel=edgeMm+'mm';
+    ppCtx={kind:'cube', domainMm, edgeMm};
     // Cube exports run levelSet over [-5,5]³ world space, so vertices come
     // out in world units (scaled to mm in main thread via scale=domainMm/10).
     // Simplify tol must therefore be in world units. Same 15%-of-edge default
@@ -635,7 +644,9 @@ async function _triggerExportImpl(){
         vertProps[i+2]+=c.z;
       }
     }
-    const blob=await buildMinimal3MF(vertProps,triVerts,result.scale??scale);
+    // v0.10.0: build orientation (53-part-prep.js). +Z / no tilt = unchanged.
+    const _po=ppOrientForExport(vertProps, result.scale??scale);
+    const blob=await buildMinimal3MF(_po.vp,triVerts,_po.scale);
     const j=currentRecipe.json;
     const preset=safeFilePart(j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype);
     const shapeSuffix=importedShape?('_'+safeFilePart(importedShape.meta.name.replace(/\.[^.]+$/,''))):'';
@@ -656,7 +667,7 @@ async function _triggerExportImpl(){
       paramSuffix = '_cell'+fmtMm(cellSizeMm)+'_iso'+(isoMm===0?'0':fmtMm(isoMm));
     }
     const ts=new Date().toISOString().slice(0,10);
-    const filename=currentRecipe.family+'_'+preset+shapeSuffix+paramSuffix+'_'+ts+'.3mf';
+    const filename=currentRecipe.family+'_'+preset+shapeSuffix+paramSuffix+ppOrientTag()+'_'+ts+'.3mf';
     downloadBlob(blob, filename);
     report.innerHTML='<div class="exp-report">'+
       expChip('triangles',result.triCount.toLocaleString())+
@@ -665,6 +676,7 @@ async function _triggerExportImpl(){
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';
+    if(ppCtx){ ppCtx.name=filename; ppAfterExport(_po.vp, triVerts, _po.scale, ppCtx); }
     // ── Timings pill: SDF bake + levelSet + simplify ──────────────────────
     // SDF bake is tracked on main thread (window._lastSdfBakeMs), levelSet
     // and simplify come from worker's msBreakdown. Total is wall-clock

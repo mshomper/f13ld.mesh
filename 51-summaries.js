@@ -12,7 +12,8 @@ function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lb
 let exportDomainMm=10;
 function exportPanel(){
   const q=currentExportQual||'low';
-  return`<hr class="div">
+  // v0.10.0: part prep (53-part-prep.js) sits above the export controls.
+  return`${typeof partPrepPanel==='function'?partPrepPanel():''}<hr class="div">
 <div class="sec-lbl">export 3mf</div>
 <div class="exp-row">
   <span class="exp-label">domain size</span>

@@ -55,6 +55,8 @@ function getMaxExportVoxels(recipe){
 const MAX_EXPORT_VOXELS=50e6;
 // ── Live export estimate display ──────────────────────────────────────────────
 function updateExportEstimate(){
+  // v0.10.0: refresh the part-prep live estimate (debounced, 53-part-prep.js).
+  if(typeof ppScheduleEstimate==='function') ppScheduleEstimate();
   const el=document.getElementById('expEstimate');
   if(!el) return;
   // Refresh quality-button voxel labels alongside the estimate (v0.5.0).

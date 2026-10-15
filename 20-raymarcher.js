@@ -101,6 +101,9 @@ MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
 };
 MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lipschitz,topology){
   this._uploadTexture3D(data,N,fieldMin,fieldMax,'field');
+  // v0.10.0: kept for the part-prep live estimate (53-part-prep.js).
+  this._fieldData=data;
+  if(typeof ppScheduleEstimate==='function') ppScheduleEstimate();
   this.fieldMin=fieldMin; this.fieldMax=fieldMax;
   this.lipschitz=lipschitz; this.bakeN=N;
   this.topology=topology||null;
@@ -354,6 +357,26 @@ MeshRaymarcher.prototype.setStructureTransform=function(st){
     iso: -st.isoOffsetMm * mmToWorld
   };
   this._dirty=true;
+  if(typeof ppScheduleEstimate==='function') ppScheduleEstimate();
+};
+// ── v0.10.0 · Print view (53-part-prep.js → ppApplyView) ──────────────────
+// cfg = null (off) or {rtColMajor (part←print rotation, column-major),
+// buildDir, plateU, plateV (part-frame unit vectors), plateLevel (world),
+// critCos, tint, gridStep (world units per grid line)}. The camera orbits
+// in the print frame: the uploaded rot is Rᵀ·rotMat, so the part appears
+// as it sits on the build plate, +Z up. snap = jump to a Z-up 3/4 view.
+MeshRaymarcher.prototype.setPrintView=function(cfg,snap){
+  this._printView=cfg||null;
+  if(cfg && snap){
+    var z=[0.9,-1.25,0.85], zl=Math.hypot(z[0],z[1],z[2]); z=[z[0]/zl,z[1]/zl,z[2]/zl];
+    var y=[-z[0]*z[2],-z[1]*z[2],1-z[2]*z[2]], yl=Math.hypot(y[0],y[1],y[2]); y=[y[0]/yl,y[1]/yl,y[2]/yl];
+    var x=[y[1]*z[2]-y[2]*z[1], y[2]*z[0]-y[0]*z[2], y[0]*z[1]-y[1]*z[0]];
+    this.rotMat=[x[0],x[1],x[2],y[0],y[1],y[2],z[0],z[1],z[2]];
+    this.panX=0; this.panY=0; this.autoRot=false;
+    // pull back far enough that the plate around the part is in frame
+    this.camZoom=Math.max(this.camZoom||0,(this.viewH||5)*4.6);
+  }
+  this._dirty=true;
 };
 MeshRaymarcher.prototype.setQuality=function(q){
   if(this._quality===q&&this.prog)return;
@@ -403,6 +426,9 @@ MeshRaymarcher.prototype._buildShader=function(){
     // (1 while orbiting/panning/zooming: shadows pause). uAOCell is the
     // occlusion reach in world units (about one lattice cell).
     'uniform float uAOCell;',
+    // ── v0.10.0 · Print view: build plate + overhang tint ─────────────────
+    'uniform float uPrintOn;uniform float uTintOn;uniform vec3 uBuildDir;uniform vec3 uPlateU;uniform vec3 uPlateV;',
+    'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
     // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
     // Each has its own world-mm bbox and family color. uGhostCount controls
@@ -559,12 +585,32 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  }',
     '  return vec4(col, alpha);',
     '}',
+    // v0.10.0: build plate under the part in print view — a gridded square
+    // in the plane dot(p,uBuildDir)=uPlateLevel. Derivatives are taken
+    // before any non-uniform branch.
+    'vec4 plateLayer(vec3 ro, vec3 rd, out float tp){',
+    '  tp=-1.0;',
+    '  float den=dot(rd,uBuildDir);',
+    '  float tq=(uPlateLevel-dot(ro,uBuildDir))/(abs(den)<1e-6?1e-6:den);',
+    '  vec3 q=ro+rd*tq;',
+    '  vec2 g=vec2(dot(q,uPlateU),dot(q,uPlateV))/max(uGridStep,1e-4);',
+    '  vec2 fw=fwidth(g);',
+    '  if(uPrintOn<0.5||tq<=0.0) return vec4(0.0);',
+    '  float ext=uViewH*1.8; vec2 a=abs(g)*uGridStep; float m=max(a.x,a.y);',
+    '  if(m>ext) return vec4(0.0);',
+    '  vec2 d=abs(fract(g+0.5)-0.5)/max(fw,vec2(1e-4));',
+    '  float line=(1.0-min(min(d.x,d.y),1.0))*clamp(1.5-max(fw.x,fw.y)*2.0,0.0,1.0);',
+    '  float fade=1.0-smoothstep(ext*0.72,ext,m);',
+    '  tp=tq;',
+    '  return vec4(mix(vec3(0.075,0.09,0.11),vec3(0.22,0.27,0.33),line),0.92*fade);',
+    '}',
     'void main(){',
     '  vec2 uv=(gl_FragCoord.xy-res*0.5)/min(res.x,res.y);',
     '  vec3 panW=rot*vec3(pan.x,pan.y,0.0);',
     '  vec3 ro=rot*vec3(0.0,0.0,zoom)+panW;vec3 rd=normalize(rot*vec3(uv.x,uv.y,-1.6));',
     '  float r=clamp(length(uv)*1.1,0.0,1.0);',
     '  vec3 bgCol=mix(vec3(0.07,0.07,0.07),vec3(0.03,0.03,0.03),r*r);',
+    '  float tP; vec4 pl=plateLayer(ro,rd,tP); bgCol=mix(bgCol,pl.rgb,pl.a);',
     '  vec3 H3=vec3(uViewH);',
     '  vec3 iv=vec3(1.0)/rd;vec3 tb=(-H3-ro)*iv,tt=(H3-ro)*iv;',
     '  vec3 tmi=min(tb,tt),tma=max(tb,tt);',
@@ -600,6 +646,16 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  if(uSolidMode>0.5) baseCol=uSolidColor;',
     '  else if(uBaseColor.r>=0.0) baseCol=uBaseColor;',
     '  else baseCol=vec3(0.78,0.73,0.67);',
+    // v0.10.0: print view tint (outward normal, before the view-facing flip).
+    // jade = resting on the plate; red = tilted below the overhang limit;
+    // amber = within 10° above the limit.
+    '  if(uPrintOn>0.5){',
+    '    vec3 nO=(nearCap||!hit)?boxNormal(pos):nrmField(pos);',
+    '    float dn=dot(nO,-uBuildDir); float hh=dot(pos,uBuildDir)-uPlateLevel;',
+    '    if(dn>0.866&&hh<uNrmStep*2.5) baseCol=mix(baseCol,vec3(0.11,0.62,0.46),0.85);',
+    '    else if(uTintOn>0.5&&dn>uCritCos) baseCol=mix(baseCol,vec3(0.95,0.26,0.26),0.85);',
+    '    else if(uTintOn>0.5&&dn>uWarnCos) baseCol=mix(baseCol,vec3(0.96,0.62,0.04),0.7);',
+    '  }',
     '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,uNrmStep,1.6*uViewH);',
     '  col=mix(bgCol,col,exp(-max(t-tEn,0.0)*(0.06/uViewH)));',
     // rc3: After scaffold rendered, accumulate ghost tint for the portion of
@@ -608,6 +664,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  vec4 gh = accumulateGhosts(ro, rd, max(tEn,0.0), t);',
     '  vec3 ghCol = gh.rgb / max(gh.a, 1e-4);',
     '  finalCol = mix(col, ghCol, gh.a);',
+    '  if(pl.a>0.0&&tP>0.0&&tP<t) finalCol=mix(finalCol,pl.rgb,pl.a*0.75);',
     '  fragColor=vec4(clamp(finalCol,0.0,1.0),1.0);}',
   ].join('\n');
 };
@@ -678,6 +735,16 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uLimeEdge = gl.getUniformLocation(p, 'uF13Lime');
   this._uInteract = gl.getUniformLocation(p, 'uF13Interact');
   this._uAOCell = gl.getUniformLocation(p, 'uAOCell');
+  // v0.10.0 · print view
+  this._uPrintOn = gl.getUniformLocation(p, 'uPrintOn');
+  this._uTintOn = gl.getUniformLocation(p, 'uTintOn');
+  this._uBuildDir = gl.getUniformLocation(p, 'uBuildDir');
+  this._uPlateU = gl.getUniformLocation(p, 'uPlateU');
+  this._uPlateV = gl.getUniformLocation(p, 'uPlateV');
+  this._uPlateLevel = gl.getUniformLocation(p, 'uPlateLevel');
+  this._uCritCos = gl.getUniformLocation(p, 'uCritCos');
+  this._uWarnCos = gl.getUniformLocation(p, 'uWarnCos');
+  this._uGridStep = gl.getUniformLocation(p, 'uGridStep');
   // rc3 · Ghost envelope uniforms
   this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);
   for(var i = 0; i < this.GHOST_MAX; i++){
@@ -717,7 +784,24 @@ MeshRaymarcher.prototype.render=function(){
   gl.viewport(0,0,w,h);
   gl.useProgram(this.prog);
   gl.uniform2f(this._uRes,w,h);
-  gl.uniformMatrix3fv(this._uRot,false,new Float32Array(this.rotMat));
+  // v0.10.0: in print view the camera orbits the print frame (Rᵀ·rot).
+  var pv=this._printView;
+  gl.uniformMatrix3fv(this._uRot,false,new Float32Array(pv?this._mat3Mul(pv.rtColMajor,this.rotMat):this.rotMat));
+  if(this._uPrintOn){
+    gl.uniform1f(this._uPrintOn,pv?1.0:0.0);
+    gl.uniform1f(this._uTintOn,pv&&pv.tint?1.0:0.0);
+    var bd=pv?pv.buildDir:[0,0,1], pu=pv?pv.plateU:[1,0,0], pw=pv?pv.plateV:[0,1,0];
+    gl.uniform3f(this._uBuildDir,bd[0],bd[1],bd[2]);
+    gl.uniform3f(this._uPlateU,pu[0],pu[1],pu[2]);
+    gl.uniform3f(this._uPlateV,pw[0],pw[1],pw[2]);
+    gl.uniform1f(this._uPlateLevel,pv?pv.plateLevel:-5.0);
+    var cc=pv?pv.critCos:2.0;
+    gl.uniform1f(this._uCritCos,cc);
+    // amber band: up to 10° above the limit
+    var wc=2.0; if(pv&&cc<=1.0){ var ang=Math.acos(Math.max(-1,Math.min(1,cc)))+10*Math.PI/180; wc=ang>=Math.PI/2?0.0:Math.cos(ang); }
+    gl.uniform1f(this._uWarnCos,wc);
+    gl.uniform1f(this._uGridStep,pv?pv.gridStep:1.0);
+  }
   if(this._updateGimbal) this._updateGimbal();
   gl.uniform1f(this._uZoom,this.camZoom);
   gl.uniform2f(this._uPan,this.panX||0,this.panY||0);

@@ -285,3 +285,29 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:10px 0}
 .tp-label{color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.1em}
 .tp-val{color:var(--text);font-weight:500}
 .tp-sep{color:var(--border)}
+
+/* ── v0.10.0 · Part prep (53-part-prep.js) ─────────────────────────────── */
+.pp-lbl{display:block;font-size:10px;color:var(--muted);margin:6px 0 3px}
+.pp-sel{display:block;width:100%;min-width:0;font-size:11px;padding:4px 6px;background:#1a1a2e;border:.5px solid var(--border);border-radius:5px;color:var(--text);font-family:inherit;margin-bottom:4px}
+.pp-sub{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px}
+.pp-up{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:8px}
+.pp-up .qual-btn{min-height:28px;font-size:12px}
+.pp-note{font-size:10.5px;color:var(--dim);line-height:1.5;margin:2px 0 6px}
+.pp-warn{font-size:11px;color:#f0c674;background:#2a1f0a;border:.5px solid #7a5a14;border-radius:5px;padding:5px 8px;margin:6px 0;line-height:1.45}
+.pp-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;font-size:11px;padding:7px 8px;margin:6px 0;border:.5px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;font-family:inherit}
+.pp-btn:hover{color:var(--text);border-color:var(--dim)}
+.pp-btn.on{color:var(--green);border-color:var(--green);background:rgba(24,243,112,.07)}
+.pp-ico{width:16px;height:16px;flex-shrink:0}
+.pp-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:6px}
+.pp-grid .mc{padding:5px 7px;min-width:0}
+.pp-grid .mc-val{font-size:12px}
+.pp-grid .pp-wide{grid-column:1 / -1}
+.pp-legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:10px;color:var(--dim);margin:2px 0 6px}
+.pp-sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.pp-sw-red{background:#f24242}.pp-sw-amb{background:#f59e0b}.pp-sw-jade{background:#1D9E75}
+.pp-hist{display:flex;flex-direction:column;gap:3px;margin:4px 0}
+.pp-hrow{display:grid;grid-template-columns:42px minmax(0,1fr) 50px;align-items:center;gap:6px;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
+.pp-hbar{height:7px;background:#1a1a2e;border-radius:3px;overflow:hidden}
+.pp-hf{display:block;height:100%;background:#555a6e}
+.pp-hf.bad{background:#f24242}
+.pp-hv{text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

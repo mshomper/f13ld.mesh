@@ -82,6 +82,16 @@ File naming: `[type]_[preset]_[size]mm_[date].3mf`
 
 A quality report appears after each export: triangle count, domain size, edge length, file size, and compute time.
 
+### Part prep (v0.10.0)
+
+The **part prep** section above the export controls gives the numbers you need to plan a print.
+
+- **Process and material.** Pick the print process (metal laser powder bed, metal electron beam, polymer powder bed, resin vat, material extrusion) and a material from the F13LD material library (the same densities as F13LD.lab), or enter a custom density. Settings are remembered in your browser.
+- **Build orientation.** Choose which part axis faces up and tilt about X and Y. At +Z with no tilt the export keeps its design position; any other orientation exports the part rotated, centred and set on the build plate (lowest point at Z = 0), and adds the orientation to the file name.
+- **Print view.** Shows the part as it sits on the build plate. Downward faces tilted below the overhang limit are red, faces within 10° above it amber, and faces resting on the plate green.
+- **Estimate.** Volume filled, porosity, part volume, mass and build size update live from the preview. Volume filled is measured against the export cube, or against the bounding shape's own volume for shape-clipped parts.
+- **Measured.** After each export the exported mesh is measured exactly: volume, mass, volume filled, surface area, area ÷ volume, build size, separate pieces, the area of downward surfaces in 15° bands, the area needing support, its footprint on the plate, and the plate contact area. **Download print report** saves all of it as Markdown.
+
 ### Weld groups
 
 When the active body is in a weld group, Export writes the whole group as one part. Since v0.9.3:
@@ -135,6 +145,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
 | `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline |
 | `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
+| `52-materials.js` · `53-part-prep.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
 | `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
 

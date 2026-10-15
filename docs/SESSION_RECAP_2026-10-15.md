@@ -1,0 +1,34 @@
+# F13LD.mesh — session recap, 2026-10-15 · v0.10.0 part prep
+
+**Branch:** `part-prep` (not merged — Matt click-tests first, then approves the push to main).
+
+## Why
+Matt wanted part-preparation numbers typical of 3D-print prep (weight, % volume filled, support areas). Proposal approved with these decisions:
+
+- All print processes, with a process picker.
+- Build direction rotates the exported geometry (build direction is +Z).
+- Reuse F13LD.lab's material library.
+- "% volume filled" for shape-clipped parts is measured against the shape's volume.
+- Phases 1 (part stats) and 2 (orientation + overhangs) ship together.
+
+## What shipped (v0.10.0)
+- `52-materials.js` — `PP_PROCESSES` (LPBF, EB-PBF, polymer powder bed, resin vat, FFF; default overhang limit 45° / 45° / none / 30° / 45°) and `PP_MATERIALS`: the 44 Lab materials with a density (Lab `15c-materials.js` v0.7.2; Ti-24Nb-4Zr-8Sn left out, no density). No resins in the library yet → custom density.
+- `53-part-prep.js` — panel above the export controls (`partPrepPanel()` from `exportPanel()`), settings remembered per browser (`localStorage f13ld.mesh.partPrep.v1`, print view not remembered).
+  - **Live estimate** (`ppEstimate`): mirrors the viewer's `implicit()` on the baked preview field — 64³ samples over the export cube, or 56³ over the shape bbox counted against the shape SDF. Volume = fraction × cube volume or × exact shape-mesh volume. Weld groups: size only.
+  - **Exact stats** (`ppComputeStats`, after every export path): signed-tetra volume, area, oriented size, separate pieces (union-find), downward-face area in 15° tilt bands, area needing support (tilt below the limit), projected support footprint, plate-contact area (faces facing down within 30° and within max(0.02, 0.6·edge) mm of the lowest point).
+  - **Orientation** (`ppOrientForExport`): R = Ry(tiltY)·Rx(tiltX)·Rup. At +Z / no tilt the vertex buffer is passed through untouched (byte-identical 3MF). Otherwise vertices are rotated about the bbox centre, centred in X/Y and dropped to Z = 0; filename gets `_upX` / `_upnegY` / `_tilt…`.
+  - **Print report**: Markdown download from the measured block.
+- `20-raymarcher.js` — `setPrintView(cfg, snap)`: uploads Rᵀ·rot so the camera orbits the print frame; gridded build plate (`plateLayer`), tint on hit (jade = on plate, red = below the limit, amber = within 10° above it). Snap = Z-up ¾ view, zoom ≥ 4.6 × viewH. `_fieldData` kept for the estimate; estimate refreshed after each bake and structure-transform change.
+- `61-export.js` — weld, solid and lattice paths call `ppOrientForExport` before `buildMinimal3MF` and `ppAfterExport` after the download.
+- `F13LD_MESH_VERSION` and header label 0.10.0.
+
+## Checks
+- `tests/harness.js` old (v0.9.10) vs new: all 23 cases byte-identical (default orientation).
+- `tests/partprep.js` (new): cube gyroid estimate 19.13 % vs measured 19.05 %; panel volume and area equal an independent read of the 3MF; 50 × 14 × 6 box solid fill: 4,192 mm³ (−0.2 %), plate 692 mm²; part +X up → 6 × 14 × 50 on Z = 0; 35° tilt puts the 700 mm² bottom face in the 30–45° band as needing support; solid body exact 4,200 mm³ / 2,168 mm² and −Y up → 50 × 6 × 14; PA12 mass; report downloads.
+- `tests/loadorder.js`: no forward references.
+
+## Open / next
+- Phase 3: islands (layer-by-layer unsupported starts) and support volume with a ray cast to the part below (three-mesh-bvh is loaded).
+- Phase 4: trapped powder / resin (void flood fill), cross-section area vs Z, powder-removal channel check, 3MF metadata.
+- Weld-group "volume filled" is not reported (members can overlap); volume and mass are.
+- Lab materials: copy changes from Lab `15c-materials.js` into `52-materials.js` by hand.

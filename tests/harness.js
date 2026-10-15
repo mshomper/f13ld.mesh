@@ -82,7 +82,7 @@ async function run(site, root, recipe, opts) {
     summary: ((document.getElementById('recipeView') || {}).innerText || '').slice(0, 200),
   }));
   if (opts.export !== false) {
-    await page.evaluate(() => window.setQual && window.setQual('draft'));
+    await page.evaluate(q => window.setQual && window.setQual(q), process.env.QUAL || 'draft');
     const dl = page.waitForEvent('download', { timeout: 540000 });
     page.evaluate(() => window.triggerExport()).catch(e => errors.push('triggerExport: ' + String(e.message).split('\n')[0]));
     try {
@@ -96,6 +96,7 @@ async function run(site, root, recipe, opts) {
       result.model = xml;
       result.tris = (xml.match(/<triangle /g) || []).length;
       result.verts = (xml.match(/<vertex /g) || []).length;
+      result.report = await page.evaluate(() => ((document.querySelector('.exp-report') || {}).innerText || '').replace(/\s+/g, ' '));
     } catch (e) {
       result.exportErr = String(e.message || e).slice(0, 200);
       result.box = await page.evaluate(() => (document.getElementById('errorBox') || {}).textContent || '');
@@ -110,7 +111,7 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
   let fail = 0;
   for (const [name, spec] of Object.entries(R)) {
     if (FILTER && !name.includes(FILTER)) continue;
-    const opts = { cores: spec.cores, shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export };
+    const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export };
     const a = await run('orig.test', ORIG, spec.recipe, opts);
     const b = await run('new.test', NEW, spec.recipe, opts);
     const same = a.model !== undefined && a.model === b.model;
@@ -122,6 +123,7 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
       if (r.misses.length) console.log(`   ${lbl} unserved:`, r.misses.slice(0, 4));
       if (r.exportErr) console.log(`   ${lbl} export:`, r.exportErr, r.box);
       if (r.preview && r.preview.err) console.log(`   ${lbl} errorBox:`, r.preview.err);
+      if (process.env.VERBOSE) { console.log(`   ${lbl} report:`, r.report || ''); for (const l of r.logs) if (l.includes('[export][field]')) console.log(`   ${lbl}`, l); }
     }
   }
   console.log(fail ? `${fail} FAILED` : 'ALL PASS');

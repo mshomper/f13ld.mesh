@@ -112,6 +112,46 @@ const RAW_PRESETS={
   lidinoid:     (x,y,z)=>1.1*(Math.sin(2*x)*Math.cos(y)*Math.sin(z)+Math.sin(x)*Math.sin(2*y)*Math.cos(z)+Math.cos(x)*Math.sin(y)*Math.sin(2*z))-0.2*(Math.cos(2*x)*Math.cos(2*y)+Math.cos(2*y)*Math.cos(2*z)+Math.cos(2*z)*Math.cos(2*x))-0.4*(Math.cos(2*x)+Math.cos(2*y)+Math.cos(2*z)),
 };
 
+// v0.11.0: term list → one function (x,y,z), built once per recipe. Mirrors
+// evalTermsList / evalFactor in buildTPMSSDF exactly:
+//   term value = coef × factor1 × factor2 × …   (left to right, coef??1)
+//   factor     = sin|cos(axis × (f||1)), axis = x+shift when the term has a
+//                phase_shift object (shift = .x||0), sin/cos(0) when the trig
+//                names no axis, and 1 when it is neither sin nor cos
+//   sum        = 0 + term1 + term2 + …         (terms with on falsy skipped)
+// Numbers are written so they read back as the same double (−0 kept).
+// Returns null — caller keeps the loop — for anything unexpected (a value
+// that is not a number, trig that is not text) or if functions can't be
+// built here.
+function compileTermsList(list){
+  if(!Array.isArray(list)) return null;
+  const num=v=>{
+    if(typeof v!=='number') throw 0;
+    if(Object.is(v,-0)) return '(-0)';
+    if(v!==v) return 'NaN';
+    return '('+String(v)+')';
+  };
+  let src='"use strict";let s=0;';
+  try{
+    for(const term of list){
+      if(!term||!term.on) continue;
+      const tps=term.phase_shift;
+      const ax=(name,sh)=>tps?'(('+name+')+'+num(sh)+')':name;
+      const X=ax('x',tps?(tps.x||0):0), Y=ax('y',tps?(tps.y||0):0), Z=ax('z',tps?(tps.z||0):0);
+      let e=num(term.coef??1);
+      if(!Array.isArray(term.factors)) throw 0;
+      for(const f of term.factors){
+        const t=f.trig;
+        if(typeof t!=='string') throw 0;
+        const val=t.includes('(x)')?X+'*'+num(f.fx||1):t.includes('(y)')?Y+'*'+num(f.fy||1):t.includes('(z)')?Z+'*'+num(f.fz||1):'0';
+        e+=t.startsWith('sin')?'*Math.sin('+val+')':t.startsWith('cos')?'*Math.cos('+val+')':'*1';
+      }
+      src+='s+='+e+';';
+    }
+    src+='return s;';
+    return new Function('x','y','z',src);
+  }catch(_){ return null; }
+}
 function buildTPMSSDF(json){
   const s=json.surface,g=json.geometry||{};
   // Per-axis cell scale (anisotropic-tiling spec v1.0). New recipes from
@@ -211,7 +251,13 @@ function buildTPMSSDF(json){
     return sum;
   }
 
-  function evalTerms(tx,ty,tz){ return evalTermsList(terms,tx,ty,tz); }
+  // v0.11.0: build each term list into one plain function, once. The loop
+  // above re-reads every factor's text ('sin', '(x)') at every grid point;
+  // the built function does the same arithmetic in the same order, so it
+  // returns the same bits (left-to-right products, sum from 0). Anything the
+  // builder is not sure of keeps the loop above.
+  const evalTermsFast=compileTermsList(terms);
+  function evalTerms(tx,ty,tz){ return evalTermsFast ? evalTermsFast(tx,ty,tz) : evalTermsList(terms,tx,ty,tz); }
 
   function evalPhi(tx,ty,tz){
     return rawFn ? rawFn(tx,ty,tz) : evalTerms(tx,ty,tz);
@@ -231,7 +277,8 @@ function buildTPMSSDF(json){
   if(sB&&sB.type==='raw_preset'&&!rawFnB)
     throw new Error('Unknown field B raw preset: '+sB.preset+'. Supported: '+Object.keys(RAW_PRESETS).join(', '));
   const termsB=sB?(sB.terms||[]):terms;
-  function phiBBase(x,y,z){ return rawFnB ? rawFnB(x,y,z) : evalTermsList(termsB,x,y,z); }
+  const evalTermsBFast=(termsB===terms)?evalTermsFast:compileTermsList(termsB);
+  function phiBBase(x,y,z){ return rawFnB ? rawFnB(x,y,z) : (evalTermsBFast ? evalTermsBFast(x,y,z) : evalTermsList(termsB,x,y,z)); }
   function fieldRMS(fn){
     const M=16,H=Math.PI,st=2*H/M; let acc=0;
     for(let i=0;i<M;i++){const x=-H+(i+.5)*st;

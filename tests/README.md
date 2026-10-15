@@ -14,13 +14,21 @@ python3 fixtures/make_bigsphere.py   # only needed for the large-OBJ import test
 
 Chromium must be available to Playwright (`PLAYWRIGHT_BROWSERS_PATH`).
 
+## Bench page (run on your own machine)
+
+`tests/regress.html` runs the same comparison as `harness.js` in your own browser, on your own cores, so long or core-heavy checks don't need the headless setup. Open it from the branch you want to test, e.g. `https://raw.githack.com/mshomper/f13ld.mesh/<branch>/tests/regress.html` (any http(s) server works; `file://` does not).
+
+- For each ticked case in `recipes.json` it loads the recipe in the real app (the pane at the bottom), imports the shape fixture for shape cases, catches the export job the tool sends its mesh worker, and meshes that job with the **reference build** (default: the live tool, its worker loaded from a blob) and with **this build** at the chosen core count.
+- It compares every vertex and triangle bit for bit, shows the times, the speed-up, the split between field / level set / simplify, and how many points came from the field pre-bake. A case that differs also shows the volume change.
+- Settings (quality, cores, reference URL, time limit, ticked cases) are remembered in the browser. **Download report** saves the results as Markdown.
+
 ## Comparing two builds
 
 Most scripts take two folders: an older build and a newer one. Each is a plain copy of the repo, e.g. a `git worktree` or an exported tag.
 
 | Script | What it checks |
 |---|---|
-| `harness.js <old> <new> [filter]` | Exports every case in `recipes.json` (all families + shape mode) at Draft from both builds; compares 3MF mesh data byte for byte. Main regression check. |
+| `harness.js <old> <new> [filter]` | Exports every case in `recipes.json` (all families + shape mode) at Draft from both builds; compares 3MF mesh data byte for byte. Main regression check. `QUAL=med` picks another quality, `CORES=n` sets the core count for cases without one (the field pre-bake needs at least 3, and skips grids under 200 k points, so use `QUAL=med CORES=3` to exercise it), `VERBOSE=1` prints each export report and `[export][field]` line. |
 | `fixtests.js <old> <new> [filter]` | v0.8.1 safety/crash fixes (escaping, `%` links, bad recipes, 2-core hyperuniform, warped bundle, large OBJ, overlapping exports, cancel, keep bodies, κ = 0). |
 | `fixtests2.js <old> <new> [filter]` | v0.8.3 fixes (stale preview range, cube voxel cap, body removal/import/camera, structure settings, preview quality, domain size, solid export). |
 | `weldtest.js <old> <new> [draft\|low\|med]` | v0.9.3 weld export, in Node: `levelSet` grid formula (bit-for-bit), weld plan, pre-baked vs one-thread mesh byte identity, mesh worker weld branch incl. the open-solid fallback, old vs new time and volume (old only at Draft unless `OLD=1`). |
@@ -34,6 +42,7 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `measure.js <build> <label> [draft,med,…]` | Exports a fully solid fill clipped to a 50 × 14 × 6 mm box and a Ø20 × 20 mm cylinder; reports size error per side and radial error. Set `ONLY=box` or `ONLY=cyl` to run one. |
 | `importtest.js <build> <label>` | STL with real normals welds watertight; inch-unit, moved 3MF lands in mm at the right place. |
 | `a6test.js <build> <label>` | Thin-strut beam in shape mode exports (coarse pass fallback). |
+| `fieldbake.js <build> [case] [quality]` | v0.11.0 single-body field pre-bake: Cancel while the field is computed on several cores leaves no workers running, and the next export works and reports its cores. `CORES=n` (default 4). |
 | `fieldtest.js <build> <label>` | Loads the worker SDF code in Node; checks preview-vs-export agreement for hyperuniform/RD, RD tile seam, weld hyperuniform tiling. |
 | `radtest.js <build>` | Trim-to-nodes strut radius vs measured radius. |
 | `loadorder.js <build>` | Static check that no load-time code uses something from a later-numbered file. |

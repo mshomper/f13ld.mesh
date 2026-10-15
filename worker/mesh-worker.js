@@ -20,5 +20,7 @@ importScripts(
   "m25-sdf-foam.js"+self.location.search,
   "m30-sdf-assembly.js"+self.location.search,
   "m31-weld-grid.js"+self.location.search,
+  "m32-export-field.js"+self.location.search,
+  "m33-field-pool.js"+self.location.search,
   "m90-onmessage.js"+self.location.search
 );

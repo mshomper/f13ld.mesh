@@ -133,27 +133,14 @@ self.onmessage=async function(e){
     if(!ManifoldAPI)throw new Error('Manifold not available in worker.');
     await meshoptReady;
     self.postMessage({type:'progress',stage:'building SDF...'});
-    const shapeCtx=(d.mode==='export'&&d.shapeSdfData)?{
-      cellSizeMm:d.cellSizeMm,
-      bbox:d.bbox,
-      // v0.5.0-rc20: pre-baked HU grid from main-thread parallel pool.
-      // Optional — absent for non-HU recipes; absent + falls back to legacy
-      // serial bakeGridMM if the main-thread bake was skipped or failed.
-      // huBbox is the rotation-aware bake bbox (mm); for identity transforms
-      // it equals d.bbox. The supplied-grid SDF closure uses it for uvw
-      // mapping; legacy serial fallback uses d.bbox.
-      huGrid: d.huGridData,
-      huGridN: d.huGridN,
-      huFieldMin: d.huFieldMin,
-      huFieldMax: d.huFieldMax,
-      huBbox: d.huBbox
-    }:null;
+    const shapeCtx=exportShapeCtx(d);   // m32-export-field.js
     // Weld-group export carries no top-level recipe (each member has its own in
     // d.bodies); the assembly branch builds its own SDF, so skip this single-
     // recipe build to avoid buildSDF(undefined) dereferencing recipe._previewFieldMin.
     const sdfFn=(d.bodies&&d.bodies.length)?null:buildSDF(d.recipe,shapeCtx);
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
+    let fieldBake=null; // v0.11.0: {workers, ms, f32, stats} when the single-body field was pre-baked
     let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
     // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
     // main thread. Boolean CSG via Manifold.intersection no longer needed; the
@@ -241,301 +228,8 @@ self.onmessage=async function(e){
         self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion}});
       } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
-        const mmToWorld=10/d.cellSizeMm;
-        const worldToMm=d.cellSizeMm/10;
-        // ── Trilinear sampler over the baked shape SDF grid (in mm) ──────────
-        // Outside bbox we fall back to the analytical axis-aligned-box SDF so the
-        // field stays Lipschitz-continuous everywhere. Both are in mm, matching
-        // the units of the bbox passed to levelSet — so max(scaffold_mm, shape_mm)
-        // produces a well-conditioned SDF for marching cubes.
-        const sdfArr=new Float32Array(shapeSdfData);
-        const N=shapeN;
-        const bminX=bbox.mnx,bminY=bbox.mny,bminZ=bbox.mnz;
-        const bsizeX=bbox.mxx-bbox.mnx,bsizeY=bbox.mxy-bbox.mny,bsizeZ=bbox.mxz-bbox.mnz;
-        const bmaxX=bbox.mxx,bmaxY=bbox.mxy,bmaxZ=bbox.mxz;
-        // ── Structure SDF transform setup (v0.5.0 Phase B) ───────────────
-        // Defaults to identity (no transform) when d.structXform absent or
-        // all-zero, preserving v0.4.x behavior.
-        const xf = d.structXform || {rotMat:[1,0,0,0,1,0,0,0,1],spatialOffsetMm:[0,0,0],isoOffsetMm:0};
-        const xfRot = xf.rotMat;
-        const xfOffMmX = xf.spatialOffsetMm[0], xfOffMmY = xf.spatialOffsetMm[1], xfOffMmZ = xf.spatialOffsetMm[2];
-        // ── Iso offset sign convention (canonical, v0.5.0-rc9) ───────────────
-        // Worker SDF builders now return canonical NEGATIVE-INSIDE (see the
-        // "CANONICAL SDF CONVENTION" block above buildSDF). In that convention,
-        // +isoOffsetMm = thicker walls means SUBTRACT iso from the SDF (pushes
-        // zero-crossing outward so more of space is inside). The negation to
-        // Manifold's positive-inside happens below in wrappedSDF composition,
-        // so after the flip the iso term appears as "+ xfIsoMm". Matches the
-        // shader: rawToSDF returns negative-inside; setStructureTransform
-        // passes -isoOffsetMm to uStructIsoWorld so shader does (sc - iso_w).
-        const xfIsoMm = xf.isoOffsetMm;
-        // Pivot is shape center in mm.
-        const xfPivotMmX = bminX + bsizeX*0.5;
-        const xfPivotMmY = bminY + bsizeY*0.5;
-        const xfPivotMmZ = bminZ + bsizeZ*0.5;
-        // Detect identity to skip transform math in the hot loop (every voxel).
-        // Iso offset must also be zero — otherwise the identity-fast-path
-        // would silently drop it (the fast-path branch doesn't apply iso).
-        const xfIsIdentity = (xfRot[0]===1 && xfRot[4]===1 && xfRot[8]===1 &&
-                              xfRot[1]===0 && xfRot[2]===0 && xfRot[3]===0 &&
-                              xfRot[5]===0 && xfRot[6]===0 && xfRot[7]===0 &&
-                              xfOffMmX===0 && xfOffMmY===0 && xfOffMmZ===0 &&
-                              xfIsoMm===0);
-        const sampleShapeSDF=function(px,py,pz){
-          const u=(px-bminX)/bsizeX, v=(py-bminY)/bsizeY, w=(pz-bminZ)/bsizeZ;
-          if(u<0||u>1||v<0||v>1||w<0||w>1){
-            const qx=Math.max(bminX-px, px-bmaxX, 0);
-            const qy=Math.max(bminY-py, py-bmaxY, 0);
-            const qz=Math.max(bminZ-pz, pz-bmaxZ, 0);
-            return Math.sqrt(qx*qx+qy*qy+qz*qz);
-          }
-          // v0.8.2: the grid is baked at voxel CENTRES ((i+0.5)/N), the same
-          // convention the preview's texture lookup uses. Reading it as if
-          // values sat on voxel corners (u*(N-1)) scaled the shape by N/(N-1)
-          // about its centre — ~0.4 mm too big per side on a 50 mm part at Draft.
-          const fu=Math.min(Math.max(u*N-0.5,0),N-1), fv=Math.min(Math.max(v*N-0.5,0),N-1), fw=Math.min(Math.max(w*N-0.5,0),N-1);
-          const i0=Math.floor(fu)|0, j0=Math.floor(fv)|0, k0=Math.floor(fw)|0;
-          const i1=i0+1<N?i0+1:N-1, j1=j0+1<N?j0+1:N-1, k1=k0+1<N?k0+1:N-1;
-          const tu=fu-i0, tv=fv-j0, tw=fw-k0;
-          const NN=N*N;
-          const c000=sdfArr[i0+j0*N+k0*NN], c100=sdfArr[i1+j0*N+k0*NN];
-          const c010=sdfArr[i0+j1*N+k0*NN], c110=sdfArr[i1+j1*N+k0*NN];
-          const c001=sdfArr[i0+j0*N+k1*NN], c101=sdfArr[i1+j0*N+k1*NN];
-          const c011=sdfArr[i0+j1*N+k1*NN], c111=sdfArr[i1+j1*N+k1*NN];
-          const c00=c000+(c100-c000)*tu, c10=c010+(c110-c010)*tu;
-          const c01=c001+(c101-c001)*tu, c11=c011+(c111-c011)*tu;
-          const c0=c00+(c10-c00)*tv, c1=c01+(c11-c01)*tv;
-          return c0+(c1-c0)*tw;
-        };
-        // ── Canonical→Manifold flip + intersection composition ──────────────
-        // Builder returns canonical NEGATIVE-INSIDE. Manifold.levelSet wants
-        // POSITIVE-INSIDE (positive = "solid" for its marching-cubes extraction).
-        // Shape SDF was baked positive-outside (standard SDF), so also negated.
-        // Intersection interior = inside BOTH = both operands positive after
-        // flip, so combined positive-inside field = min(scaffold, -shape).
-        //
-        // Iso in canonical: sc_neg_with_iso = sc_neg - xfIsoMm
-        // After Manifold flip: sc_pos = -(sc_neg - xfIsoMm) = -sc_neg + xfIsoMm
-        // So both flips collapse into: sc_mm = -sc_world*worldToMm + xfIsoMm.
-        //
-        // Guard against non-finite scaffold values — some recipes can emit NaN
-        // or Infinity at edge-case points (trig cancellations, out-of-kernel-
-        // support queries in HU). Manifold's marching-cubes sign-test chokes
-        // on NaN with "table index out of bounds". Substitute a large negative
-        // (firmly outside both fields) so any affected voxel votes "outside".
-        // ── Structure transform applied per voxel (v0.5.0 Phase B) ────────
-        // Identity case skips transform math for speed. Transform formula:
-        //   q_mm = (p_mm - pivot_mm) - offset_mm
-        //   local_mm = R^T × q_mm
-        //   sc_local_mm = -lattice_eval(local_mm + pivot_mm) + xfIsoMm
-        // R^T (xfRot) is column-major; xfRot[c*3+r] reads col c, row r.
-
-        // ── Trim-to-nodes precompute (v0.5.0-rc17) ────────────────────────
-        // For beam recipes with d.pruneToNodes set, build a per-tile beam
-        // mask. Each beam is "kept" for a tile iff both its endpoints sit
-        // at least pruneInsetMm INSIDE the shape. Endpoints are computed in
-        // shape mm-space, accounting for the structure transform so a
-        // rotated lattice gets pruned against the shape correctly.
-        let activeSdfFn = sdfFn;
-        if(d.pruneToNodes && SDF_FAMILIES[d.recipe.family] && SDF_FAMILIES[d.recipe.family].trimToNodes){
-          const beamsArr = d.recipe.json.beams || [];
-          const geomP = d.recipe.json.geometry || {};
-          // v0.5.0-rc22/25: schema-aware radius and pitch resolution.
-          // New schema (sxyzP resolved from scale_xyz OR cell_scale_x/y/z,
-          // plus cell): radii in mm directly, per-axis pitch.
-          // Old schema: scalar radius cell-local, scalar pitch.
-          let sxyzP=null;
-          if(Array.isArray(geomP.scale_xyz)&&geomP.scale_xyz.length===3
-             &&isFinite(geomP.scale_xyz[0])&&isFinite(geomP.scale_xyz[1])&&isFinite(geomP.scale_xyz[2])
-             &&geomP.scale_xyz[0]>0&&geomP.scale_xyz[1]>0&&geomP.scale_xyz[2]>0){
-            sxyzP=geomP.scale_xyz;
-          } else if(typeof geomP.cell_scale_x==='number'&&geomP.cell_scale_x>0
-                 && typeof geomP.cell_scale_y==='number'&&geomP.cell_scale_y>0
-                 && typeof geomP.cell_scale_z==='number'&&geomP.cell_scale_z>0){
-            sxyzP=[geomP.cell_scale_x, geomP.cell_scale_y, geomP.cell_scale_z];
-          }
-          const cellMmP = geomP.cell;
-          const hasScaleXYZP = sxyzP!==null;
-          const hasCellP = (typeof cellMmP==='number')&&isFinite(cellMmP)&&cellMmP>0;
-          const isNewP = hasScaleXYZP && hasCellP;
-          // Effective worst-case radius in mm — used for inset auto-clamping.
-          // New schema: max over per-axis radii (already in mm).
-          // Old schema: scalar radius (cell-local) × cellSizeMm/2.
-          // v0.8.2: physical radius at the user's cell size (was: new-schema
-          // radius_x not scaled by cellSizeMm/cell; old schema ignored cell_scale).
-          const radiusMm = beamStrutRadiusMm(geomP, d.cellSizeMm);
-          // v0.5.0-rc18: auto-clamp the inset so it's never tighter than the
-          // shape SDF discretization. Trilinear interpolation can mis-classify
-          // endpoints by up to ~½ voxel; using full voxel size as the floor
-          // gives a safety margin that covers high-curvature regions where
-          // the boundary error grows. Multiplier (1.0–2.0) lets the user
-          // ratchet up further for shapes with very fine surface features.
-          const insetMult = (typeof d.pruneInsetMult==='number'&&d.pruneInsetMult>=1.0&&d.pruneInsetMult<=2.0) ? d.pruneInsetMult : 1.0;
-          const voxelSizeMm = Math.max(bsizeX, bsizeY, bsizeZ) / shapeN;
-          const insetCandidate = voxelSizeMm * insetMult;
-          const insetMm = Math.max(radiusMm, insetCandidate);
-          const insetReason = (insetMm===radiusMm) ? 'radius'
-                             : ('voxel × '+insetMult.toFixed(1)+' = '+insetCandidate.toFixed(3)+' mm');
-          self.postMessage({type:'progress',stage:'trim-to-nodes inset: '+insetMm.toFixed(3)+' mm ('+insetReason+', voxel='+voxelSizeMm.toFixed(3)+' mm)'});
-          // Lattice mm pitch per axis — must match buildBeamSDF's W2Lx/y/z math.
-          // New schema: pitchMm_i = cellSizeMm × scale_xyz[i] / cell.
-          // Old schema: pitchMm = cellSizeMm / cell_scale (scalar, isotropic).
-          let pitchMmX, pitchMmY, pitchMmZ;
-          if(isNewP){
-            pitchMmX = d.cellSizeMm * sxyzP[0] / cellMmP;
-            pitchMmY = d.cellSizeMm * sxyzP[1] / cellMmP;
-            pitchMmZ = d.cellSizeMm * sxyzP[2] / cellMmP;
-          } else {
-            const cellScaleP = (typeof geomP.cell_scale==='number'&&geomP.cell_scale>0) ? geomP.cell_scale : 1;
-            pitchMmX = pitchMmY = pitchMmZ = d.cellSizeMm / cellScaleP;
-          }
-          // Tile centers in lattice-mm sit at integer multiples of pitchMm
-          // (origin-centered, matching the wrap math: tile 0 has center at 0).
-          // Tile range covering bbox in lattice-mm. We need to invert the
-          // structure transform on the bbox corners to see what lattice-mm
-          // range to pre-compute over.
-          // For identity transform, lattice-mm == shape-mm.
-          // For non-identity, we approximate by checking the 8 bbox corners
-          // mapped through the inverse transform, then take the bounding
-          // tile-range. This is conservative (may include a few extra tiles
-          // outside the actual sweep) but correct.
-          let lminX=Infinity,lminY=Infinity,lminZ=Infinity;
-          let lmaxX=-Infinity,lmaxY=-Infinity,lmaxZ=-Infinity;
-          const cornersShape=[
-            [bminX,bminY,bminZ],[bmaxX,bminY,bminZ],[bminX,bmaxY,bminZ],[bmaxX,bmaxY,bminZ],
-            [bminX,bminY,bmaxZ],[bmaxX,bminY,bmaxZ],[bminX,bmaxY,bmaxZ],[bmaxX,bmaxY,bmaxZ]
-          ];
-          for(const c of cornersShape){
-            // shape-mm → lattice-mm: same transform the wrappedSDF applies.
-            const qx=c[0]-xfPivotMmX-xfOffMmX, qy=c[1]-xfPivotMmY-xfOffMmY, qz=c[2]-xfPivotMmZ-xfOffMmZ;
-            const lx=xfRot[0]*qx+xfRot[3]*qy+xfRot[6]*qz;
-            const ly=xfRot[1]*qx+xfRot[4]*qy+xfRot[7]*qz;
-            const lz=xfRot[2]*qx+xfRot[5]*qy+xfRot[8]*qz;
-            const lmmX=lx+xfPivotMmX, lmmY=ly+xfPivotMmY, lmmZ=lz+xfPivotMmZ;
-            if(lmmX<lminX)lminX=lmmX; if(lmmX>lmaxX)lmaxX=lmmX;
-            if(lmmY<lminY)lminY=lmmY; if(lmmY>lmaxY)lmaxY=lmmY;
-            if(lmmZ<lminZ)lminZ=lmmZ; if(lmmZ>lmaxZ)lmaxZ=lmmZ;
-          }
-          // Tile_x = round(lattice_mm_x / pitchMmX). Range floor/ceil
-          // with one-tile padding so neighbor halo lookups don't miss edges.
-          const tXMin=Math.floor(lminX/pitchMmX-0.5)-1;
-          const tXMax=Math.floor(lmaxX/pitchMmX+0.5)+1;
-          const tYMin=Math.floor(lminY/pitchMmY-0.5)-1;
-          const tYMax=Math.floor(lmaxY/pitchMmY+0.5)+1;
-          const tZMin=Math.floor(lminZ/pitchMmZ-0.5)-1;
-          const tZMax=Math.floor(lmaxZ/pitchMmZ+0.5)+1;
-          const NX=tXMax-tXMin+1, NY=tYMax-tYMin+1, NZ=tZMax-tZMin+1;
-          const BC=beamsArr.length;
-          const totalTiles=NX*NY*NZ;
-          // Sanity cap: refuse pathological mask sizes (would indicate misuse).
-          // 100³ tiles × 200 beams ≈ 200 MB, well over what we'd ever want.
-          const maskBytes=totalTiles*BC;
-          if(maskBytes>64*1024*1024){
-            self.postMessage({type:'progress',stage:'trim-to-nodes mask too large ('+(maskBytes/1e6).toFixed(0)+' MB) — skipping prune'});
-          } else {
-            self.postMessage({type:'progress',stage:'computing trim-to-nodes mask ('+totalTiles.toLocaleString()+' tiles × '+BC+' beams)...'});
-            const mask=new Uint8Array(maskBytes);
-            // Forward transform: lattice-mm → shape-mm (inverse of wrappedSDF math).
-            // q = R × l ; shape = q + pivot + offset.
-            // R = transpose of R^T (xfRot stored as R^T col-major).
-            // Forward: shape_mm[i] = sum_j R[i,j] × l_centered[j] + pivot_i + offset_i
-            // Where R[i,j] = R^T[j,i] = xfRot[i*3+j].
-            const fwd=(lmmX,lmmY,lmmZ)=>{
-              const lx=lmmX-xfPivotMmX, ly=lmmY-xfPivotMmY, lz=lmmZ-xfPivotMmZ;
-              const sx=xfRot[0]*lx+xfRot[1]*ly+xfRot[2]*lz;
-              const sy=xfRot[3]*lx+xfRot[4]*ly+xfRot[5]*lz;
-              const sz=xfRot[6]*lx+xfRot[7]*ly+xfRot[8]*lz;
-              return [sx+xfPivotMmX+xfOffMmX, sy+xfPivotMmY+xfOffMmY, sz+xfPivotMmZ+xfOffMmZ];
-            };
-            const halfPitchX=pitchMmX*0.5, halfPitchY=pitchMmY*0.5, halfPitchZ=pitchMmZ*0.5;
-            let kept=0;
-            for(let iz=0;iz<NZ;iz++){
-              const tz=iz+tZMin;
-              const cz_lattice=tz*pitchMmZ; // tile center in lattice-mm
-              for(let iy=0;iy<NY;iy++){
-                const ty=iy+tYMin;
-                const cy_lattice=ty*pitchMmY;
-                for(let ix=0;ix<NX;ix++){
-                  const tx=ix+tXMin;
-                  const cx_lattice=tx*pitchMmX;
-                  const tileBase=((iz*NY+iy)*NX+ix)*BC;
-                  for(let bi=0;bi<BC;bi++){
-                    const b=beamsArr[bi];
-                    // Endpoint A in lattice-mm (cell-local [-1,+1] → mm), per-axis pitch
-                    const amx=cx_lattice+b[0]*halfPitchX;
-                    const amy=cy_lattice+b[1]*halfPitchY;
-                    const amz=cz_lattice+b[2]*halfPitchZ;
-                    // Endpoint B in lattice-mm
-                    const bmx=cx_lattice+b[3]*halfPitchX;
-                    const bmy=cy_lattice+b[4]*halfPitchY;
-                    const bmz=cz_lattice+b[5]*halfPitchZ;
-                    // Forward-transform to shape-mm
-                    const aShape=fwd(amx,amy,amz);
-                    const bShape=fwd(bmx,bmy,bmz);
-                    // Sample shape SDF at both endpoints. Inside-with-inset:
-                    // sh_sdf <= -insetMm.
-                    const aInside=sampleShapeSDF(aShape[0],aShape[1],aShape[2])<=-insetMm;
-                    const bInside=sampleShapeSDF(bShape[0],bShape[1],bShape[2])<=-insetMm;
-                    if(aInside && bInside){ mask[tileBase+bi]=1; kept++; }
-                  }
-                }
-              }
-            }
-            const totalCandidates=totalTiles*BC;
-            self.postMessage({type:'progress',stage:'trim-to-nodes: '+kept.toLocaleString()+' / '+totalCandidates.toLocaleString()+' beams kept ('+(100*kept/Math.max(1,totalCandidates)).toFixed(1)+'%)'});
-            // Override sdfFn with mask-aware version
-            activeSdfFn = buildBeamSDF(d.recipe.json, {mask,tXMin,tYMin,tZMin,NX,NY,NZ});
-          }
-        }
-        // ── Move 1 (v0.5.0-rc19): SDF-eval short-circuit ─────────────────────
-        // wrappedSDF is called ~50M+ times during MC; ~70% of that time is the
-        // lattice eval (36+ capsule SDFs per voxel). For voxels well outside
-        // the shape, min(sc_mm, sh_mm) is dominated by sh_mm and Manifold needs
-        // no surface there — so we can skip the lattice eval entirely.
-        //
-        // Threshold = 2× current pass's voxel edge. Since sampleShapeSDF is
-        // Lipschitz-1 (true SDF), adjacent voxels differ by at most one edge,
-        // so a voxel at sh_mm < -2*edge guarantees no sign-crossing within
-        // its neighbors → no MC iso surface there.
-        //
-        // Coarse and fine passes use different edge sizes; the variable
-        // currentVoxelEdge is updated before each levelSet call below.
-        let currentVoxelEdge = relEdgeMm;
-        const wrappedSDF = xfIsIdentity
-          ? p=>{
-              const sh_mm=-sampleShapeSDF(p[0],p[1],p[2]);
-              // Far outside shape — skip lattice eval, return sh_mm directly.
-              if(sh_mm < -2*currentVoxelEdge) return sh_mm;
-              const sc_world=activeSdfFn([p[0]*mmToWorld,p[1]*mmToWorld,p[2]*mmToWorld]);
-              const sc_mm=-sc_world*worldToMm;  // canonical neg-inside → Manifold pos-inside
-              if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
-              return sc_mm<sh_mm?sc_mm:sh_mm;
-            }
-          : p=>{
-              const sh_mm = -sampleShapeSDF(p[0],p[1],p[2]);
-              // Far outside shape — skip lattice + transform math.
-              if(sh_mm < -2*currentVoxelEdge) return sh_mm;
-              // Translate to pivot, subtract spatial offset.
-              const qx = p[0] - xfPivotMmX - xfOffMmX;
-              const qy = p[1] - xfPivotMmY - xfOffMmY;
-              const qz = p[2] - xfPivotMmZ - xfOffMmZ;
-              // Apply inverse rotation (R^T): col-major, so col c row r = xfRot[c*3+r].
-              // R^T × q = sum_c (xfRot col c) * q[c] — i.e. dot of q with each row of R.
-              // Actually: (M × v)[i] = sum_j M[i,j] × v[j], where M[i,j] = M_colmajor[j*3+i].
-              // So (xfRot × q)[i] = sum_j xfRot[j*3+i] * q[j].
-              const lx = xfRot[0]*qx + xfRot[3]*qy + xfRot[6]*qz;
-              const ly = xfRot[1]*qx + xfRot[4]*qy + xfRot[7]*qz;
-              const lz = xfRot[2]*qx + xfRot[5]*qy + xfRot[8]*qz;
-              // Translate back to world origin so the periodic lattice tiles
-              // around the shape center.
-              const wx_mm = lx + xfPivotMmX;
-              const wy_mm = ly + xfPivotMmY;
-              const wz_mm = lz + xfPivotMmZ;
-              const sc_world = activeSdfFn([wx_mm*mmToWorld, wy_mm*mmToWorld, wz_mm*mmToWorld]);
-              const sc_mm = -sc_world*worldToMm + xfIsoMm;  // canonical neg-inside → Manifold pos-inside, + iso
-              if(!(sc_mm>-1e20&&sc_mm<1e20))return -1e6;
-              return sc_mm<sh_mm?sc_mm:sh_mm;
-            };
+        const shapeField=buildShapeExportField(d, sdfFn, m=>self.postMessage(m));
+        const wrappedSDF=shapeField.fn;
       // ── Export two-pass: coarse → live bbox → fine ──────────────────────────
       // No boolean intersect — the max()-composed SDF already emits only the
       // scaffold-inside-shape surface. Coarse pass still worth running: tight
@@ -546,7 +240,7 @@ self.onmessage=async function(e){
       const coarseVox=Math.round(((bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz))/Math.pow(eCoarseEdge,3)/1e6);
       lastStage='coarse pass ('+eCoarseEdge.toFixed(1)+'mm, ~'+coarseVox+'M voxels)';
       self.postMessage({type:'progress',stage:lastStage+'...'});
-      currentVoxelEdge = eCoarseEdge; // v0.5.0-rc19: short-circuit threshold tracks pass edge
+      shapeField.setEdge(eCoarseEdge); // v0.5.0-rc19: short-circuit threshold tracks pass edge
       let eCoarseMfld=safeLevelSet(wrappedSDF,{min:[bbox.mnx,bbox.mny,bbox.mnz],max:[bbox.mxx,bbox.mxy,bbox.mxz]},eCoarseEdge,'coarse pass');
       // v0.8.2: the coarse pass samples at 4× the fine edge, so struts or walls
       // thinner than that can fall between its samples. An empty coarse result
@@ -595,10 +289,15 @@ self.onmessage=async function(e){
       }
       const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
-      self.postMessage({type:'progress',stage:lastStage+'...'});
+      shapeField.setEdge(relEdgeMm); // v0.5.0-rc19: short-circuit threshold tracks pass edge
+      // v0.11.0: evaluate the fine grid on every core first (m33-field-pool.js).
+      const fineMin=[eInner.mnx,eInner.mny,eInner.mnz], fineMax=[eInner.mxx,eInner.mxy,eInner.mxz];
+      let fineFn=wrappedSDF;
+      const fpb=await prebakeExportField(d, wrappedSDF, fineMin, fineMax, relEdgeMm, m=>self.postMessage(m));
+      if(fpb){ fineFn=fpb.fn; fieldBake=fpb; }
+      self.postMessage({type:'progress',stage:lastStage+(fpb?' (field pre-baked on '+fpb.workers+' cores)':'')+'...'});
       const tLevelSet=performance.now();
-      currentVoxelEdge = relEdgeMm; // v0.5.0-rc19: short-circuit threshold tracks pass edge
-      mfld=safeLevelSet(wrappedSDF,{min:[eInner.mnx,eInner.mny,eInner.mnz],max:[eInner.mxx,eInner.mxy,eInner.mxz]},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
+      mfld=safeLevelSet(fineFn,{min:fineMin,max:fineMax},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
       // Shape-sdf export mode falls through to the unified extract+simplify+done
@@ -609,9 +308,15 @@ self.onmessage=async function(e){
         // Manifold treats positive as solid for marching cubes. Without the
         // flip, cube exports come out topologically inverted relative to the
         // renderer (which uses canonical negative-inside as designed).
-        self.postMessage({type:'progress',stage:'level set ('+d.edgeWorld.toFixed(3)+' world edge)...'});
+        // v0.11.0: evaluate the grid on every core first (m33-field-pool.js).
+        const cubeFn=p=>-sdfFn(p);
+        let lsFn=cubeFn;
+        const cpb=await prebakeExportField(d, cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld, m=>self.postMessage(m));
+        if(cpb){ lsFn=cpb.fn; fieldBake=cpb; }
+        lastStage='level set ('+d.edgeWorld.toFixed(3)+' world edge'+(cpb?', field pre-baked on '+cpb.workers+' cores':'')+')';
+        self.postMessage({type:'progress',stage:lastStage+'...'});
         const tLevelSet=performance.now();
-        mfld=safeLevelSet(p=>-sdfFn(p),{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
+        mfld=safeLevelSet(lsFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
         msLevelSet=Math.round(performance.now()-tLevelSet);
       }
@@ -664,7 +369,8 @@ self.onmessage=async function(e){
     }
     const triCount=triVerts.length/3;
     const ms=Math.round(performance.now()-t0);
-    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,msBreakdown:{levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
+    if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
+    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,cores:fieldBake?fieldBake.workers:1,msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

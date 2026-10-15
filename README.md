@@ -80,7 +80,11 @@ Clicking **Export 3MF** recomputes the mesh at the selected quality, scales vert
 
 File naming: `[type]_[preset]_[size]mm_[date].3mf`
 
-A quality report appears after each export: triangle count, domain size, edge length, file size, and compute time.
+A quality report appears after each export: triangle count, domain size, edge length, cores used, file size, and compute time.
+
+### Speed (v0.11.0)
+
+Every export computes the lattice field on all but one of your cores before meshing (weld groups have done this since v0.9.3). The field is evaluated at exactly the points the mesher will ask for, so the file is the same as a one-core export, byte for byte. The mesher itself (Manifold's level set) still runs on one core; that is now the largest part of most exports. TPMS term formulas are built once per export instead of being re-read at every point.
 
 ### Part prep (v0.10.0)
 
@@ -174,8 +178,10 @@ Nothing else should need to change; if it does, the registry is missing a field.
 | `m20-sdf-noise-tpms.js` · `m21-sdf-beam.js` · `m22-sdf-grain.js` · `m23-sdf-bundle.js` · `m24-sdf-wave.js` · `m25-sdf-foam.js` | One SDF builder per recipe family |
 | `m30-sdf-assembly.js` | Weld-group union and `buildSDF` (looks the family up in the registry) |
 | `m31-weld-grid.js` | Manifold `levelSet` grid points, weld field bake and cache lookup |
+| `m32-export-field.js` | Single-body export field (shape clip, structure transform, trim-to-nodes, cube sign flip), shared by the mesh worker and the field bake workers |
+| `m33-field-pool.js` | Multi-core field pre-bake for single-body exports: starts `field-bake-worker.js` workers from inside the mesh worker |
 | `m90-onmessage.js` | Bake / preview / export message handler |
-| `shape-sdf-worker.js` · `hu-bake-worker.js` · `weld-bake-worker.js` | Shape SDF, hyperuniform and weld-field slab bakes |
+| `shape-sdf-worker.js` · `hu-bake-worker.js` · `weld-bake-worker.js` · `field-bake-worker.js` | Shape SDF, hyperuniform, weld-field and single-body field slab bakes |
 
 Worker files are requested with `?v=<version>` so a deploy never mixes a fresh page with stale cached worker code. Bump `F13LD_MESH_VERSION` in `01-config.js` (and the header label in `index.html`) on each release.
 

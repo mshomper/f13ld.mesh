@@ -487,6 +487,7 @@ async function _triggerExportImpl(){
     const huGridBuffer = huGridForExport ? huGridForExport.data.buffer.slice(0) : null;
     workerMsg={
       mode:'export',recipe:currentRecipe,
+      cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
       shapeSdfData:shapeSdfBuffer,
       shapeN:importedShape.sdfGrid.N,
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
@@ -566,6 +567,7 @@ async function _triggerExportImpl(){
     const cubeSimplifyCappedByFeature = cubeFeatWorld != null && cubeCappedTolWorld < cubeEdgeTolWorld;
     workerMsg={
       mode:'export',recipe:currentRecipe,edgeWorld,
+      cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
       simplifyTol:cubeSimplifyTol,
       simplifyCappedByFeature:cubeSimplifyCappedByFeature,
       featMm:cubeFeatMm,  // mm value, for timings-pill display
@@ -606,7 +608,7 @@ async function _triggerExportImpl(){
         if(d.type==='progress') coSub.textContent=d.stage;
         else if(d.type==='diag'){
           // v0.5.1-rc4.0b: calibration log for the export guards.
-          console.log('[export][mem-guard]', d.diag);
+          if(d.diag&&d.diag.fieldBake) console.log('[export][field] '+JSON.stringify(d.diag.fieldBake)); else console.log('[export][mem-guard]', d.diag);
         }
         else if(d.type==='done'){ clearTimeout(exportTimer); resolve(d); }
         else if(d.type==='error'){ clearTimeout(exportTimer); reject(new Error(d.message)); }
@@ -673,6 +675,7 @@ async function _triggerExportImpl(){
       expChip('triangles',result.triCount.toLocaleString())+
       expChip('domain',domainLabel)+
       expChip('edge',edgeLabel)+
+      expChip('cores',result.cores||1)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';
@@ -710,4 +713,7 @@ async function _triggerExportImpl(){
   }
   btn.disabled=false;
 };
+// v0.11.0: cores for the single-body field pre-bake — all but one, so the
+// page stays responsive (the mesh worker caps it at 15).
+function exportFieldCores(){ return Math.max(1,(navigator.hardwareConcurrency||2)-1); }
 function expChip(l,v){return`<div class="exp-chip">${esc(l)} <b>${esc(v)}</b></div>`;}

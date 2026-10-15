@@ -31,6 +31,16 @@ Findings: only weld groups had the multi-core field bake (v0.9.3); open-cube and
 - `loadorder.js`, `fieldtest.js`: clean.
 - The dev VM has 2 cores, so it can't show the speed-up. Matt runs that on his machine with the new bench page `tests/regress.html` (see `tests/README.md`): branch vs. live tool, byte for byte, with times. Checked here once in headless Chromium (gyroid, PI pair, shape-tpms at Med, 3 cores): 3 / 3 identical.
 
+## Matt's results and follow-ups (same branch)
+
+Matt's machine (Ryzen 7700X, 16 threads, 15 cores): his PI-TPMS pair part (20 × 20 × 40 mm, 0.12 mm edge, 1.25 M tris) went from 60 s on main to 29 s; bench at High, 19 / 19 cube cases identical, 1.83× overall (PI pair 4.4×, filleted foam 3.6×), four shape cases identical. Two cases got slower: reaction-diffusion 0.73× (15 workers each re-grow the pattern) and beam-bcc 0.68× (field too cheap for the pool). Field is now 0.1–1.6 s per case; the one-core level set is most of what is left.
+
+Follow-ups, approved 2026-10-15:
+- **Pool sizing** (`m33` `sampleFieldUs`): the mesh worker times its own field setup (`setupMs`, buildSDF + shape field) and a deterministic sample of grid points, and skips the pool when the one-core field would take under 400 ms or the pool (setup × 1.5 + 120 ms + field / cores) wouldn't cut it by a quarter. Logged as `[export][field] one core: {…}`. Mesh unchanged either way (harness at Med: beam, RD, PI pair identical; RD now stays on one core).
+- **Learned estimate** (`60-export-ui.js`): time from level-set grid points (2 × box volume / edge³) × (2 µs mesher + family field cost ÷ cores), triangles from the old surface model, both scaled by factors learned per family and open cube / shape from each finished export (`recordExportTiming`, localStorage `f13ld.mesh.exportCal.v1`, halfway in log terms each time). Matt's PI part: the old estimate said ~359 k tris / 44 s against 1.25 M / 29 s.
+- **Report chip** "field · mesh · simplify" from the worker's `msBreakdown` ("in mesh" when the pool was skipped).
+- Matt tests real parts on the live pages; no "your design" panel in the bench.
+
 ## Next: parallel slab mesher (approved 2026-10-15)
 
 Matt accepted that exports may then differ slightly in triangle layout (same shape and volume). Tested on 2026-10-15: Manifold can't join independently meshed slabs cleanly — touching pieces stay separate after union, overlapping pieces leave doubled-surface slivers (+60 % tris), and trim + weld fails because Manifold re-tidies each cut differently (even one mesh cut from both sides gave 390 vs 394 seam points). Plan: our own marching-tetrahedra on the same body-centred grid per z slab, in the bake workers, with every slab sampling the shared seam plane so seam vertices match exactly; concatenate, `Mesh.merge()`, and let `new Manifold(mesh)` confirm it is watertight. 8 slabs: slowest slab 1.4 s vs 6.5 s whole on one core.

@@ -284,6 +284,7 @@ async function _triggerExportImpl(){
 
   // Compute params on main thread (lightweight math only)
   let workerMsg, scale, domainLabel, edgeLabel;
+  let exportEst=null;   // v0.11.0: estimateMeshStats().est, for recordExportTiming
   let ppCtx=null;   // v0.10.0 part-prep context for the measured stats
   if(importedShape){
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
@@ -445,7 +446,8 @@ async function _triggerExportImpl(){
         showCancelBtn(false);
       }
     }
-    const {estTris,estSec}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
+    const {estTris,estSec,est:_est}=estimateMeshStats(currentRecipe,relEdgeMm,importedShape.bbox,cellSizeMm);
+    exportEst=_est;
     if(exportClamped) console.warn('[export] grid clamped to '+relEdgeMm.toFixed(3)+'mm — cell size too small for export voxel budget');
     // ── Layer 1: feature-ratio guard (v0.5.1-rc4.1) ────────────────────
     // Floor, rationale, and message text now live at module scope alongside
@@ -545,7 +547,8 @@ async function _triggerExportImpl(){
     const {safeEdge:edgeWorld,clamped:cubeClamped}=clampEdgeWorld(rawEdgeMmC*10/domainMm, getMaxExportVoxels(currentRecipe));
     const edgeMm=+(edgeWorld*domainMm/10).toFixed(4);
     if(cubeClamped) console.warn('[export] cube grid clamped to '+edgeMm+'mm edge — voxel budget for '+currentRecipe.family);
-    const {estTris,estSec}=estimateMeshStats(currentRecipe,edgeWorld,null);
+    const {estTris,estSec,est:_est}=estimateMeshStats(currentRecipe,edgeWorld,null);
+    exportEst=_est;
     coMain.textContent='exporting...';
     coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
     overlay.classList.remove('hidden');showCancelBtn(true);
@@ -608,7 +611,7 @@ async function _triggerExportImpl(){
         if(d.type==='progress') coSub.textContent=d.stage;
         else if(d.type==='diag'){
           // v0.5.1-rc4.0b: calibration log for the export guards.
-          if(d.diag&&d.diag.fieldBake) console.log('[export][field] '+JSON.stringify(d.diag.fieldBake)); else console.log('[export][mem-guard]', d.diag);
+          if(d.diag&&(d.diag.fieldBake||d.diag.fieldBakeSkip)) console.log((d.diag.fieldBake?'[export][field] ':'[export][field] one core: ')+JSON.stringify(d.diag.fieldBake||d.diag.fieldBakeSkip)); else console.log('[export][mem-guard]', d.diag);
         }
         else if(d.type==='done'){ clearTimeout(exportTimer); resolve(d); }
         else if(d.type==='error'){ clearTimeout(exportTimer); reject(new Error(d.message)); }
@@ -628,6 +631,7 @@ async function _triggerExportImpl(){
     });
     if(meshWorker===worker){meshWorker=null;}
     worker.terminate();
+    recordExportTiming(exportEst, result.ms, result.triCount);   // v0.11.0: learned estimate
     if(elapsedTimer)clearInterval(elapsedTimer);
     _exportElapsedTimer=null; _exportTimeoutTimer=null;
     hideComputing();showCancelBtn(false);
@@ -678,6 +682,7 @@ async function _triggerExportImpl(){
       expChip('cores',result.cores||1)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
+      expTimeSplitChip(result.msBreakdown)+
     '</div>';
     if(ppCtx){ ppCtx.name=filename; ppAfterExport(_po.vp, triVerts, _po.scale, ppCtx); }
     // ── Timings pill: SDF bake + levelSet + simplify ──────────────────────
@@ -715,5 +720,13 @@ async function _triggerExportImpl(){
 };
 // v0.11.0: cores for the single-body field pre-bake — all but one, so the
 // page stays responsive (the mesh worker caps it at 15).
+// v0.11.0: where the worker's time went. Field is the multi-core bake (when it
+// ran; otherwise the field is evaluated inside the mesh step), mesh is the
+// fine level set, simplify is meshopt.
+function expTimeSplitChip(bd){
+  if(!bd||!(bd.total>0)) return '';
+  const f=ms=>ms>=1000?(ms/1000).toFixed(1)+'s':Math.round(ms)+'ms';
+  return expChip('field · mesh · simplify',(bd.field>0?f(bd.field):'in mesh')+' · '+f(bd.levelSet||0)+' · '+(bd.simplify>0?f(bd.simplify):'—'));
+}
 function exportFieldCores(){ return Math.max(1,(navigator.hardwareConcurrency||2)-1); }
 function expChip(l,v){return`<div class="exp-chip">${esc(l)} <b>${esc(v)}</b></div>`;}

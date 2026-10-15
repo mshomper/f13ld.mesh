@@ -25,6 +25,30 @@ const FIELD_BAKE_STALL_MS=120000;     // no slab for this long → give up on th
 const FIELD_BAKE_SPEC_KEYS=['mode','recipe','shapeSdfData','shapeN','bbox','cellSizeMm','relEdgeMm',
   'structXform','pruneToNodes','pruneInsetMult','huGridData','huGridN','huFieldMin','huFieldMax','huBbox','edgeWorld'];
 
+// Pool sizing (v0.11.0). Each bake worker loads the scripts and rebuilds the
+// recipe before evaluating anything, so the pool only pays when the field is
+// costly next to that setup. The mesh worker times its own setup (setupMs)
+// and a sample of grid points here, and skips the pool when
+//   serial < FIELD_BAKE_MIN_MS, or
+//   setup·1.5 + load + serial/K > FIELD_BAKE_GAIN · serial.
+// Sampling reads the field only, so the mesh is the same either way.
+const FIELD_BAKE_MIN_MS=400;          // predicted one-core field time below this → no pool
+const FIELD_BAKE_LOAD_MS=120;         // script load + init per worker (they load in parallel)
+const FIELD_BAKE_GAIN=0.75;           // pool must cut the field time by at least a quarter
+// µs per field evaluation on this thread, from a deterministic sample of
+// main-lattice points of grid g (same coordinate arithmetic as weldBakeLayers).
+function sampleFieldUs(field, g){
+  const mn=g.min, s=g.s, n=g.n;
+  let seed=12345;
+  const pt=()=>{ seed=(Math.imul(seed,1103515245)+12345)>>>0; const i=seed%(n[0]+1);
+    seed=(Math.imul(seed,1103515245)+12345)>>>0; const j=seed%(n[1]+1);
+    seed=(Math.imul(seed,1103515245)+12345)>>>0; const k=seed%(n[2]+1);
+    return [mn[0]+s[0]*i, mn[1]+s[1]*j, mn[2]+s[2]*k]; };
+  for(let w=0;w<64;w++) field(pt());          // warm-up (lazy caches, JIT)
+  let cnt=0; const t0=performance.now(); let dt=0;
+  while(cnt<20000){ for(let b=0;b<64;b++) field(pt()); cnt+=64; dt=performance.now()-t0; if(cnt>=256&&dt>=8) break; }
+  return 1000*dt/cnt;
+}
 function fieldBakeCores(d){
   let c=+d.cores;
   if(!(c>=1)){ const hc=(self.navigator&&self.navigator.hardwareConcurrency)||2; c=hc-1; }
@@ -32,13 +56,21 @@ function fieldBakeCores(d){
 }
 
 // field: the direct callback (used for any point the cache misses).
+// opts.setupMs: how long the mesh worker took to build this field.
 // Resolves {fn, workers, ms, f32, stats} or null.
-async function prebakeExportField(d, field, min, max, edge, post){
+async function prebakeExportField(d, field, min, max, edge, post, opts){
   const g=weldGridDims(min, max, edge);
   const total=g.mainCount+g.offCount;
   let nW=Math.min(fieldBakeCores(d), g.layers);
   if(!g.ok || nW<2 || total<FIELD_BAKE_MIN_POINTS || total>FIELD_BAKE_MAX_POINTS) return null;
   if(typeof Worker==='undefined') return null;
+  const us=sampleFieldUs(field, g);
+  const serialMs=us*total/1000, setupMs=(opts&&opts.setupMs)||0;
+  const poolMs=setupMs*1.5+FIELD_BAKE_LOAD_MS+serialMs/nW;
+  if(serialMs<FIELD_BAKE_MIN_MS || poolMs>FIELD_BAKE_GAIN*serialMs){
+    if(post) post({type:'diag', diag:{fieldBakeSkip:{points:total, usPerPoint:+us.toFixed(3), serialMs:Math.round(serialMs), setupMs:Math.round(setupMs), poolMs:Math.round(poolMs), workers:nW}}});
+    return null;
+  }
   const spec={};
   for(const k of FIELD_BAKE_SPEC_KEYS) if(d[k]!==undefined) spec[k]=d[k];
   const perWorker=(spec.shapeSdfData?spec.shapeSdfData.byteLength:0)+(spec.huGridData?spec.huGridData.byteLength:0);

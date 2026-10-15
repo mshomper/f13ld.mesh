@@ -190,10 +190,47 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
     estTris=Math.round(500*wallFrac*cs/(edgeMm*edgeMm));
   }
   estTris=Math.max(1000, estTris);
-  // Empirical: ~0.12ms per triangle for the full export pipeline. Was 0.08
-  // (calibrated against fine-pass alone, 305k → ~25s); rc20 bumped to 0.12 to
-  // cover the coarse pass (~3% of fine) and meshopt simplify (~50% of fine)
-  // that actual exports also pay. Refine with new validation as needed.
-  const estSec=Math.max(1,Math.round(estTris*0.00012));
-  return{estTris,estSec};
+  // v0.11.0: time from the level-set grid size instead of 0.12 ms per
+  // triangle (which ignored the field cost and the multi-core bake). Grid
+  // points ≈ 2 × box volume / edge³ (main + offset lattice). Per point: the
+  // one-core mesher (EXPORT_MARCH_US) plus the family's field cost shared
+  // across the field-bake cores. Both triangles and time are then scaled by
+  // factors learned from finished exports on this computer (recordExportTiming),
+  // per family and per open cube / shape, so the estimate settles after an
+  // export or two.
+  const kind=(bbox&&cellSizeMm)?'shape':'cube';
+  const boxVol=kind==='shape'?(bbox.mxx-bbox.mnx)*(bbox.mxy-bbox.mny)*(bbox.mxz-bbox.mnz):1000;
+  const points=2*boxVol/Math.pow(edgeMm,3);
+  const hd=familyOf(recipe);
+  const isHU=!!(hd&&typeof hd.hyperuniform==='function'&&hd.hyperuniform(recipe));
+  const evalUs=isHU?WELD_EVAL_US_HU:((typeof WELD_EVAL_US!=='undefined'&&WELD_EVAL_US[recipe&&recipe.family])||10);
+  const cores=(typeof exportFieldCores==='function')?Math.min(15,exportFieldCores()):1;
+  const rawMs=points*(EXPORT_MARCH_US+evalUs/Math.max(1,cores>=2?cores:1))/1000;
+  const key=((recipe&&recipe.family)||'?')+(isHU?'-hu':'')+':'+kind;
+  const cal=exportCal(key);
+  const rawTris=estTris;
+  estTris=Math.max(1000,Math.round(rawTris*cal.n));
+  const estSec=Math.max(1,Math.round(rawMs*cal.t/1000));
+  return{estTris,estSec,est:{key,rawMs,rawTris,cal}};
+}
+// ── Learned export estimate (v0.11.0) ──────────────────────────────────
+const EXPORT_MARCH_US=2.0;                       // Manifold level set + simplify, per grid point, one core
+const EXPORT_CAL_KEY='f13ld.mesh.exportCal.v1';  // {"<family>:<cube|shape>": {t, n}}
+function _exportCalAll(){ try{ const o=JSON.parse(localStorage.getItem(EXPORT_CAL_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; } }
+function exportCal(key){
+  const c=_exportCalAll()[key]||{};
+  const ok=v=>(typeof v==='number'&&v>=0.05&&v<=20)?v:1;
+  return {t:ok(c.t), n:ok(c.n)};
+}
+// est: the .est of estimateMeshStats made when the export started; wallMs:
+// the mesh worker's time; tris: the exported triangle count. Each factor
+// moves halfway (in log terms) toward this computer's measured/modelled ratio.
+function recordExportTiming(est, wallMs, tris){
+  if(!est||!(est.rawMs>0)||!(wallMs>0)) return;
+  const clamp=v=>Math.min(20,Math.max(0.05,v));
+  const half=(old,ratio)=>+Math.exp(0.5*Math.log(old)+0.5*Math.log(clamp(ratio))).toFixed(3);
+  const next={t:half(est.cal.t, wallMs/est.rawMs), n:(tris>0&&est.rawTris>0)?half(est.cal.n, tris/est.rawTris):est.cal.n};
+  const all=_exportCalAll(); all[est.key]=next;
+  try{ localStorage.setItem(EXPORT_CAL_KEY, JSON.stringify(all)); }catch(_){}
+  console.log('[export] estimate calibration '+est.key, {estimatedMs:Math.round(est.rawMs*est.cal.t), actualMs:Math.round(wallMs), estimatedTris:Math.round(est.rawTris*est.cal.n), actualTris:tris, factors:next});
 }

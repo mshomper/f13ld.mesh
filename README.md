@@ -84,7 +84,7 @@ A quality report appears after each export: triangle count, domain size, edge le
 
 ### Speed (v0.11.0)
 
-Every export computes the lattice field on all but one of your cores before meshing (weld groups have done this since v0.9.3). The field is evaluated at exactly the points the mesher will ask for, so the file is the same as a one-core export, byte for byte. The mesher itself (Manifold's level set) still runs on one core; that is now the largest part of most exports. TPMS term formulas are built once per export instead of being re-read at every point.
+Every export computes the lattice field on all but one of your cores before meshing (weld groups have done this since v0.9.3). The field is evaluated at exactly the points the mesher will ask for, so the file is the same as a one-core export, byte for byte. The mesher itself (Manifold's level set) still runs on one core; that is now the largest part of most exports. TPMS term formulas are built once per export instead of being re-read at every point. When a field is too cheap for that to pay (it is timed first), it stays on one core. The report shows the split between field, mesh and simplify, and the time estimate learns from your own exports, per design type.
 
 ### Part prep (v0.10.0)
 

@@ -137,7 +137,9 @@ self.onmessage=async function(e){
     // Weld-group export carries no top-level recipe (each member has its own in
     // d.bodies); the assembly branch builds its own SDF, so skip this single-
     // recipe build to avoid buildSDF(undefined) dereferencing recipe._previewFieldMin.
+    const tSetup0=performance.now();
     const sdfFn=(d.bodies&&d.bodies.length)?null:buildSDF(d.recipe,shapeCtx);
+    let setupMs=performance.now()-tSetup0;   // v0.11.0: field pool sizing (m33)
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
     let fieldBake=null; // v0.11.0: {workers, ms, f32, stats} when the single-body field was pre-baked
@@ -228,7 +230,9 @@ self.onmessage=async function(e){
         self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion}});
       } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
+        const tShape0=performance.now();
         const shapeField=buildShapeExportField(d, sdfFn, m=>self.postMessage(m));
+        setupMs+=performance.now()-tShape0;
         const wrappedSDF=shapeField.fn;
       // ── Export two-pass: coarse → live bbox → fine ──────────────────────────
       // No boolean intersect — the max()-composed SDF already emits only the
@@ -293,7 +297,7 @@ self.onmessage=async function(e){
       // v0.11.0: evaluate the fine grid on every core first (m33-field-pool.js).
       const fineMin=[eInner.mnx,eInner.mny,eInner.mnz], fineMax=[eInner.mxx,eInner.mxy,eInner.mxz];
       let fineFn=wrappedSDF;
-      const fpb=await prebakeExportField(d, wrappedSDF, fineMin, fineMax, relEdgeMm, m=>self.postMessage(m));
+      const fpb=await prebakeExportField(d, wrappedSDF, fineMin, fineMax, relEdgeMm, m=>self.postMessage(m), {setupMs});
       if(fpb){ fineFn=fpb.fn; fieldBake=fpb; }
       self.postMessage({type:'progress',stage:lastStage+(fpb?' (field pre-baked on '+fpb.workers+' cores)':'')+'...'});
       const tLevelSet=performance.now();
@@ -311,7 +315,7 @@ self.onmessage=async function(e){
         // v0.11.0: evaluate the grid on every core first (m33-field-pool.js).
         const cubeFn=p=>-sdfFn(p);
         let lsFn=cubeFn;
-        const cpb=await prebakeExportField(d, cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld, m=>self.postMessage(m));
+        const cpb=await prebakeExportField(d, cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld, m=>self.postMessage(m), {setupMs});
         if(cpb){ lsFn=cpb.fn; fieldBake=cpb; }
         lastStage='level set ('+d.edgeWorld.toFixed(3)+' world edge'+(cpb?', field pre-baked on '+cpb.workers+' cores':'')+')';
         self.postMessage({type:'progress',stage:lastStage+'...'});

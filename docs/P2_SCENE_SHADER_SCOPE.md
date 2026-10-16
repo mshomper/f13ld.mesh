@@ -13,7 +13,8 @@
 | Q2 lattice on unselected parts | Always show the real lattice. |
 | Q3 selection cue | Soft lime outline (only with two or more parts on screen; not on the selected part's own surface or its fillets). |
 | Q4 recipe limit | Push it to what the GPU can do → no fixed limit: tiles, regions and shapes live in three atlases (3 texture units), up to one recipe per part (8). |
-| Weak GPU | Auto-switch: slow back-to-back frames with two or more lattices → parts not being edited draw as shells (toast once). |
+| Weak GPU | Auto-switch. After click-test (first version misfired on a 4070: it timed frame gaps, which include main-thread uploads, and stayed on): GPU timer while the view moves, ~1.5 s of slow frames arms it, shells only while moving, pill to turn it off. |
+| Join rules | Anchor / Graded stay solid-to-lattice only (as the export); greyed out in the weld editor when a weld lacks either kind. |
 
 Changes from the scope below, made while building: region sources keep the **P1 box** (AABB of the transformed part) instead of a bounding sphere + margin, because that bake sets the noise / grain range the export reads (`_previewFieldMin/Max`); a sphere box would change exports. Rotation, shift or cell size therefore re-bake an aperiodic part's region — in the background, with the old region drawing meanwhile (no hold). Shapes moved into an atlas too (sampler if-chains evaluated all eight textures in software rendering), and the shader has two variants (`single`, `multi`), compiled once each per quality. The part prep live estimate keeps its own CPU sampler, which already reads the selected member's source and transform.
 

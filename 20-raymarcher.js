@@ -56,7 +56,7 @@ MeshRaymarcher.prototype.setViewOption=function(key,on){
 };
 // Interaction state: soft shadows pause while orbiting/panning/zooming.
 MeshRaymarcher.prototype._beginInteract=function(){this._interacting=true;};
-MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._dirty=true;}};
+MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._slowSince=0;this._dirty=true;}};
 // v0.13.0: mm-distance grid {N, data} (shape / ghost / join SDF) as a texture,
 // cached by the grid OBJECT and uploaded on first use only. A grid's data must
 // not be rewritten in place (bodies replace sdfGrid / sdfGhost with new objects).
@@ -505,7 +505,7 @@ MeshRaymarcher.prototype.setJoins=function(members,bandMm){
   if(changed) this._dirty=true;
 };
 MeshRaymarcher.prototype.setQuality=function(q){
-  if(this._quality===q&&this.prog)return;
+  if(this._quality===q&&(this.prog||this._compiling))return;   // v0.14.0: never restart a running compile
   this._quality=q;
   this._submitShader();
 };
@@ -1046,6 +1046,7 @@ MeshRaymarcher.prototype.render=function(){
   if(this._compiling&&this._pending){
     var left=[], self=this;
     this._pending.forEach(function(q){
+      if(!gl.isProgram(q.prog)) return;   // deleted by a newer compile
       var ready=!self._khr||gl.getProgramParameter(q.prog,self._khr.COMPLETION_STATUS_KHR);
       if(!ready){ left.push(q); return; }
       if(gl.getProgramParameter(q.prog,gl.LINK_STATUS)){
@@ -1173,7 +1174,33 @@ MeshRaymarcher.prototype._drawFrame=function(){
   gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
   gl.enableVertexAttribArray(L.p);
   gl.vertexAttribPointer(L.p,2,gl.FLOAT,false,0,0);
+  // v0.14.0: GPU time of frames drawn while the view moves (weak-GPU fallback,
+  // 16-preview-scene.js). EXT_disjoint_timer_query_webgl2 where available.
+  var tq=this._timerExt; if(tq===undefined) tq=this._timerExt=gl.getExtension('EXT_disjoint_timer_query_webgl2')||null;
+  var q=null; if(tq&&this._interacting&&!this._tqBusy){ q=gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT,q); this._tqBusy=true; }
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  if(q){ gl.endQuery(tq.TIME_ELAPSED_EXT); (this._tqList||(this._tqList=[])).push(q); }
+};
+// Collect finished GPU timer queries into frame samples.
+MeshRaymarcher.prototype._pollTimers=function(){
+  var gl=this.gl, tq=this._timerExt, L=this._tqList; if(!tq||!L||!L.length) return;
+  var disjoint=gl.getParameter(tq.GPU_DISJOINT_EXT), keep=[];
+  for(var i=0;i<L.length;i++){
+    var q=L[i];
+    if(!gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE)){ keep.push(q); continue; }
+    var ns=gl.getQueryParameter(q,gl.QUERY_RESULT); gl.deleteQuery(q); this._tqBusy=false;
+    if(!disjoint) this._frameSample(ns/1e6);
+  }
+  this._tqList=keep;
+};
+// One frame-time sample (ms) while the view moves: _slowSince marks the start
+// of a run of slow frames (any fast frame ends it).
+MeshRaymarcher.prototype.SLOW_FRAME_MS=70;
+MeshRaymarcher.prototype._frameSample=function(ms){
+  this._frameEma=this._frameEma?this._frameEma*0.8+ms*0.2:ms; this._emaN=(this._emaN||0)+1;
+  if(!this._interacting){ this._slowSince=0; return; }
+  if(ms>this.SLOW_FRAME_MS){ if(!this._slowSince) this._slowSince=performance.now(); }
+  else this._slowSince=0;
 };
 MeshRaymarcher.prototype._startLoop=function(){
   var self=this;
@@ -1190,10 +1217,12 @@ MeshRaymarcher.prototype._startLoop=function(){
       var drew=self._dirty&&!!self.prog&&!!self._sceneGpu;
       self.render();
       if(drew){
-        // frame time of back-to-back dirty frames (dev overlay, weak-GPU fallback)
-        if(self._prevDirtyTs&&ts-self._prevDirtyTs<250){ var ft=ts-self._prevDirtyTs; self._frameEma=self._frameEma?self._frameEma*0.85+ft*0.15:ft; self._emaN=(self._emaN||0)+1; }
+        // Without a GPU timer: frame-to-frame gap, only while the view moves
+        // (other gaps include bakes and uploads on the main thread).
+        if(!self._timerExt&&self._interacting&&self._prevDirtyTs&&ts-self._prevDirtyTs<250) self._frameSample(ts-self._prevDirtyTs);
         self._prevDirtyTs=ts; self._lastDrawMs=performance.now()-t0;
       }
+      self._pollTimers();
     }
     requestAnimationFrame(loop);
   }

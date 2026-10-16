@@ -423,8 +423,12 @@ function rlEdPart(id){
 }
 
 function rlEdWeld(gid){
-  const g=weldGroups.get(gid), mem=groupMembers(gid), rule=weldGroupRule(gid);
-  const key=['w',gid,mem.join(','),rule,!!g.showJoins,g.colorHex||'',rlTopoKey()].join('|');
+  const g=weldGroups.get(gid), mem=groupMembers(gid);
+  // v0.14.0: Anchor and Graded act between a lattice part and a solid part
+  // (as the export); without both they are shown unavailable.
+  const mix=mem.some(id=>bodyFill(id)==='solid') && mem.some(id=>bodyFill(id)!=='solid');
+  const rule=mix?weldGroupRule(gid):'union';
+  const key=['w',gid,mem.join(','),rule,mix,!!g.showJoins,g.colorHex||'',rlTopoKey()].join('|');
   const opts=[];
   for(const o of bodyOrder){ if(!bodies.has(o)||mem.includes(o)) continue; const og=bodyGroup.get(o); if(og) continue; opts.push(['p:'+o,rlName(o)]); }
   for(const x of weldGroups.keys()) if(x!==gid) opts.push(['g:'+x,'Weld '+weldGroupLetter(x)+' (merge)']);
@@ -436,7 +440,8 @@ function rlEdWeld(gid){
   }).join('')+'</div>'+
     (opts.length?'<select data-sel="addTo" aria-label="Add a part or weld"><option value="">Add a part or weld…</option>'+opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('')+'</select>':'')+'</div>';
   h+='<div class="rl-erow"><label>Fillet radius <em>mm</em></label>'+rlSlider('w.fillet','Fillet radius',0,1.5,0.05,gid)+'</div>';
-  h+='<div class="rl-erow"><label>Join rule</label>'+rlSeg('rule',[['union','Union'],['anchor','Anchor'],['graded','Graded']], rule)+
+  h+='<div class="rl-erow"><label>Join rule</label>'+rlSeg('rule',[['union','Union'],['anchor','Anchor',!mix],['graded','Graded',!mix]], rule)+
+     (mix?'':rlHint('Anchor and Graded need a solid part and a lattice part in the weld.'))+
      rlHint(({union:'Plain union with the fillet above.',anchor:'The lattice runs into the solid by the depth below, so it bonds through the joint instead of touching at a face.',graded:'Lattice walls thicken toward the solid over the distance below.'})[rule])+'</div>';
   if(rule==='anchor') h+='<div class="rl-erow"><label>Anchor depth <em>mm</em></label>'+rlSlider('w.anchor','Anchor depth',0,2,0.1,gid)+'</div>';
   if(rule==='graded') h+='<div class="rl-erow"><label>Grade over <em>mm</em></label>'+rlSlider('w.grade','Grade distance',0.2,5,0.1,gid)+'</div>';

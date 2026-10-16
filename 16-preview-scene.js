@@ -31,7 +31,7 @@ const PSC={
   lastSig:'', ver:0,                 // signature of the committed scene; bumped when a bake lands
   pend:new Map(),                    // bake key -> promise (in flight)
   lastByBody:new Map(),              // bodyId -> {recipe, kind, src} last committed source
-  holding:false, lowDetail:false, lowDetailToast:false,
+  holding:false, lowDetail:false, slowGpu:false, fallbackOff:false,
   waiters:[], lastScene:null, lastBakeMs:null, commits:0, keyMemo:new WeakMap()
 };
 const SCENE_MAX_MEMBERS=8;
@@ -174,7 +174,6 @@ function buildPreviewScene(quality){
     const xf=_scXf(id), cell=_scCellMm(id);
     let fill={solid:0,lattice:1,skin:2}[bodyFill(id)]||0;
     let recipe=fill?_scRecipe(id):null; if(!recipe) fill=0;
-    if(fill && PSC.lowDetail && !sel.has(id) && id!==activeBodyId) fill=0;   // weak-GPU fallback
     const span=Math.max(b.bbox.mxx-b.bbox.mnx,b.bbox.mxy-b.bbox.mny,b.bbox.mxz-b.bbox.mnz);
     const vox=grid&&grid.N?span/grid.N:span/64;
     const skin=b.skinMm>0?b.skinMm:SKIN_DEFAULT_MM;
@@ -184,7 +183,11 @@ function buildPreviewScene(quality){
       src:-1, color:_hexToRGB(resolveBodyColor(id)), selected:!vis&&sel.has(id), group:groupIdx,
       padMm:(grp?(grp.filletMm||0)+(grp.rule===1?grp.anchorMm||0:0):0)+Math.abs(+xf.isoOffsetMm||0)+(fill===2?skin:0)+2*vox+0.25,
       nrmStep:desc.baseStep, shapeVoxMm:vox, hasShape:!!grid, bodyId:id, recipe};
-    if(!vis && m.fill && recipe){
+    // Weak-GPU fallback: parts not being edited draw as shells while the view
+    // moves; their sources stay in the scene so the atlases don't change.
+    const shell=PSC.lowDetail && !sel.has(id) && id!==activeBodyId;
+    if(!vis && m.fill && recipe && shell){ const nd=sceneSourceNeed(recipe, quality, b, cell, xf); nd.forActive=false; nd.bodyId=id; addNeed(nd); m.fill=0; }
+    else if(!vis && m.fill && recipe){
       const nd=sceneSourceNeed(recipe, quality, b, cell, xf);
       nd.forActive=(id===activeBodyId); nd.bodyId=id;
       m.src=addNeed(nd); m.need=nd;
@@ -292,22 +295,40 @@ function _scPill(){
   triPill.textContent=PSC.lastBakeMs!=null?('preview · '+PSC.lastBakeMs+'ms'):'preview · cached';
 }
 
+// -- Weak-GPU fallback --------------------------------------------------
+// Armed after about 1.5 s of slow GPU frames (rm.SLOW_FRAME_MS) while the view
+// moves with two or more lattices drawn; then, while the view moves, parts
+// that aren't being edited draw as shells and full detail returns as soon as it
+// stops. The "Simplified while moving" pill turns it off for the session. Off
+// under automation (software-rendered test browsers are always slow).
+function _scFallback(){
+  if(PSC.fallbackOff || (typeof navigator!=='undefined'&&navigator.webdriver)){ PSC.lowDetail=false; return; }
+  if(!PSC.slowGpu && rm._interacting && rm._slowSince && performance.now()-rm._slowSince>1500 && PSC.lastScene &&
+     PSC.lastScene.members.filter(m=>!m.vis&&m.fill).length>=2){ PSC.slowGpu=true; _scPillFallback(); }
+  PSC.lowDetail=PSC.slowGpu && !!rm._interacting;
+}
+function _scPillFallback(){
+  const area=document.getElementById('previewArea'); if(!area) return;
+  let b=document.getElementById('scSimplified');
+  if(!PSC.slowGpu || PSC.fallbackOff){ if(b) b.remove(); return; }
+  if(b) return;
+  b=document.createElement('button'); b.id='scSimplified'; b.type='button';
+  b.title='Parts you are not editing show as shells while the view moves. Click for full detail.';
+  b.textContent='Simplified while moving · show full detail';
+  b.style.cssText='position:absolute;right:12px;bottom:12px;z-index:30;font:13px/1.2 "IBM Plex Mono",monospace;color:#c8f542;background:rgba(6,8,12,.82);border:1px solid rgba(200,245,66,.5);border-radius:999px;padding:6px 12px;cursor:pointer';
+  b.onclick=()=>{ PSC.fallbackOff=true; PSC.lowDetail=false; _scPillFallback(); previewSceneChanged(); };
+  area.appendChild(b);
+}
+
 // -- Sync (rm._sceneProvider) ----------------------------------------------
 function previewSceneSync(){
   if(!rm) return;
   const q=rm._quality||'draft';
+  _scFallback();
   const sig=previewSceneSig(q);
   if(sig===PSC.lastSig){
     if(rm.isHeld && rm.isHeld() && !PSC.holding) rm.releaseView();
     return;
-  }
-  // Weak-GPU fallback: slow back-to-back frames with several lattices drawn.
-  // (Not under automation: software-rendered test browsers are always slow.)
-  if(!PSC.lowDetail && !(typeof navigator!=='undefined'&&navigator.webdriver) && rm._emaN>24 && rm._frameEma>90 && PSC.lastScene &&
-     PSC.lastScene.members.filter(m=>!m.vis&&m.fill).length>=2){
-    PSC.lowDetail=true;
-    if(!PSC.lowDetailToast && typeof meshToast==='function'){ PSC.lowDetailToast=true; meshToast('Simplified preview: parts you are not editing show as shells'); }
-    return previewSceneSync();
   }
   const scene=buildPreviewScene(q);
   if(!scene){ PSC.lastSig=sig; _scSettle(); return; }
@@ -351,7 +372,7 @@ window.F13LD_scene={
     groups:PSC.lastScene?PSC.lastScene.groups.slice():[], sources:PSC.lastScene?PSC.lastScene.sources.map(s=>({key:s.key,kind:s.kind,N:s.res.N})):[],
     frameMs:rm&&rm._frameEma?Math.round(rm._frameEma*10)/10:null, compileMs:rm?rm.compileMs:null,
     atlasMB:rm&&rm.atlasBytes?Math.round(rm.atlasBytes()/1048576*10)/10:0}),
-  setLowDetail:on=>{ PSC.lowDetail=!!on; previewSceneChanged(); },
+  setSlowGpu:on=>{ PSC.slowGpu=!!on; PSC.fallbackOff=false; _scPillFallback(); previewSceneChanged(); },
   scene:()=>(previewSceneSync(), PSC.lastScene)
 };
 

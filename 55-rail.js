@@ -45,6 +45,7 @@ const railFold={rec:false, parts:false}; // card folds
 const railFoldedWelds=new Set();         // folded weld cards
 let railDrag=null;                       // {kind:'part'|'recipe', id}
 const RL_LONGPRESS_MS=450;
+const RL_CELL_MIN_MM=0.05;               // cell size floor (number box has no upper bound)
 
 const $rl=id=>document.getElementById(id);
 function rlShort(n){ return String(n||'shape').replace(/\.(stl|obj|3mf|step|stp|iges|igs)$/i,''); }
@@ -199,15 +200,21 @@ function rlVisInfo(vis){
   if(vis===VIS_GHOST)  return {icon:'ghost',  title:'Ghost (translucent) · click to hide it'};
   return {icon:'eye', title:'Solid · click to make it a ghost'};
 }
+// One state for a whole weld: the members' common visibility, or null when they differ.
+function rlGroupVis(gid){
+  const vs=groupMembers(gid).map(id=>{ const b=bodies.get(id); return (b&&b.visibility)||VIS_DEFAULT; });
+  return vs.length && vs.every(v=>v===vs[0]) ? vs[0] : null;
+}
 function rlPartRow(id, gid, sel){
   const b=bodies.get(id); if(!b) return '';
   const on=sel&&sel.t==='part'&&sel.id===id, tk=railTicked.has(id);
   const vis=rlVisInfo(b.visibility||VIS_DEFAULT);
   const mutedVis=(id===activeBodyId)?' rl-muted':'';
-  return '<div class="rl-part'+(on?' on':'')+(gid?' member':'')+(tk?' tk':'')+'" data-body-id="'+esc(id)+'" draggable="true" tabindex="0" role="button" aria-pressed="'+(on?'true':'false')+'">'+
+  const hid=(b.visibility||VIS_DEFAULT)===VIS_HIDDEN;
+  return '<div class="rl-part'+(on?' on':'')+(gid?' member':'')+(tk?' tk':'')+(hid?' hid':'')+'" data-body-id="'+esc(id)+'" draggable="true" tabindex="0" role="button" aria-pressed="'+(on?'true':'false')+'">'+
     '<button type="button" class="rl-ck'+(tk?' on':'')+'" data-act="tick" title="Tick" aria-label="Tick '+esc(rlName(id))+'">'+(tk?rlIc('check',11):'')+'</button>'+
     '<span class="rl-fsw" style="background:'+esc(resolveBodyColor(id))+'"></span>'+
-    '<div class="rl-pm"><div class="rl-nm">'+esc(rlName(id))+'</div><div class="rl-as">'+esc(rlFillText(id))+'</div></div>'+
+    '<div class="rl-pm"><div class="rl-nm">'+esc(rlName(id))+'</div><div class="rl-as">'+esc(rlFillText(id))+(gid&&hid?' · not exported':'')+'</div></div>'+
     '<div class="rl-prb">'+
       (gid?'<button type="button" class="rl-ibtn" data-act="leave" title="Take out of Weld '+weldGroupLetter(gid)+'" aria-label="Take out of weld">'+rlIc('unlink')+'</button>':'')+
       '<button type="button" class="rl-ibtn'+mutedVis+'" data-act="vis" title="'+vis.title+'" aria-label="Visibility">'+rlIc(vis.icon)+'</button>'+
@@ -217,12 +224,18 @@ function rlWeldCard(gid, sel){
   const g=weldGroups.get(gid), mem=groupMembers(gid);
   const on=sel&&sel.t==='weld'&&sel.id===gid, tk=railTicked.has('w:'+gid), folded=railFoldedWelds.has(gid);
   const rule=weldGroupRule(gid);
+  const gv=rlGroupVis(gid), nHid=mem.filter(id=>(bodies.get(id).visibility||VIS_DEFAULT)===VIS_HIDDEN).length;
+  const gvi=gv?rlVisInfo(gv):{icon:'eye', title:'Parts differ · click to show them all solid'};
+  const gvTitle=gvi.title.replace(/ it /g,' the weld ').replace(/it$/,'the weld');
   return '<div class="rl-wgrp'+(on?' on':'')+(folded?' folded':'')+(tk?' tk':'')+'" data-gid="'+esc(gid)+'">'+
     '<div class="rl-whead" data-gid="'+esc(gid)+'" tabindex="0" role="button" aria-pressed="'+(on?'true':'false')+'">'+
       '<button type="button" class="rl-fold" data-act="foldWeld" title="'+(folded?'Unfold':'Fold')+'" aria-label="Fold weld">'+rlIc('chev')+'</button>'+
       '<span class="rl-wtile">'+rlIc('link',14)+'<i style="background:'+weldGroupColor(gid)+'"></i></span>'+
-      '<div class="rl-wm"><div class="rl-wname">Weld '+weldGroupLetter(gid)+'</div><div class="rl-wsub">'+mem.length+' parts · fillet '+rlNum(g.filletMm)+' mm · '+rule+'</div></div>'+
-      '<button type="button" class="rl-ck'+(tk?' on':'')+'" data-act="tick" title="Tick" aria-label="Tick Weld '+weldGroupLetter(gid)+'">'+(tk?rlIc('check',11):'')+'</button>'+
+      '<div class="rl-wm"><div class="rl-wname">Weld '+weldGroupLetter(gid)+'</div><div class="rl-wsub">'+mem.length+' parts · fillet '+rlNum(g.filletMm)+' mm · '+rule+(nHid?' · '+nHid+' hidden':'')+'</div></div>'+
+      '<div class="rl-prb">'+
+        '<button type="button" class="rl-ibtn'+(gv?'':' rl-muted')+'" data-act="vis" title="'+esc(gvTitle)+'" aria-label="Weld visibility">'+rlIc(gvi.icon)+'</button>'+
+        '<button type="button" class="rl-ck'+(tk?' on':'')+'" data-act="tick" title="Tick" aria-label="Tick Weld '+weldGroupLetter(gid)+'">'+(tk?rlIc('check',11):'')+'</button>'+
+      '</div>'+
     '</div>'+
     '<div class="rl-wbody">'+mem.map(id=>rlPartRow(id, gid, sel)).join('')+'</div></div>';
 }
@@ -318,11 +331,26 @@ function rlGet(k, gid){
     default: return structureTransform[k]||0;
   }
 }
-function rlSlider(k, label, min, max, step, gid, sym){
+// Slider + number box. The slider only covers min..max; the number box has no
+// bounds, so a typed value beyond the slider still applies. opts.noRange drops
+// the slider (number box alone).
+function rlSlider(k, label, min, max, step, gid, sym, opts){
+  opts=opts||{};
   const v=rlGet(k, gid);
+  const num='<input type="number" class="rl-num" data-k="'+k+'" step="'+step+'" value="'+rlNum(v)+'" aria-label="'+esc(label)+(opts.noRange?'':' value')+'">';
+  if(opts.noRange) return '<div class="rl-sl numonly">'+num+'</div>';
   return '<div class="rl-sl'+(sym?'':' one')+'">'+(sym?'<span>'+sym+'</span>':'')+
-    '<input type="range" data-k="'+k+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+rlNum(v)+'" aria-label="'+esc(label)+'">'+
-    '<input type="number" class="rl-num" data-k="'+k+'" step="'+step+'" value="'+rlNum(v)+'" aria-label="'+esc(label)+' value"></div>';
+    '<input type="range" data-k="'+k+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+rlNum(v)+'" aria-label="'+esc(label)+'">'+num+'</div>';
+}
+// The three shift sliders: +-one structural period per axis (mm), step period/100.
+function rlShiftSliders(r, cell){
+  const per=structurePeriodMm(r, cell);
+  return ['X','Y','Z'].map((a,i)=>{
+    const p=per[i], st=p/100;
+    return '<div class="rl-sl" data-period="'+a+'"><span>'+a+'</span>'+
+      '<input type="range" data-k="spatialOffsetMm'+a+'" min="'+(-p)+'" max="'+p+'" step="'+st+'" value="'+rlNum(rlGet('spatialOffsetMm'+a))+'" aria-label="Shift '+a+'">'+
+      '<input type="number" class="rl-num" data-k="spatialOffsetMm'+a+'" step="'+st+'" value="'+rlNum(rlGet('spatialOffsetMm'+a))+'" aria-label="Shift '+a+' value"></div>';
+  }).join('');
 }
 function rlSeg(name, items, cur){
   return '<div class="rl-seg full" data-seg="'+name+'">'+items.map(it=>'<button type="button" data-act="'+name+'" data-v="'+it[0]+'"'+(it[0]===cur?' class="on"':'')+(it[2]?' disabled':'')+'>'+it[1]+'</button>').join('')+'</div>';
@@ -360,11 +388,11 @@ function rlEdPart(id){
   }else{
     h+='<div class="rl-erow"><label>Recipe</label><select data-sel="recipe" aria-label="Recipe">'+recipeOrder.filter(x=>recipes.has(x)).map(x=>'<option value="'+esc(x)+'"'+(x===assignments.get(id)?' selected':'')+'>'+esc(rlRecipeLabel(recipes.get(x)))+'</option>').join('')+'</select></div>';
     if(fill==='skin') h+='<div class="rl-erow"><label>Skin thickness <em>mm</em></label>'+rlSlider('skin','Skin thickness',0.1,2,0.05)+'</div>';
-    const cell=rlGet('cell'), cmax=Math.max(8, Math.ceil(cell*1.5)), sh=Math.max(0.5, Math.round(cell*100)/100), shs=sh>=2?0.05:0.01;
-    h+='<div class="rl-erow"><label>Cell size <em>mm</em></label>'+rlSlider('cell','Cell size',0.2,cmax,0.1)+'</div>'+
-       '<div class="rl-erow"><label>Wall offset <em>mm</em></label>'+rlSlider('isoOffsetMm','Wall offset',-0.5,0.5,0.01)+'</div>'+
+    const cell=rlGet('cell');
+    h+='<div class="rl-erow"><label>Cell size <em>mm</em></label>'+rlSlider('cell','Cell size',0,0,0.1,null,null,{noRange:true})+'</div>'+
+       '<div class="rl-erow"><label>Wall offset <em>mm</em></label>'+rlSlider('isoOffsetMm','Wall offset',-2,2,0.01)+'</div>'+
        '<div class="rl-erow"><label>Rotation <em>deg</em></label>'+rlSlider('rotXDeg','Rotate X',-180,180,1,null,'X')+rlSlider('rotYDeg','Rotate Y',-180,180,1,null,'Y')+rlSlider('rotZDeg','Rotate Z',-180,180,1,null,'Z')+'</div>'+
-       '<div class="rl-erow"><label>Shift <em>mm</em></label>'+rlSlider('spatialOffsetMmX','Shift X',-sh,sh,shs,null,'X')+rlSlider('spatialOffsetMmY','Shift Y',-sh,sh,shs,null,'Y')+rlSlider('spatialOffsetMmZ','Shift Z',-sh,sh,shs,null,'Z')+
+       '<div class="rl-erow"><label>Shift <em>mm · one period each way</em></label>'+rlShiftSliders(r, cell)+
          '<button type="button" class="rl-sbtn rl-reset" data-act="xreset">'+rlIc('undo')+'Reset rotation, shift and wall offset</button></div>';
     if(trimOk){
       h+='<div class="rl-erow"><label>Trim to nodes</label><div class="rl-pair"><button type="button" class="rl-sw'+(trimOn?' on':'')+'" data-act="trim" aria-label="Trim struts to nodes" aria-pressed="'+trimOn+'"></button>'+
@@ -417,6 +445,18 @@ function renderRailEditor(){
 }
 // Same structure: refresh the numbers in place (never rebuild under a finger).
 function rlEdSync(host, sel){
+  if(sel.t==='part'){                              // a new cell size or recipe moves the shift range
+    const b=bodies.get(sel.id), r=b&&recipes.get(assignments.get(sel.id));
+    if(r&&bodyFill(sel.id)!=='solid'){
+      const per=structurePeriodMm(r, rlGet('cell'));
+      ['X','Y','Z'].forEach((a,i)=>{
+        const rg=host.querySelector('input[type=range][data-k="spatialOffsetMm'+a+'"]'), nb=host.querySelector('input.rl-num[data-k="spatialOffsetMm'+a+'"]');
+        if(!rg) return;
+        const p=per[i], st=p/100;
+        if(rg.max!==String(p)){ rg.min=-p; rg.max=p; rg.step=st; if(nb) nb.step=st; rg.value=rlNum(rlGet('spatialOffsetMm'+a)); }
+      });
+    }
+  }
   for(const el of host.querySelectorAll('input[data-k]')){
     if(el===document.activeElement) continue;
     const v=rlNum(rlGet(el.dataset.k, sel.t==='weld'?sel.id:null));
@@ -561,6 +601,11 @@ function rlInit(){
       const f=$rl('shapeInput'); if(f) f.click(); return;
     }
     if(act==='leave' && row){ rlLeave(row.dataset.bodyId); return; }
+    if(act==='vis' && head && !row){                                 // the weld card's own eye: every member
+      const gid=head.dataset.gid, cur=rlGroupVis(gid);
+      setGroupVisibility(gid, cur===VIS_INACTIVE_SOLID ? VIS_GHOST : cur===VIS_GHOST ? VIS_HIDDEN : VIS_INACTIVE_SOLID);
+      return;
+    }
     if(act==='vis' && row){
       const id=row.dataset.bodyId, b=bodies.get(id); if(!b) return;
       const cur=b.visibility||VIS_DEFAULT;
@@ -652,10 +697,16 @@ function rlInit(){
   ed.addEventListener('input',e=>{
     const el=e.target, k=el.dataset&&el.dataset.k; if(!k) return;
     const v=parseFloat(el.value); if(isNaN(v)) return;
+    if(k==='cell' && v<RL_CELL_MIN_MM) return;       // mid-typing ("0." on the way to 0.5); the change event clamps
     for(const tw of ed.querySelectorAll('[data-k="'+k+'"]')) if(tw!==el && el.type!==tw.type) tw.value=el.value;
     rlEdit(k, v);
   });
   ed.addEventListener('change',e=>{
+    const kk=e.target.dataset&&e.target.dataset.k;
+    if(kk==='cell'){                                  // cell size: any value above zero, never below the floor
+      let v=parseFloat(e.target.value); if(isNaN(v)||v<RL_CELL_MIN_MM) v=isNaN(v)?rlGet('cell'):RL_CELL_MIN_MM;
+      e.target.value=rlNum(v); rlEdit('cell', v); return;
+    }
     const el=e.target, sel=el.dataset&&el.dataset.sel; if(!sel) return;
     const s=railSel(); if(!s) return;
     const v=el.value;

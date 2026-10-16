@@ -21,22 +21,25 @@ body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
 /* header */
 #hdr .fh-tool-name{color:var(--mesh)}
 #hdr .fh-right{display:flex;align-items:center;gap:8px;min-width:0}
-.fh-act{display:inline-flex;align-items:center;gap:6px;font:600 11px 'Exo 2',sans-serif;letter-spacing:.04em;padding:5px 12px;border-radius:20px;border:.5px solid #1d2030;background:transparent;color:#8a8fa8;cursor:pointer;white-space:nowrap}
+.fh-act{display:inline-flex;align-items:center;gap:6px;font:600 12.5px 'Exo 2',sans-serif;letter-spacing:.03em;padding:6px 13px;border-radius:20px;border:.5px solid #1d2030;background:transparent;color:#8a8fa8;cursor:pointer;white-space:nowrap}
 .fh-act:hover{color:var(--mesh);border-color:var(--mesh)}
 .fh-act svg{flex:none}
 #statusPill{gap:6px;padding:3px 10px 3px 6px}
 #statusPill .mdot{display:none}
 #statusPill .st-wave{transform-origin:50% 50%}
-#statusPill.busy .st-wave{animation:stRipple 1.1s ease-in-out infinite}
+#statusPill.busy .st-h{animation:stRipple 1.1s ease-in-out infinite}
+#statusPill.busy .st-v{animation:stRippleV 1.1s ease-in-out infinite .28s}
 @keyframes stRipple{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+@keyframes stRippleV{0%,100%{transform:translateX(0)}50%{transform:translateX(9px)}}
 @media (prefers-reduced-motion:reduce){#statusPill.busy .st-wave{animation:none}}
+#statusPill .st-mark{flex:none}
 /* recipe view = column: view strip, work area, progress, dock */
 #recipeView{flex-direction:column;margin:0;gap:0;position:relative}
 #workArea{flex:1;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr) 280px;gap:12px;padding:12px 14px}
 #rail,#inspector{min-height:0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;scrollbar-width:thin}
 #previewArea{min-height:0}
 #legacyHold{display:none}
-#toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:#141725;border:1px solid var(--mesh-ring);color:var(--t1);font:500 12px 'Exo 2',sans-serif;padding:8px 14px;border-radius:9px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
+#toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:#141725;border:1px solid var(--mesh-ring);color:var(--t1);font:500 13px 'Exo 2',sans-serif;padding:9px 16px;border-radius:9px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
 #toast.on{opacity:1}
 /* phone: one column, viewport first, dock stays at the bottom */
 @media (max-width:860px){
@@ -54,6 +57,6 @@ body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
 #dropzone{margin:14px;border-color:var(--hair2);background:radial-gradient(ellipse at 50% 40%,rgba(107,10,76,.10),transparent 60%)}
 #dropzone:hover,#dropzone.dragover{border-color:var(--mesh);background:radial-gradient(ellipse at 50% 40%,rgba(107,10,76,.22),transparent 65%)}
 .dz-icon{font-size:0;opacity:1;color:var(--mesh);margin-bottom:14px}
-.dz-main{font:600 15px 'Exo 2',sans-serif;color:var(--t1)}
-.dz-sub{font:500 11px var(--mono);color:var(--t3)}
+.dz-main{font:600 16px 'Exo 2',sans-serif;color:var(--t1)}
+.dz-sub{font:500 12.5px var(--mono);color:var(--t3)}
 .dz-pick{color:var(--mesh);font-weight:600}

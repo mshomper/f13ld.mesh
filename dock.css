@@ -4,38 +4,38 @@
    any width: tags wrap or hide, the drawer grid collapses to one column. */
 
 /* ── export progress strip ─────────────────────────────────────────── */
-#progRow{display:none;position:relative;align-items:center;gap:14px;padding:6px 16px;background:var(--s2);border-top:1px solid var(--hair);font:500 11px var(--mono);flex-shrink:0;min-width:0}
+#progRow{display:none;position:relative;align-items:center;gap:14px;padding:7px 16px;background:var(--s2);border-top:1px solid var(--hair);font:500 12.5px var(--mono);flex-shrink:0;min-width:0}
 #progRow.on{display:flex}
 .pg-bar{position:absolute;left:0;right:0;top:-1px;height:2px;background:transparent;overflow:hidden}
 .pg-fill{height:100%;width:0;background:linear-gradient(90deg,var(--brand-green),var(--neon));transition:width .3s}
 .pg-st{flex:1;min-width:0;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pg-st b{color:var(--mesh);font-weight:600}
-.pg-eta,#progRow #expElapsed{color:var(--t3);white-space:nowrap;flex:none;margin:0;font:500 11px var(--mono)}
-.pg-cancel{flex:none;border:1px solid var(--hair2);background:transparent;color:var(--t2);border-radius:7px;font:600 11px 'Exo 2',sans-serif;padding:3px 10px;cursor:pointer}
+.pg-eta,#progRow #expElapsed{color:var(--t3);white-space:nowrap;flex:none;margin:0;font:500 12.5px var(--mono)}
+.pg-cancel{flex:none;border:1px solid var(--hair2);background:transparent;color:var(--t2);border-radius:7px;font:600 12.5px 'Exo 2',sans-serif;padding:4px 12px;cursor:pointer}
 .pg-cancel:hover{color:var(--bad);border-color:var(--bad)}
 
 /* ── dock ──────────────────────────────────────────────────────────── */
 #dockWrap{position:relative;flex-shrink:0;min-width:0}
-#dock{display:flex;align-items:center;gap:12px;padding:0 16px;height:50px;background:var(--s1);border-top:1px solid var(--hair);min-width:0}
+#dock{display:flex;align-items:center;gap:12px;padding:0 16px;height:54px;background:var(--s1);border-top:1px solid var(--hair);min-width:0}
 #dock button{font-family:inherit}
 #dock button:focus-visible,#drawer button:focus-visible,.ic-fold:focus-visible,.pg-cancel:focus-visible{outline:2px solid var(--mesh-ring);outline-offset:1px}
-.dk-cfg{height:30px;display:flex;align-items:center;gap:8px;padding:0 11px;border-radius:8px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 12px 'Exo 2',sans-serif;cursor:pointer;flex:none}
+.dk-cfg{height:34px;display:flex;align-items:center;gap:8px;padding:0 13px;border-radius:8px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 13px 'Exo 2',sans-serif;cursor:pointer;flex:none}
 .dk-cfg:hover{border-color:var(--mesh-ring)}
 .dk-cfg.open{color:var(--mesh-tile);border-color:var(--mesh-ring);background:var(--mesh-soft)}
 .dk-chev{transition:transform .15s}
 .dk-cfg.open .dk-chev{transform:rotate(180deg)}
-.dk-tags{flex:1;min-width:0;display:flex;gap:6px;flex-wrap:wrap;max-height:30px;overflow:hidden}
-.dk-tag{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 9px 0 5px;border-radius:7px;background:var(--s1);border:1px solid var(--hair);font:500 11px var(--mono);color:var(--t2);white-space:nowrap;cursor:pointer;min-width:0;max-width:100%}
+.dk-tags{flex:1;min-width:0;display:flex;gap:6px;flex-wrap:wrap;max-height:32px;overflow:hidden}
+.dk-tag{height:32px;display:inline-flex;align-items:center;gap:7px;padding:0 10px 0 5px;border-radius:7px;background:var(--s1);border:1px solid var(--hair);font:500 12.5px var(--mono);color:var(--t2);white-space:nowrap;cursor:pointer;min-width:0;max-width:100%}
 .dk-tag:hover{border-color:var(--hair2);color:var(--t1)}
 .dk-tag.dk-static{cursor:default}
-.dk-tag b{font:600 11.5px 'Exo 2',sans-serif;color:var(--t1);overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:16ch}
+.dk-tag b{font:600 13px 'Exo 2',sans-serif;color:var(--t1);overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:16ch}
 .dk-tag>span:last-child{overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:22ch}
-.dk-ti{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;background:var(--mesh-soft);border:1px solid var(--mesh-ring);color:var(--mesh-ink)}
-.dk-meta{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:6px;font:500 11px var(--mono);color:var(--t2);white-space:nowrap;overflow:hidden}
+.dk-ti{flex:none;width:22px;height:22px;border-radius:5px;display:grid;place-items:center;background:var(--mesh-soft);border:1px solid var(--mesh-ring);color:var(--mesh-ink)}
+.dk-meta{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:6px;font:500 12.5px var(--mono);color:var(--t2);white-space:nowrap;overflow:hidden}
 .dk-meta b{color:var(--t1);font-weight:600}
 .dk-meta i{display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--t3)}
 /* #dock #expBtn beats the legacy #expBtn rules in mesh.css */
-#dock #expBtn.dk-run{flex:none;width:auto;height:32px;margin:0;padding:0 18px;border-radius:8px;border:0;background:var(--mesh-deep);color:var(--mesh-tile);box-shadow:inset 0 0 0 1px var(--mesh-ring);font:700 12px 'Exo 2',sans-serif;letter-spacing:.06em;cursor:pointer;min-width:130px;display:inline-flex;align-items:center;justify-content:center;gap:8px;overflow:hidden;transition:background .15s}
+#dock #expBtn.dk-run{flex:none;width:auto;height:36px;margin:0;padding:0 20px;border-radius:8px;border:0;background:var(--mesh-deep);color:var(--mesh-tile);box-shadow:inset 0 0 0 1px var(--mesh-ring);font:700 13px 'Exo 2',sans-serif;letter-spacing:.06em;cursor:pointer;min-width:140px;display:inline-flex;align-items:center;justify-content:center;gap:8px;overflow:hidden;transition:background .15s}
 #dock #expBtn.dk-run::after{display:none}
 /* drawn icon on the Export button; a mask so the label can be rewritten with textContent */
 #dock #expBtn.dk-run::before{content:"";width:15px;height:15px;flex:none;background:currentColor;
@@ -49,57 +49,58 @@
 
 /* ── Configure drawer ──────────────────────────────────────────────── */
 #drawer{display:none;position:absolute;left:0;right:0;bottom:100%;background:var(--s2);border-top:1px solid var(--hair2);box-shadow:0 -18px 40px rgba(0,0,0,.5);z-index:20;max-height:62vh;overflow-y:auto;overflow-x:hidden;min-width:0}
-#drawer.open{display:grid;grid-template-columns:210px minmax(0,1fr)}
+#drawer.open{display:grid;grid-template-columns:230px minmax(0,1fr)}
 .dr-tabs{border-right:1px solid var(--hair);padding:8px;display:flex;flex-direction:column;gap:2px}
-.dr-tab{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:7px;cursor:pointer;user-select:none;border:0;background:transparent;color:var(--t2);text-align:left;font-family:inherit;min-width:0}
+.dr-tab{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer;user-select:none;border:0;background:transparent;color:var(--t2);text-align:left;font-family:inherit;min-width:0}
 .dr-tab:hover{background:rgba(255,255,255,.03)}
 .dr-tab.on{background:var(--s3);box-shadow:inset 2px 0 0 var(--mesh);color:var(--mesh-ink)}
 .dr-tab svg{flex:none}
-.dr-nm{flex:1;font:500 12px 'Exo 2',sans-serif;color:var(--t1)}
-.dr-mv{font:500 10px var(--mono);color:var(--t3);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dr-nm{flex:1;font:500 13px 'Exo 2',sans-serif;color:var(--t1)}
+.dr-mv{font:500 12px var(--mono);color:var(--t3);max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dr-panes{min-width:0}
 .dr-pane{display:none;padding:12px 18px 16px;min-width:0}
 .dr-pane.on{display:block}
 .dr-ph{margin-bottom:12px}
-.dr-pt{font:600 14px 'Exo 2',sans-serif;color:var(--t1)}
-.dr-ps{font-size:11px;color:var(--t3)}
-.dr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px 24px}
+.dr-pt{font:600 14.5px 'Exo 2',sans-serif;color:var(--t1)}
+.dr-ps{font-size:12.5px;color:var(--t3)}
+.dr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px 24px}
 .dr-f{display:flex;flex-direction:column;gap:6px;min-width:0}
 .dr-f.dr-wide{grid-column:1/-1}
 @media (min-width:861px){.dr-f.dr-span2{grid-column:span 2}}
 .dr-f.dr-off{opacity:.6}
-.dr-f>label{font:600 9.5px var(--mono);color:var(--sec);text-transform:uppercase;letter-spacing:.14em}
-.dr-hint{font-size:10.5px;color:var(--t3);line-height:1.45;overflow-wrap:anywhere}
-.dr-file{font:500 11px var(--mono);color:var(--t1);overflow-wrap:anywhere;line-height:1.5}
-#drawer #expEstimate.dr-est{font:500 11px var(--mono);color:var(--t2);margin:0;min-height:0;letter-spacing:0;line-height:1.5;overflow-wrap:anywhere}
-.dr-sel,.dr-num{height:28px;background:var(--s1);border:1px solid var(--hair);border-radius:7px;color:var(--t1);font:500 12px 'Exo 2',sans-serif;padding:0 8px;min-width:0;max-width:100%}
+.dr-f>label{font:600 12px var(--mono);color:var(--sec);text-transform:uppercase;letter-spacing:.09em}
+.dr-hint{font-size:12.5px;color:var(--t3);line-height:1.45;overflow-wrap:anywhere}
+.dr-file{font:500 13px var(--mono);color:var(--t1);overflow-wrap:anywhere;line-height:1.5}
+#drawer #expEstimate.dr-est{font:500 13px var(--mono);color:var(--t2);margin:0;min-height:0;letter-spacing:0;line-height:1.5;overflow-wrap:anywhere}
+.dr-sel,.dr-num{height:32px;background:var(--s1);border:1px solid var(--hair);border-radius:7px;color:var(--t1);font:500 13px 'Exo 2',sans-serif;padding:0 9px;min-width:0;max-width:100%}
 .dr-sel:hover,.dr-num:hover{border-color:var(--hair2)}
 .dr-sel:focus-visible,.dr-num:focus-visible{outline:2px solid var(--mesh-ring);outline-offset:1px}
-.dr-num{width:84px;font:500 11px var(--mono)}
+.dr-num{width:96px;font:500 13px var(--mono)}
 .dr-pair{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.dr-pair>span{font:500 11px var(--mono);color:var(--t3)}
+.dr-pair>span{font:500 12.5px var(--mono);color:var(--t3)}
 .dr-range{flex:1 1 120px;min-width:0;max-width:220px;accent-color:var(--mesh)}
 .dr-chips{display:flex;gap:5px;flex-wrap:wrap}
-.dr-chip{min-height:26px;padding:2px 10px;border-radius:13px;border:1px solid var(--hair2);background:transparent;color:var(--t2);font:500 11px var(--mono);cursor:pointer;display:inline-flex;align-items:baseline;gap:6px;max-width:100%}
+.dr-chip{min-height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--hair2);background:transparent;color:var(--t2);font:500 13px/1 var(--mono);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;max-width:100%}
+.dr-chip>span,.dr-chip>small{display:block;line-height:1}
 .dr-chip:hover{border-color:var(--mesh-ring)}
 .dr-chip.on{color:var(--mesh-tile);border-color:var(--mesh-ring);background:var(--mesh-soft)}
-.dr-chip small{font-size:10px;color:var(--t3)}
+.dr-chip small{font-size:12px;color:var(--t3)}
 .dr-chip.on small{color:var(--mesh-ink)}
-.dr-btn{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 12px;border-radius:8px;border:1px solid var(--hair2);background:var(--s1);color:var(--t2);font:600 11.5px 'Exo 2',sans-serif;cursor:pointer}
+.dr-btn{height:32px;display:inline-flex;align-items:center;gap:7px;padding:0 13px;border-radius:8px;border:1px solid var(--hair2);background:var(--s1);color:var(--t2);font:600 13px 'Exo 2',sans-serif;cursor:pointer}
 .dr-btn:hover{border-color:var(--mesh-ring);color:var(--t1)}
 .dr-btn.on{color:var(--mesh-tile);border-color:var(--mesh-ring);background:var(--mesh-soft)}
 .dr-btn .ic-ico{width:15px;height:15px;flex:none}
-.dr-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font:500 10px var(--mono);color:var(--t3)}
-.dr-sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.dr-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font:500 12px var(--mono);color:var(--t3)}
+.dr-sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .dr-sw.red{background:var(--bad)}.dr-sw.amb{background:var(--warn)}.dr-sw.jade{background:var(--brand-green)}
 
 /* ── inspector cards ───────────────────────────────────────────────── */
 .ic{background:var(--s1);border:1px solid var(--hair);border-radius:12px;min-width:0;flex:none}
 .ic[hidden]{display:none}
-.ic-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--hair);min-width:0}
-.ic-l{font:600 10px var(--mono);letter-spacing:.16em;color:var(--sec);white-space:nowrap}
+.ic-h{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--hair);min-width:0}
+.ic-l{font:600 12px var(--mono);letter-spacing:.1em;color:var(--sec);white-space:nowrap}
 .ic-l b{color:var(--mesh);font-weight:600}
-.ic-mini{font:600 9px var(--mono);color:var(--t3);letter-spacing:.1em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ic-mini{font:600 11px var(--mono);color:var(--t3);letter-spacing:.05em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ic-fold{margin-left:auto;flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--hair2);background:transparent;color:var(--t2);display:grid;place-items:center;cursor:pointer;padding:0}
 .ic-fold:hover{color:var(--mesh);border-color:var(--mesh-ring)}
 .ic-chev{transition:transform .15s}
@@ -110,18 +111,18 @@
 .ic-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:6px}
 .ic-stat{background:var(--s2);border:1px solid var(--hair);border-radius:8px;padding:7px 9px;min-width:0}
 .ic-stat.ic-wide{grid-column:1/-1}
-.ic-stat .l{font:500 9.5px var(--mono);color:var(--t3);letter-spacing:.06em;overflow-wrap:anywhere}
-.ic-stat .v{font:600 13px var(--mono);color:var(--t1);margin-top:2px;overflow-wrap:anywhere}
-.ic-stat .v small{font-size:10px;color:var(--t3);font-weight:500;margin-left:3px}
-.ic-note{font-size:11px;color:var(--t3);line-height:1.5;margin:6px 0 0}
-.ic-warn{font-size:11px;color:var(--warn);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.4);border-radius:7px;padding:6px 9px;margin:8px 0;line-height:1.45}
-.ic-sub{font:600 9px var(--mono);color:var(--t3);letter-spacing:.14em;text-transform:uppercase;margin:12px 0 6px}
-.ic-btn{width:100%;margin-top:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:30px;border-radius:8px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 12px 'Exo 2',sans-serif;cursor:pointer}
+.ic-stat .l{font:500 12px var(--mono);color:var(--t3);letter-spacing:.02em;overflow-wrap:anywhere}
+.ic-stat .v{font:600 15.5px var(--mono);color:var(--t1);margin-top:3px;overflow-wrap:anywhere}
+.ic-stat .v small{font-size:11px;color:var(--t3);font-weight:500;margin-left:3px}
+.ic-note{font-size:12.5px;color:var(--t3);line-height:1.5;margin:6px 0 0}
+.ic-warn{font-size:12.5px;color:var(--warn);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.4);border-radius:7px;padding:6px 9px;margin:8px 0;line-height:1.45}
+.ic-sub{font:600 12px var(--mono);color:var(--t3);letter-spacing:.09em;text-transform:uppercase;margin:12px 0 6px}
+.ic-btn{width:100%;margin-top:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:34px;border-radius:8px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 13px 'Exo 2',sans-serif;cursor:pointer}
 .ic-btn:hover{border-color:var(--mesh-ring);color:var(--mesh-tile)}
 .ic-btn:focus-visible{outline:2px solid var(--mesh-ring);outline-offset:1px}
 .ic-ico{width:15px;height:15px;flex:none}
 .ic-hist{display:flex;flex-direction:column;gap:3px;margin:4px 0}
-.ic-hrow{display:grid;grid-template-columns:42px minmax(0,1fr) 50px;align-items:center;gap:6px;font:500 10px var(--mono);color:var(--t3)}
+.ic-hrow{display:grid;grid-template-columns:50px minmax(0,1fr) 58px;align-items:center;gap:6px;font:500 12px var(--mono);color:var(--t3)}
 .ic-hbar{height:7px;background:var(--hair);border-radius:3px;overflow:hidden}
 .ic-hf{display:block;height:100%;background:var(--t3)}
 .ic-hf.bad{background:var(--bad)}
@@ -129,9 +130,9 @@
 /* export report chips and the where-the-time-went bar (Measured card) */
 #expReport:empty{display:none}
 #expReport .exp-report{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px}
-#expReport .exp-chip{font:500 10.5px var(--mono);color:var(--t3);background:var(--s2);border:1px solid var(--hair);border-radius:6px;padding:3px 8px;min-width:0;overflow-wrap:anywhere}
+#expReport .exp-chip{font:500 12px var(--mono);color:var(--t3);background:var(--s2);border:1px solid var(--hair);border-radius:6px;padding:4px 9px;min-width:0;overflow-wrap:anywhere}
 #expReport .exp-chip b{color:var(--t1);font-weight:600}
-#expReport .exp-err{position:relative;padding-left:20px;font-size:11px;color:var(--bad);line-height:1.5;margin:0 0 8px;overflow-wrap:anywhere}
+#expReport .exp-err{position:relative;padding-left:21px;font-size:12.5px;color:var(--bad);line-height:1.5;margin:0 0 8px;overflow-wrap:anywhere}
 /* drawn warning triangle (mask) instead of a glyph */
 #expReport .exp-err::before{content:"";position:absolute;left:0;top:2px;width:14px;height:14px;background:currentColor;
   -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2.5 20h19z'/%3E%3Cpath d='M12 10v5M12 18v.5'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -140,13 +141,13 @@
 .exp-split .ic-sub{margin-top:6px}
 .split{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--hair);margin:6px 0 4px}
 .split i{display:block;height:100%}
-.splitkey{display:flex;gap:4px 10px;flex-wrap:wrap;font:500 10px var(--mono);color:var(--t2)}
+.splitkey{display:flex;gap:4px 10px;flex-wrap:wrap;font:500 12px var(--mono);color:var(--t2)}
 .splitkey i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
 
 /* ── phone: dock stays at the bottom, the drawer is a sheet ────────── */
 @media (max-width:860px){
   #dockWrap{position:sticky;bottom:0;z-index:25}
-  #progRow{position:sticky;bottom:50px;z-index:24;padding:6px 10px;gap:8px}
+  #progRow{position:sticky;bottom:54px;z-index:24;padding:6px 10px;gap:8px}
   .pg-eta{display:none}
   #dock{padding:0 10px;justify-content:space-between}
   .dk-tags,.dk-meta{display:none}

@@ -220,11 +220,24 @@ function _exportFailUI(e){
   if(!cancelled) console.error('[export]',e);
 }
 
+// A refusal before any work starts: say why in the Export report, no console error.
+function _exportRefuse(msg){
+  const rep=document.getElementById('expReport');
+  if(rep) rep.innerHTML='<div class="exp-err">'+esc(msg)+'</div>';
+}
+
 async function _triggerExportImpl(){
   // ── Weld-group export (W4): active body in a >=2-member weld group emits the
   //    group's union as ONE watertight 3MF part (mirrors active-body export). ──
   const _wgid=(typeof activeGroupId==='function')?activeGroupId():null;
-  if(_wgid && groupMembers(_wgid).length>=2){ await _exportWeldGroup(_wgid); return; }
+  if(_wgid && groupMembers(_wgid).length>=2){
+    // v0.12.0: hidden parts are not exported; a weld whose parts are all hidden has nothing to write.
+    if(!groupVisibleMembers(_wgid).length){ _exportRefuse('Nothing to export \u2014 every part in this weld is hidden'); return; }
+    await _exportWeldGroup(_wgid); return;
+  }
+  if(activeBodyId!==null && bodies.has(activeBodyId) && (bodies.get(activeBodyId).visibility||VIS_DEFAULT)===VIS_HIDDEN){
+    _exportRefuse('This part is hidden'); return;
+  }
   // rc3.5: Solid-body fast path. If the active body is solid, the lattice
   // pipeline doesn't apply — we just emit the body's own watertight mesh as
   // a 3MF, restoring CAD-space vertex coordinates via importCenter.
@@ -751,7 +764,7 @@ function exportFileNamePreview(){
   try{
     const wg=(typeof activeGroupId==='function')?activeGroupId():null;
     if(wg && groupMembers(wg).length>=2){
-      return 'weld_'+weldGroupLetter(wg)+'_'+groupMembers(wg).length+'bodies'+ppOrientTag()+'_'+new Date().toISOString().slice(0,10)+'.3mf';
+      return 'weld_'+weldGroupLetter(wg)+'_'+groupVisibleMembers(wg).length+'bodies'+ppOrientTag()+'_'+new Date().toISOString().slice(0,10)+'.3mf';
     }
     if(activeBodyId!==null && isSolidAssignment(assignments.get(activeBodyId)) && importedShape){
       const nm=((importedShape.meta&&importedShape.meta.name)||'body').replace(/\.[^.]+$/,'');

@@ -178,8 +178,14 @@ function _bodyOrderMoveEnd(id){ const i=bodyOrder.indexOf(id); if(i>=0) bodyOrde
 // preview doesn't need rebuilding — so we don't thrash the raymarcher when the
 // user welds two OTHER bodies.
 function _weldActiveSig(){ const g=activeBodyId?(bodyGroup.get(activeBodyId)||null):null; const n=g?groupMembers(g).length:0; return g+'|'+n; }
+// v0.12.0: welding a hidden part shows it (it would otherwise join the weld
+// without being in it). Returns after the ghost list is refreshed by the caller.
+function _weldShowHidden(ids){
+  for(const id of ids){ const b=bodies.get(id); if(b && (b.visibility||VIS_DEFAULT)===VIS_HIDDEN) b.visibility=VIS_DEFAULT; }
+}
 function _refreshAfterWeld(prevSig){
   renderBodyCards();                       // also dissolves any sub-2 group
+  if(typeof syncGhostsToRaymarcher==='function') syncGhostsToRaymarcher();   // a part just shown / grouped
   if(_weldActiveSig()===prevSig) return;   // active body's preview is unaffected
   const ag=activeGroupId();
   if(ag && groupMembers(ag).length>=2) triggerPreview(rm&&rm._quality||'draft');         // show the weld
@@ -189,6 +195,7 @@ function _refreshAfterWeld(prevSig){
 function weldDropOnGroup(id, gid){
   if(!weldGroups.has(gid) || bodyGroup.get(id)===gid) return;
   const sig=_weldActiveSig();
+  _weldShowHidden([id]);
   bodyGroup.set(id,gid);
   const others=groupMembers(gid).filter(x=>x!==id);
   _bodyOrderMoveAfter(id, others.length?others[others.length-1]:id);
@@ -199,6 +206,7 @@ function weldDropOnBody(id, targetId){
   const tgid=bodyGroup.get(targetId);
   if(tgid){ weldDropOnGroup(id, tgid); return; }   // target already grouped → join it
   const sig=_weldActiveSig();                        // both ungrouped → new weld group
+  _weldShowHidden([id, targetId]);
   const gid=newWeldGroup(0.4);
   bodyGroup.set(targetId,gid); bodyGroup.set(id,gid);
   _bodyOrderMoveAfter(id, targetId);
@@ -221,6 +229,7 @@ function weldTogether(partIds, targetGid, mergeGids){
   const moving=[];
   for(const g of merge){ if(g===tgt) continue; for(const id of groupMembers(g)) moving.push(id); weldGroups.delete(g); }
   for(const id of ids) if(!moving.includes(id)) moving.push(id);
+  _weldShowHidden(moving);
   for(const id of moving){
     bodyGroup.set(id,tgt);
     const others=groupMembers(tgt).filter(x=>x!==id);

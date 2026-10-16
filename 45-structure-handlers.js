@@ -134,6 +134,35 @@ function railSetCellMm(mm){
     _railCellTimer=setTimeout(()=>{ _railCellTimer=null; if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low'); },300);
   }
 }
+// One structural period per axis in mm, for the rail's shift sliders (v0.12.0).
+// Same math the export uses: TPMS cellSizeMm / cell_scale_axis; beam the
+// per-axis pitch of the trim-to-nodes mask (worker/m30 buildTrimmedBeamSDF: new
+// schema cellSizeMm * scale_xyz[i] / cell, old schema cellSizeMm / cell_scale);
+// wave cellSizeMm * field.stretch[i]; foam / noise / grain / bundle one tile
+// (cellSizeMm).
+function structurePeriodMm(recipe, cellMm){
+  const c=(+cellMm>0)?+cellMm:3;
+  const j=(recipe&&recipe.json)||{}, g=j.geometry||{}, pos=v=>(typeof v==='number'&&isFinite(v)&&v>0);
+  const fam=recipe&&recipe.family;
+  if(fam==='tpms'){
+    const cs=a=>{ const v=(g['cell_scale_'+a]!=null)?g['cell_scale_'+a]:g.cell_scale; return pos(v)?v:1; };
+    return [c/cs('x'), c/cs('y'), c/cs('z')];
+  }
+  if(fam==='beam'){
+    let sx=null;
+    if(Array.isArray(g.scale_xyz)&&g.scale_xyz.length===3&&g.scale_xyz.every(pos)) sx=g.scale_xyz;
+    else if(pos(g.cell_scale_x)&&pos(g.cell_scale_y)&&pos(g.cell_scale_z)) sx=[g.cell_scale_x,g.cell_scale_y,g.cell_scale_z];
+    if(sx&&pos(g.cell)) return sx.map(v=>c*v/g.cell);
+    const k=pos(g.cell_scale)?g.cell_scale:1;
+    return [c/k,c/k,c/k];
+  }
+  if(fam==='wave'){
+    const st=j.field&&j.field.stretch;
+    const ok=Array.isArray(st)&&st.length===3&&st.every(pos);
+    return ok ? st.map(v=>c*v) : [c,c,c];
+  }
+  return [c,c,c];
+}
 function railSetTrim(on){
   const tg=document.getElementById('trimToNodes'); if(!tg) return;
   tg.checked=!!on;

@@ -370,9 +370,8 @@ function _boxVol(min,max){ return Math.max(0,max[0]-min[0])*Math.max(0,max[1]-mi
 function estimateWeldExport(gid, qual){
   const gbb=computeGroupBbox(gid); if(!gbb) return null;
   const mem=[];
-  for(const id of groupMembers(gid)){
+  for(const id of groupVisibleMembers(gid)){     // hidden members are not exported
     const b=bodies.get(id); if(!b||!b.bbox) continue;
-    if((b.visibility||VIS_DEFAULT)===VIS_HIDDEN) continue;
     const rid=assignments.get(id);
     const isSolid=isSolidAssignment(rid)||!recipes.has(rid);
     const cellSizeMm=(b.cellSizeMm!=null)?b.cellSizeMm

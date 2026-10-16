@@ -391,7 +391,10 @@ function syncGhostsToRaymarcher(){
     // Members of the ACTIVE weld group are baked into the union field — don't
     // also draw them as ghosts (they'd overlap the welded mass). Bodies outside
     // the group still ghost normally, per their visibility.
-    if(_ag && bodyGroup.get(bodyId)===_ag) continue;
+    // v0.12.0: inside the active weld a member's eye still counts. Hidden drops
+    // out of the union (gatherGroupSpecs) and is not drawn; shown is the union
+    // itself; ghost adds a translucent envelope of the member over the union.
+    const _inAg = !!(_ag && bodyGroup.get(bodyId)===_ag);
     const b = bodies.get(bodyId);
     if(!b || !b.sdfGhost) continue;
     // rc3.6: respect per-body visibility state.
@@ -400,6 +403,7 @@ function syncGhostsToRaymarcher(){
     //   'inactive-solid' → opaque rendering with body's resolved color
     const vis = b.visibility || VIS_DEFAULT;
     if(vis === VIS_HIDDEN) continue;
+    if(_inAg && vis !== VIS_GHOST) continue;
     // rc3.6: resolve color via priority chain (user override > family > solid).
     const hex = resolveBodyColor(bodyId);
     const color = _hexToRGB(hex);
@@ -458,9 +462,13 @@ const bodyGroup  = new Map();   // bodyId  -> groupId  (absent = ungrouped)
 function activeGroupId(){ return activeBodyId!=null ? (bodyGroup.get(activeBodyId)||null) : null; }
 function groupMembers(gid){ return bodyOrder.filter(id=>bodyGroup.get(id)===gid); }
 function groupFilletMm(gid){ const g=weldGroups.get(gid); return g?g.filletMm:0; }
+// v0.12.0: hidden members are out of the weld for preview and export alike.
+function groupVisibleMembers(gid){
+  return groupMembers(gid).filter(id=>{ const b=bodies.get(id); return b && (b.visibility||VIS_DEFAULT)!==VIS_HIDDEN; });
+}
 function computeGroupBbox(gid){
   let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
-  for(const id of groupMembers(gid)){
+  for(const id of groupVisibleMembers(gid)){
     const b=bodies.get(id); if(!b||!b.bbox) continue;
     if(b.bbox.mnx<mnx)mnx=b.bbox.mnx; if(b.bbox.mny<mny)mny=b.bbox.mny; if(b.bbox.mnz<mnz)mnz=b.bbox.mnz;
     if(b.bbox.mxx>mxx)mxx=b.bbox.mxx; if(b.bbox.mxy>mxy)mxy=b.bbox.mxy; if(b.bbox.mxz>mxz)mxz=b.bbox.mxz;
@@ -637,6 +645,29 @@ function setBodyVisibility(bodyId, vis){
   b.visibility = vis;
   renderBodyCards();
   syncGhostsToRaymarcher();
+  _visibilityChanged([bodyId]);
+}
+// v0.12.0: one visibility for every member of a weld (the weld card's eye).
+function setGroupVisibility(gid, vis){
+  if(vis !== VIS_INACTIVE_SOLID && vis !== VIS_GHOST && vis !== VIS_HIDDEN) return;
+  const mem = groupMembers(gid);
+  for(const id of mem){ const b = bodies.get(id); if(b) b.visibility = vis; }
+  renderBodyCards();
+  syncGhostsToRaymarcher();
+  _visibilityChanged(mem);
+}
+// A visibility change inside the active weld changes what the union holds
+// (hidden members drop out), so rebuild its preview a moment later; the export
+// estimate follows in every case. With every member hidden there is no union
+// to build, so the last preview stays until a member is shown again.
+let _visPrevT = 0;
+function _visibilityChanged(ids){
+  if(typeof updateExportEstimate === 'function') updateExportEstimate();
+  const ag = (typeof activeGroupId === 'function') ? activeGroupId() : null;
+  if(!ag || !ids.some(id => bodyGroup.get(id) === ag)) return;
+  if(groupMembers(ag).length < 2 || !groupVisibleMembers(ag).length) return;
+  clearTimeout(_visPrevT);
+  _visPrevT = setTimeout(() => { if(typeof triggerPreview === 'function') triggerPreview(rm && rm._quality || 'draft'); }, 200);
 }
 
 // rc3.6: set a per-body color override. colorHex = null restores the family

@@ -91,29 +91,32 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   await sel(page, ids[2]); await idle();
   let s2 = await stats();
   check(s2.bakes === s1.bakes, 'select solid part: no bake', `bakes +${s2.bakes - s1.bakes}`);
-  const texCount = await page.evaluate(() => rm._gridTex ? rm._gridTex.size : -1);
-  check(texCount >= 3, 'part shape textures kept on the GPU', `${texCount} grid textures`);
+  // v0.14.0: every drawn part's shape is in the shape atlas.
+  const texCount = await page.evaluate(() => rm._atlas && rm._atlas.shape ? rm._atlas.shape.slots.size : -1);
+  check(texCount >= 3, 'part shapes kept on the GPU (shape atlas)', `${texCount} shapes`);
   // 3. Weld A + B: one bake; select the other member and back: no bake.
   await sel(page, ids[0]); await idle();
   await page.evaluate(([a, b]) => window.F13LD_weld.group([a, b], 0.6), [ids[0], ids[1]]); await page.waitForTimeout(200); await idle();
   let s3 = await stats();
-  check(s3.bakes > s2.bakes, 'weld A+B: baked', `bakes +${s3.bakes - s2.bakes}`);
+  // v0.14.0: a weld is drawn from its members' sources — no weld bake.
+  check(s3.bakes === s2.bakes, 'weld A+B: no bake (members drawn live)', `bakes +${s3.bakes - s2.bakes}`);
   const muts = await page.evaluate(() => new Promise(res => { let n = 0; const o = new MutationObserver(l => { n += l.length; }); o.observe(document.getElementById('rail') || document.body, { childList: true, subtree: true, attributes: true }); setTimeout(() => { o.disconnect(); res(n); }, 2000); }));
   const anim = await page.evaluate(() => document.getAnimations().map(a => (a.effect && a.effect.target && (a.effect.target.id || a.effect.target.className)) + ':' + a.playState).slice(0, 8));
   check(muts < 50, 'rail settles after the weld', `${muts} mutations in 2 s; animations ${JSON.stringify(anim)}`);
-  const asm = await page.evaluate(() => rm._assemblyMode);
-  check(asm === true, 'weld preview in assembly mode');
+  const grp = () => page.evaluate(() => F13LD_scene.state().groups.map(g => g.count));
+  const g1 = await grp();
+  check(g1.includes(2), 'weld drawn as one group of two', JSON.stringify(g1));
   await sel(page, ids[1]); await idle();
   await sel(page, ids[0]); await idle();
   let s4 = await stats();
   check(s4.bakes === s3.bakes, 'switch inside the weld: no bake', `bakes +${s4.bakes - s3.bakes}, hits +${s4.hits - s3.hits}`);
   // 4. Leave the weld (solid C) and come back: no bake, assembly mode back on.
   await sel(page, ids[2]); await idle();
-  const asmOff = await page.evaluate(() => rm._assemblyMode);
+  const gC = await grp();
   await sel(page, ids[1]); await idle();
   let s5 = await stats();
-  check(asmOff === false && s5.bakes === s4.bakes, 'leave and re-enter the weld: no bake', `assembly off at C: ${asmOff === false}`);
-  // 5. Weld rotation re-bakes, and the view is held while it runs.
+  check(gC.includes(2) && s5.bakes === s4.bakes, 'select C and re-enter the weld: no bake, weld still drawn welded', JSON.stringify(gC));
+  // 5. v0.14.0: weld member rotation is live — no bake, no hold.
   const camBefore = await page.evaluate(() => ({ z: rm.camZoom, h: rm.viewH }));
   let heldSeen = false;
   await uiSetXform(page, 'rotZDeg', 30);
@@ -125,14 +128,14 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   }
   await idle();
   let s6 = await stats();
-  check(s6.bakes > s5.bakes, 'weld member rotation re-bakes', `bakes +${s6.bakes - s5.bakes}`);
-  check(heldSeen, 'view held during the weld re-bake');
+  check(s6.bakes === s5.bakes, 'weld member rotation: no bake', `bakes +${s6.bakes - s5.bakes}`);
+  check(!heldSeen, 'view not held for a live change');
   const camAfter = await page.evaluate(() => ({ z: rm.camZoom, h: rm.viewH }));
-  check(Math.abs(camAfter.z - camBefore.z) < 1e-6, 'camera kept through the re-bake', `zoom ${camBefore.z.toFixed(2)} -> ${camAfter.z.toFixed(2)}`);
-  // 6. Weld wall offset re-bakes.
+  check(Math.abs(camAfter.z - camBefore.z) < 1e-6, 'camera kept', `zoom ${camBefore.z.toFixed(2)} -> ${camAfter.z.toFixed(2)}`);
+  // 6. Weld wall offset: live too.
   await uiSetXform(page, 'isoOffsetMm', 0.2); await page.waitForTimeout(400); await idle();
   let s7 = await stats();
-  check(s7.bakes > s6.bakes, 'weld member wall offset re-bakes', `bakes +${s7.bakes - s6.bakes}`);
+  check(s7.bakes === s6.bakes, 'weld member wall offset: no bake', `bakes +${s7.bakes - s6.bakes}`);
   // 7. A newer preview cancels the running one; nothing is left running.
   const c0 = s7.cancelled;
   await page.evaluate(() => { triggerPreview('high'); setTimeout(() => triggerPreview('med'), 30); });

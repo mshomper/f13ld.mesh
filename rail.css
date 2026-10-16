@@ -67,6 +67,7 @@
 .rl-part.on{border-color:var(--mesh-ring);box-shadow:inset 2px 0 0 var(--mesh)}
 .rl-part.rl-dragging{opacity:.5}
 .rl-fsw{width:8px;height:22px;border-radius:3px;display:block}
+.rl-fsw-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
 .rl-pm{min-width:0}
 .rl-nm{font:600 13.5px 'Exo 2',sans-serif;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rl-as{font:500 12px var(--mono);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

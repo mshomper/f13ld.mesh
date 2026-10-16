@@ -157,3 +157,5 @@ MeshRaymarcher.prototype._setupInteraction=function(){
 };
 // Instantiate global raymarcher
 const rm = new MeshRaymarcher(document.getElementById('rmCanvas'));
+// v0.14.0: the preview scene is pulled from the app state on dirty frames.
+if(rm && typeof previewSceneSync==='function') rm._sceneProvider=previewSceneSync;

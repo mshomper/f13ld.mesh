@@ -62,13 +62,19 @@ function cancelPreviewBakes(){
   for(const job of [..._pb.jobs]){ job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
 }
 window.cancelPreviewBakes=cancelPreviewBakes;
+// v0.14.0: cancel only the bakes whose result the scene no longer needs
+// (keep: Set of bake keys). The scene asks for several sources at once.
+function cancelPreviewBakesExcept(keep){
+  for(const job of [..._pb.jobs]){ if(job.key && keep && keep.has(job.key)) continue; job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
+}
+window.cancelPreviewBakesExcept=cancelPreviewBakesExcept;
 // Run one bake job over `parts` worker messages. Resolves with the replies in
 // order. A failed or cancelled job terminates its workers (a terminated worker
 // never replies); a finished one returns them to the pool.
-function _pbRun(parts){
+function _pbRun(parts, key){
   return new Promise((resolve,reject)=>{
     const ws=[], out=new Array(parts.length); let left=parts.length, over=false;
-    const job={cancel(){ finish(new Error('cancelled')); }};
+    const job={key:key||null, cancel(){ finish(new Error('cancelled')); }};
     function finish(err){
       if(over) return; over=true; _pb.jobs.delete(job);
       if(err){ ws.forEach(_pbKill); reject(err); }
@@ -144,12 +150,12 @@ function _bakeSlabs(N, opts){
   if(opts.bakeRaw || (opts.bodies && opts.bodies.length) || N>=64) return K;
   return 1;
 }
-async function _bakeFieldUncached(recipe, N, opts){
+async function _bakeFieldUncached(recipe, N, opts, key){
   const t0=performance.now();
   const base=Object.assign({mode:'bake',recipe,N},opts);
   const K=_bakeSlabs(N,opts);
   if(K<=1){
-    const [d]=await _pbRun([base]);
+    const [d]=await _pbRun([base], key);
     if(d.type!=='baked') throw new Error('Preview bake: unexpected reply');
     return {data:new Float32Array(d.field),N:d.N,fieldMin:d.fieldMin,fieldMax:d.fieldMax,
       lipschitz:d.lipschitz,ms:Math.round(performance.now()-t0),
@@ -157,7 +163,7 @@ async function _bakeFieldUncached(recipe, N, opts){
   }
   const per=Math.floor(N/K), extra=N-per*K, parts=[]; let z=0;
   for(let w=0;w<K;w++){ const len=per+(w<extra?1:0); if(len>0) parts.push(Object.assign({},base,{zStart:z,zEnd:z+len})); z+=len; }
-  const replies=await _pbRun(parts);
+  const replies=await _pbRun(parts, key);
   const field=new Float32Array(N*N*N);
   let minV=Infinity,maxV=-Infinity,topology=null,wMin=null,wMax=null,raw=false,isPer=false;
   for(const d of replies){
@@ -229,12 +235,14 @@ async function bakeField(recipe, N, opts){
   const key=previewBakeKey(recipe,N,opts);
   const hit=previewBakeCached(key);
   if(hit){ _bakeStats.hits++; return Object.assign({},hit,{key,cached:true,ms:0}); }
+  // v0.14.0: one bake per key at a time; a second caller shares the first.
+  if(_bakeInflight.has(key)) return _bakeInflight.get(key).then(r=>Object.assign({},r,{cached:true,ms:0}));
   _bakeStats.bakes++;
-  const res=await _bakeFieldUncached(recipe,N,opts);
-  res.key=key; res.cached=false;
-  _bakeCachePut(key,res);
-  return res;
+  const pr=_bakeFieldUncached(recipe,N,opts,key).then(res=>{ res.key=key; res.cached=false; _bakeCachePut(key,res); return res; });
+  _bakeInflight.set(key,pr);
+  try{ return await pr; } finally{ _bakeInflight.delete(key); }
 }
+const _bakeInflight=new Map();
 // Preview-bake stats for the bench and tests.
 window.F13LD_previewBake={
   cacheSize:()=>_bakeCache.size, cacheBytes:()=>_bakeCacheBytes,

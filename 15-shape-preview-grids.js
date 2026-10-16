@@ -118,11 +118,9 @@ function _pgBudget(){
 // A finer grid landed: rebind the selected part, or re-preview its weld.
 function _pgReady(id){
   if(!rm) return;
-  const ag=(typeof activeGroupId==='function')?activeGroupId():null;
-  if(ag && bodyGroup.get(id)===ag && groupMembers(ag).length>=2){
-    clearTimeout(_pgReadyT);
-    _pgReadyT=setTimeout(()=>{ if(typeof triggerPreview==='function') triggerPreview(rm._quality||'low'); }, 120);
-  } else if(id===activeBodyId){
+  // v0.14.0: every member reads its grid from the scene; the selected part
+  // also re-binds its framing.
+  if(id===activeBodyId){
     const b=bodies.get(id);
     const cellMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||b.cellSizeMm||3;
     rm.setShapeSDF(previewShapeGrid(b), b.bbox, cellMm, computeAssemblyBbox(), /*preserveCamera=*/true);
@@ -130,6 +128,7 @@ function _pgReady(id){
     rm._dirty=true;
   }
   if(typeof syncGhostsToRaymarcher==='function') syncGhostsToRaymarcher();
+  if(typeof previewSceneChanged==='function') previewSceneChanged();   // v0.14.0
 }
 // Small "refining shape" note in the preview pill area while a grid bakes.
 function _pgStatus(on, N){

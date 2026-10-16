@@ -84,15 +84,11 @@ function railSelectWeld(gid){
 // (skin, join rule …). Cheap sliders (cell size, rotation) go through the
 // legacy handlers, which rebake by themselves.
 let _rlPrevT=0;
+// v0.14.0: fill, skin, fillet, join rule, anchor and grade are live in the
+// scene shader — redraw next frame, no bake.
 function railPreviewSoon(){
   clearTimeout(_rlPrevT);
-  // v0.13.0: hold the last frame until the re-bake lands; welds re-bake even
-  // when their selected member is solid.
-  const ag=(typeof activeGroupId==='function')?activeGroupId():null;
-  const welded=!!(ag && groupMembers(ag).length>=2);
-  if(!welded && !currentRecipe) return;
-  if(rm && rm.holdView) rm.holdView();
-  _rlPrevT=setTimeout(()=>{ if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low'); },250);
+  if(typeof previewSceneChanged==='function') previewSceneChanged();
 }
 
 // ── Recipes card ──────────────────────────────────────────────────────────
@@ -368,13 +364,22 @@ function rlTopoKey(){
   return bodyOrder.map(id=>id+':'+(bodyGroup.get(id)||'')).join(',')+'|'+[...weldGroups.keys()].join(',');
 }
 
+// 16-swatch colour picker (COLOR_PALETTE; the first, null, resets).
+function rlColourRow(act, curHex){
+  return '<div class="rl-cols">'+COLOR_PALETTE.map(hex=>{
+    const cur=(!hex&&!curHex)||(hex&&curHex&&hex.toLowerCase()===curHex.toLowerCase());
+    return hex ? '<button type="button" class="rl-cs'+(cur?' on':'')+'" data-act="'+act+'" data-hex="'+hex+'" style="background:'+hex+'" title="'+hex+'" aria-label="Colour '+hex+'"></button>'
+               : '<button type="button" class="rl-cs rl-cs0'+(cur?' on':'')+'" data-act="'+act+'" data-hex="" title="Reset to the default colour" aria-label="Reset colour">'+rlIc('reset',12)+'</button>';
+  }).join('')+'</div>';
+}
+
 function rlEdPart(id){
   const b=bodies.get(id), fill=bodyFill(id), gid=bodyGroup.get(id)||null;
   const r=fill!=='solid' ? recipes.get(assignments.get(id)) : null;
   const trimOk=!!(r && familyHasTrim(r));
   const trimOn=!!($rl('trimToNodes')&&$rl('trimToNodes').checked);
   const noRec=recipes.size===0;
-  const key=['p',id,fill,assignments.get(id),gid,trimOk,trimOn,b.colorHex,recipeOrder.join(','),rlTopoKey()].join('|');
+  const key=['p',id,fill,assignments.get(id),gid,trimOk,trimOn,b.colorHex,gid?weldGroupColor(gid):'',recipeOrder.join(','),rlTopoKey()].join('|');
   let h='<div class="rl-ed"><div class="rl-ch"><span class="rl-lbl">'+esc(rlName(id).toUpperCase())+'</span><div class="rl-r"><span class="rl-mini">'+(r?esc(FAMILY_LABEL[r.family]||r.family):'solid')+'</span></div></div><div class="rl-cb rl-eb">';
   // Weld row
   h+='<div class="rl-erow"><label>Weld</label>';
@@ -406,12 +411,12 @@ function rlEdPart(id){
          (trimOn?'<span class="rl-mini">inset ×</span><input type="number" class="rl-num" data-k="inset" min="1" max="2" step="0.1" value="'+rlNum(rlGet('inset'))+'" aria-label="Trim inset multiplier">':'')+'</div></div>';
     }
   }
-  // Colour
-  h+='<div class="rl-erow"><label>Viewport colour</label><div class="rl-cols">'+COLOR_PALETTE.map(hex=>{
-    const cur=(!hex&&!b.colorHex)||(hex&&b.colorHex&&hex.toLowerCase()===b.colorHex.toLowerCase());
-    return hex ? '<button type="button" class="rl-cs'+(cur?' on':'')+'" data-act="color" data-hex="'+hex+'" style="background:'+hex+'" title="'+hex+'" aria-label="Colour '+hex+'"></button>'
-               : '<button type="button" class="rl-cs rl-cs0'+(cur?' on':'')+'" data-act="color" data-hex="" title="Reset to the default colour" aria-label="Reset colour">'+rlIc('reset',12)+'</button>';
-  }).join('')+'</div></div>';
+  // Colour: a weld member is drawn in its weld's colour (set on the weld)
+  if(gid){
+    h+='<div class="rl-erow"><label>Viewport colour</label><div class="rl-pair"><span class="rl-fsw rl-fsw-dot" style="background:'+esc(weldGroupColor(gid))+'"></span><span class="rl-hint">Shown in Weld '+weldGroupLetter(gid)+'\'s colour</span><button type="button" class="rl-sbtn" data-act="goWeld">Edit weld</button></div></div>';
+  }else{
+    h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('color', b.colorHex)+'</div>';
+  }
   // v0.12.0: remove the part (two taps: the first asks, the second removes)
   h+='<button type="button" class="rl-sbtn warn rl-rm" data-act="rmPart">'+rlIc('trash')+'Remove part</button>';
   return {key, html:h+'</div></div>'};
@@ -419,7 +424,7 @@ function rlEdPart(id){
 
 function rlEdWeld(gid){
   const g=weldGroups.get(gid), mem=groupMembers(gid), rule=weldGroupRule(gid);
-  const key=['w',gid,mem.join(','),rule,!!g.showJoins,rlTopoKey()].join('|');
+  const key=['w',gid,mem.join(','),rule,!!g.showJoins,g.colorHex||'',rlTopoKey()].join('|');
   const opts=[];
   for(const o of bodyOrder){ if(!bodies.has(o)||mem.includes(o)) continue; const og=bodyGroup.get(o); if(og) continue; opts.push(['p:'+o,rlName(o)]); }
   for(const x of weldGroups.keys()) if(x!==gid) opts.push(['g:'+x,'Weld '+weldGroupLetter(x)+' (merge)']);
@@ -436,6 +441,7 @@ function rlEdWeld(gid){
   if(rule==='anchor') h+='<div class="rl-erow"><label>Anchor depth <em>mm</em></label>'+rlSlider('w.anchor','Anchor depth',0,2,0.1,gid)+'</div>';
   if(rule==='graded') h+='<div class="rl-erow"><label>Grade over <em>mm</em></label>'+rlSlider('w.grade','Grade distance',0.2,5,0.1,gid)+'</div>';
   h+='<div class="rl-erow"><label>Show joins</label><div class="rl-pair"><button type="button" class="rl-sw'+(g.showJoins?' on':'')+'" data-act="joins" aria-label="Show joins" aria-pressed="'+!!g.showJoins+'"></button><span class="rl-mini">highlight where parts meet</span></div></div>';
+  h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('wcolor', g.colorHex)+'</div>';
   h+='<button type="button" class="rl-sbtn warn rl-wide" data-act="sepAll">'+rlIc('split')+'Separate all parts</button>';
   return {key, html:h+'</div></div>'};
 }
@@ -739,6 +745,7 @@ function rlInit(){
       case 'joins': { const g=weldGroups.get(s.id); if(g){ weldSetShowJoins(s.id, !g.showJoins); renderRailEditor(); } break; }
       case 'xreset': window.onStructXformReset&&window.onStructXformReset(); break;
       case 'color': setBodyColor(s.id, b.dataset.hex||null); break;
+      case 'wcolor': setWeldColor(s.id, b.dataset.hex||null); break;
       case 'goWeld': { const g=bodyGroup.get(s.id); if(g) railSelectWeld(g); break; }
       case 'leaveMe': rlLeave(s.id); break;
       case 'rmPart': {

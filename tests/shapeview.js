@@ -94,7 +94,9 @@ const SPH = path.join(TMP, 'sphere.stl'); sphereStl(SPH, 25);
     return { lit: lit / (W * H / 4), luma: cnt ? sum / cnt : 0, png: window.__SHOT ? rm.canvas.toDataURL('image/png') : null, ripples: ripples(row) + ripples(col) };
   });
   const id = await page.evaluate(() => activeBodyId);
+  if (process.env.SHOTS) await page.evaluate(() => { window.__SHOT = 1; });
   let f = await frame();
+  if (process.env.SHOTS && f.png) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); fs.writeFileSync(path.join(process.env.SHOTS, 'solid.png'), Buffer.from(f.png.split(',')[1], 'base64')); await page.evaluate(() => { window.__SHOT = 0; }); }
   check(f.lit > 0.05, 'solid sphere drawn', (f.lit * 100).toFixed(1) + ' %');
   check(f.ripples <= 6, 'no shadow rings on the solid sphere', f.ripples + ' ripples');
   // Quality → shape grid
@@ -112,12 +114,14 @@ const SPH = path.join(TMP, 'sphere.stl'); sphereStl(SPH, 25);
   const muted = await page.$eval(`.rl-part[data-body-id="${id}"] [data-act="vis"]`, el => el.classList.contains('rl-muted'));
   check(!muted, 'selected part eye is not greyed out');
   await eye(); await idle();
-  let s = await page.evaluate(id => ({ vis: rm._activeVis, ghost: (rm._ghostMeta || []).filter(Boolean).some(m => m.bodyId === id && m.kind === 'ghost') }), id);
+  // v0.14.0: the scene says how each part is drawn (vis 1 = ghost shell; hidden parts are not members).
+  const memOf = id => page.evaluate(id => { const m = F13LD_scene.state().members.find(x => x.bodyId === id); return m ? (m.vis ? 'ghost' : 'solid') : 'hidden'; }, id);
+  let s = { vis: await memOf(id) }; s.ghost = s.vis === 'ghost';
   f = await frame();
   check(s.vis === 'ghost' && s.ghost && f.luma < luma0 * 0.75, 'ghost: drawn as a translucent shell', JSON.stringify(s) + ' mean brightness ' + f.luma.toFixed(0) + ' (solid ' + luma0.toFixed(0) + ')');
   if (process.env.SHOTS) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); await page.evaluate(() => { window.__SHOT = 1; }); const g = await frame(); fs.writeFileSync(path.join(process.env.SHOTS, 'ghost.png'), Buffer.from(g.png.split(',')[1], 'base64')); await page.evaluate(() => { window.__SHOT = 0; }); }
   await eye(); await idle();
-  s = await page.evaluate(() => ({ vis: rm._activeVis, toast: /This part is hidden/.test(document.body.innerText) }));
+  s = { vis: await memOf(id), toast: await page.evaluate(() => /This part is hidden/.test(document.body.innerText)) };
   f = await frame();
   check(s.vis === 'hidden' && f.lit < 0.005 && s.toast, 'hidden: not drawn, message shown', JSON.stringify(s) + ' lit ' + (f.lit * 100).toFixed(2) + ' %');
   await eye(); await idle();

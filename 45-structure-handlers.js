@@ -35,17 +35,11 @@ let _structXformRebakeTimer=null;
 function _weldedActive(){
   return (typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
 }
+// v0.14.0: rotation / shift / wall offset are live in the scene shader, for a
+// part and for every member of a weld; an aperiodic part re-bakes its region in
+// the background (16-preview-scene.js). Nothing to schedule here.
 function _scheduleStructXformRebake(){
-  if(!importedShape) return;
-  const welded=_weldedActive();
-  if(!welded && (!currentRecipe||recipeIsPeriodic(currentRecipe))) return;
-  if(welded && rm && rm.holdView) rm.holdView();
-  if(_structXformRebakeTimer) clearTimeout(_structXformRebakeTimer);
-  _structXformRebakeTimer=setTimeout(()=>{
-    _structXformRebakeTimer=null;
-    // v0.8.3: keep the user's selected preview quality (was: no argument → fallback quality).
-    if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low', welded?undefined:{hold:false});
-  },300);
+  if(typeof previewSceneChanged==='function') previewSceneChanged();
 }
 
 window.onStructXformInput=function(){
@@ -136,19 +130,12 @@ let _railCellTimer=null;
 function railSetCellMm(mm){
   if(!importedShape) return;
   mm=Math.max(0.05, +mm||3);
-  const welded0=(typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
-  // v0.13.0: a weld or an aperiodic field is baked at the old scale — hold
-  // the last frame until the re-bake lands instead of showing it rescaled.
-  if((welded0 || (currentRecipe && !recipeIsPeriodic(currentRecipe))) && rm && rm.holdView) rm.holdView();
   const inp=document.getElementById('shapeCellSizeMm'); if(inp) inp.value=mm;
   if(rm && rm.setCellSize) rm.setCellSize(mm);
   snapshotActiveBodyState();                      // body.cellSizeMm
   if(typeof updateExportEstimate==='function') updateExportEstimate();
-  const welded=(typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
-  if(welded || (currentRecipe && !recipeIsPeriodic(currentRecipe))){
-    clearTimeout(_railCellTimer);
-    _railCellTimer=setTimeout(()=>{ _railCellTimer=null; if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low'); },300);
-  }
+  // v0.14.0: live in the scene (aperiodic regions re-bake in the background).
+  if(typeof previewSceneChanged==='function') previewSceneChanged();
 }
 // One structural period per axis in mm, for the rail's shift sliders (v0.12.0).
 // Same math the export uses: TPMS cellSizeMm / cell_scale_axis; beam the

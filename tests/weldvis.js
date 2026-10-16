@@ -80,14 +80,19 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   const check = (ok, label, extra) => { console.log((ok ? 'ok    ' : 'FAIL  ') + label + (extra ? '  ' + extra : '')); if (!ok) fails++; };
   const SHOTS = process.env.SHOTS || ''; let shotN = 0;
   const state = async () => { await idle(); return page.evaluate(([a, b, SHOT]) => {
-    const s = 10 / ((bodies.get(activeBodyId) && bodies.get(activeBodyId).cellSizeMm) || 3);
-    const g = {}; for (const m of (rm._ghostMeta || []).filter(Boolean)) g[m.bodyId] = m.kind;
+    // v0.14.0: read the preview scene. ghosts[id] = 'ghost' (shell) or
+    // 'solid' (drawn); weldN = drawn members of A's weld group; x0/x1 = their extent.
+    rm._dirty = true; if (rm._sceneProvider) rm._sceneProvider(); rm.render();
+    const sc = F13LD_scene.state(), g = {};
+    for (const m of sc.members) if (m.bodyId) g[m.bodyId] = m.vis ? 'ghost' : 'solid';
+    const anyW = sc.members.find(m => (m.bodyId === a || m.bodyId === b) && !m.vis), grp = anyW ? sc.groups[anyW.group] : null;
+    const wm = grp && grp.count >= 2 ? sc.members.slice(grp.start, grp.start + grp.count) : [];
+    let x0 = Infinity, x1 = -Infinity; for (const m of wm) { const bb = bodies.get(m.bodyId).bbox; x0 = Math.min(x0, bb.mnx); x1 = Math.max(x1, bb.mxx); }
     // lit pixels of a fresh frame (luma well above the background)
-    rm._dirty = true; rm.render();
     const c = document.createElement('canvas'); c.width = rm.canvas.width; c.height = rm.canvas.height;
     const x = c.getContext('2d'); x.drawImage(rm.canvas, 0, 0); const px = x.getImageData(0, 0, c.width, c.height).data;
     let lit = 0; for (let i = 0; i < px.length; i += 4) if (0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2] > 60) lit++;
-    return { asm: rm._assemblyMode, N: rm.bakeN, x0: rm.worldMin[0] / s, x1: rm.worldMax[0] / s, ghosts: g,
+    return { weldN: wm.length, x0, x1, ghosts: g,
       aX: [bodies.get(a).bbox.mnx, bodies.get(a).bbox.mxx], bX: [bodies.get(b).bbox.mnx, bodies.get(b).bbox.mxx],
       lit: lit / (c.width * c.height), toast: /Every part in this weld is hidden/.test(document.body.innerText),
       png: SHOT ? rm.canvas.toDataURL('image/png') : null };
@@ -98,40 +103,40 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   const [A, B, C] = ids;
   let s = await state();
   const fullX = [s.aX[0], s.bX[1]];
-  check(s.asm && s.N >= 96, 'weld preview: grid sized to the weld', `N ${s.N}`);
+  check(s.weldN === 2, 'weld drawn as one group of A and B', `members ${s.weldN}`);
   const litWeld = s.lit;
   check(near(s.x0, fullX[0]) && near(s.x1, fullX[1]), 'weld box spans A and B');
   await eyeRow(B); s = await state();
-  check(s.ghosts[B] === 'ghost' && near(s.x1, s.aX[1]), 'B ghost: shell, out of the solid weld', JSON.stringify(s.ghosts));
+  check(s.ghosts[B] === 'ghost' && s.weldN === 0, 'B ghost: shell, out of the solid weld', JSON.stringify(s.ghosts));
   await eyeRow(B); s = await state();
-  check(!s.ghosts[B] && near(s.x1, s.aX[1]), 'B hidden: not drawn, out of the weld');
+  check(!s.ghosts[B] && s.weldN === 0, 'B hidden: not drawn, out of the weld');
   await eyeRow(B); s = await state();
-  check(!s.ghosts[B] && near(s.x1, fullX[1]), 'B shown: back in the weld');
+  check(!s.ghosts[B] && near(s.x1, fullX[1]), 'B shown: back in the weld', JSON.stringify(s).slice(0, 300));
   await eyeRow(A); s = await state();
-  check(s.ghosts[A] === 'ghost' && near(s.x0, s.bX[0]), 'selected A ghost: shell, out of the solid weld', JSON.stringify(s.ghosts));
+  check(s.ghosts[A] === 'ghost' && s.ghosts[B] === 'solid', 'selected A ghost: shell, out of the solid weld', JSON.stringify(s.ghosts));
   await eyeRow(A); s = await state();
-  check(!s.ghosts[A] && near(s.x0, s.bX[0]), 'selected A hidden: out of the weld');
+  check(!s.ghosts[A] && s.ghosts[B] === 'solid', 'selected A hidden: out of the weld');
   await eyeRow(A); s = await state();
-  check(!s.ghosts[A] && near(s.x0, fullX[0]) && near(s.x1, fullX[1]), 'A shown: weld whole again');
+  check(!s.ghosts[A] && near(s.x0, fullX[0]) && near(s.x1, fullX[1]), 'A shown: weld whole again', JSON.stringify(s).slice(0, 300));
   await eyeWeld(); s = await state();
-  check(s.ghosts[A] === 'ghost' && s.ghosts[B] === 'ghost' && s.N === 2, 'weld ghost: both shells, no solid weld', JSON.stringify(s.ghosts));
+  check(s.ghosts[A] === 'ghost' && s.ghosts[B] === 'ghost' && s.weldN === 0, 'weld ghost: both shells, no solid weld', JSON.stringify(s.ghosts));
   await eyeWeld(); s = await state();
-  check(!s.ghosts[A] && !s.ghosts[B] && s.N === 2 && s.toast, 'weld hidden: empty view and message', 'toast ' + s.toast);
+  check(!s.ghosts[A] && !s.ghosts[B] && s.weldN === 0 && s.toast, 'weld hidden: not drawn, message shown', 'toast ' + s.toast);
   // Only part C is left on screen now; the weld's share of the first frame is
   // what disappeared (v0.12.0 drew a speckled weld here: well under 1 %).
   check(litWeld - s.lit > (+process.env.MINLIT || 0.01), 'weld is drawn solidly (lit pixels the weld adds)', ((litWeld - s.lit) * 100).toFixed(2) + ' % of the frame');
   await eyeWeld(); s = await state();
-  check(s.N >= 96 && near(s.x1, fullX[1]), 'weld shown: weld back');
+  check(s.weldN === 2 && near(s.x1, fullX[1]), 'weld shown: weld back');
   await sel(page, C); s = await state();
-  check(!s.asm && s.ghosts[A] === 'solid' && s.ghosts[B] === 'solid', 'C selected: weld parts drawn as solid shells');
+  check(s.weldN === 2 && s.ghosts[A] === 'solid' && s.ghosts[B] === 'solid', 'C selected: the weld stays drawn welded');
   await eyeWeld(); s = await state();
   check(s.ghosts[A] === 'ghost' && s.ghosts[B] === 'ghost', 'C selected, weld ghost: shells');
   await eyeWeld(); s = await state();
   check(!s.ghosts[A] && !s.ghosts[B], 'C selected, weld hidden: not drawn');
   await sel(page, A); s = await state();
-  check(s.asm && s.N === 2, 'select A in the hidden weld: empty view');
+  check(s.weldN === 0 && !s.ghosts[A] && !s.ghosts[B], 'select A in the hidden weld: weld not drawn');
   await eyeWeld(); s = await state();
-  check(s.asm && s.N >= 96 && near(s.x0, fullX[0]) && near(s.x1, fullX[1]), 'weld shown again');
+  check(s.weldN === 2 && near(s.x0, fullX[0]) && near(s.x1, fullX[1]), 'weld shown again');
   check(errors.length === 0, 'no console errors', errors.slice(0, 4).join(' | '));
   await browser.close();
   fs.rmSync(TMP, { recursive: true, force: true });

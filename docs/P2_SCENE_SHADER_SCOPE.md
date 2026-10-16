@@ -1,9 +1,21 @@
 # F13LD.mesh — P2 scope · one scene shader for parts and welds
 
-**Status:** scope for a future session (written 2026-10-16, after v0.13.2). Parent spec: `docs/PREVIEW_REBUILD_SPEC.md` §3–§6 (phase P2). P1 shipped in v0.13.0–v0.13.2; see `docs/SESSION_RECAP_2026-10-16.md`.
+**Status:** built in v0.14.0 (2026-10-16, branch `p2-scene`); see §0 for what changed from this scope. Written 2026-10-16, after v0.13.2. Parent spec: `docs/PREVIEW_REBUILD_SPEC.md` §3–§6 (phase P2). P1 shipped in v0.13.0–v0.13.2; see `docs/SESSION_RECAP_2026-10-16.md`.
 **Branch to use:** `p2-scene`. **Target release:** v0.14.0. **Export must stay byte-identical** (`tests/harness.js`).
 
 ---
+
+## 0. Decisions at the start of the P2 session (Matt, 2026-10-16) and what changed
+
+| Question | Answer |
+|---|---|
+| Q1 colour | Every part in a weld draws in the weld's colour, selected or not. The weld editor had no colour picker: added (16 swatches, reset = automatic colour); a member's part editor shows "Shown in Weld X's colour" instead. |
+| Q2 lattice on unselected parts | Always show the real lattice. |
+| Q3 selection cue | Soft lime outline (only with two or more parts on screen; not on the selected part's own surface or its fillets). |
+| Q4 recipe limit | Push it to what the GPU can do → no fixed limit: tiles, regions and shapes live in three atlases (3 texture units), up to one recipe per part (8). |
+| Weak GPU | Auto-switch: slow back-to-back frames with two or more lattices → parts not being edited draw as shells (toast once). |
+
+Changes from the scope below, made while building: region sources keep the **P1 box** (AABB of the transformed part) instead of a bounding sphere + margin, because that bake sets the noise / grain range the export reads (`_previewFieldMin/Max`); a sphere box would change exports. Rotation, shift or cell size therefore re-bake an aperiodic part's region — in the background, with the old region drawing meanwhile (no hold). Shapes moved into an atlas too (sampler if-chains evaluated all eight textures in software rendering), and the shader has two variants (`single`, `multi`), compiled once each per quality. The part prep live estimate keeps its own CPU sampler, which already reads the selected member's source and transform.
 
 ## 1. What P2 delivers
 

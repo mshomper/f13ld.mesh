@@ -153,20 +153,23 @@ function _bodyFillChanged(bodyId){
 }
 
 // ── Weld-group UI helpers + join / leave ops (v0.7.0, v0.12.0) ─────────────
-// weldGroups[gid] = { filletMm, colorIndex,
+// weldGroups[gid] = { filletMm, colorIndex, colorHex,
 //                     joinRule:'union'|'anchor'|'graded', anchorMm, gradeMm,
 //                     showJoins }
+// colorIndex picks the weld's letter (A, B …) and its default colour;
+// colorHex (null = default) is the user's viewport colour. Preview only —
+// exports carry no colour.
 // The geometry reads joinRule / anchorMm / gradeMm (and body.fill / skinMm).
 const WELD_COLORS = ['#a78bfa','#2dd4bf','#fbbf24','#fb7185','#38bdf8'];
 let _weldColorSeq = 0;
 const WELD_RULES = ['union','anchor','graded'];
-function weldGroupColor(gid){ const g=weldGroups.get(gid); const ci=(g&&g.colorIndex!=null)?g.colorIndex:0; return WELD_COLORS[ci%WELD_COLORS.length]; }
+function weldGroupColor(gid){ const g=weldGroups.get(gid); if(g&&g.colorHex) return g.colorHex; const ci=(g&&g.colorIndex!=null)?g.colorIndex:0; return WELD_COLORS[ci%WELD_COLORS.length]; }
 function weldGroupLetter(gid){ const g=weldGroups.get(gid); const ci=(g&&g.colorIndex!=null)?g.colorIndex:0; return String.fromCharCode(65+(ci%26)); }
 function newWeldGroup(filletMm){
   const used=new Set(); for(const g of weldGroups.values()) used.add(g.colorIndex);
   let ci=0; while(used.has(ci)) ci++;
   const gid='wg'+Date.now().toString(36)+ci;
-  weldGroups.set(gid,{filletMm:(filletMm!=null?filletMm:0.4), colorIndex:ci,
+  weldGroups.set(gid,{filletMm:(filletMm!=null?filletMm:0.4), colorIndex:ci, colorHex:null,
     joinRule:'union', anchorMm:0.6, gradeMm:1.5, showJoins:true});
   return gid;
 }
@@ -278,6 +281,16 @@ function weldSetRule(gid, rule){
 function weldSetAnchor(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.anchorMm=Math.max(0, +mm||0); _weldPreviewIfActive(gid); updateExportEstimate(); }
 function weldSetGrade(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.gradeMm=Math.max(0.05, +mm||0.05); _weldPreviewIfActive(gid); updateExportEstimate(); }
 function weldSetShowJoins(gid, on){ const g=weldGroups.get(gid); if(!g) return; g.showJoins=!!on; }
+// Viewport colour of a weld (null → the weld's default). Members are drawn in
+// it (resolveBodyColor); their own colour returns when they leave the weld.
+function setWeldColor(gid, hex){
+  const g=weldGroups.get(gid); if(!g) return;
+  g.colorHex=hex||null;
+  renderBodyCards();
+  if(typeof syncGhostsToRaymarcher==='function') syncGhostsToRaymarcher();   // member shells
+  if(rm && rm.setBaseColor && activeBodyId && bodyGroup.get(activeBodyId)===gid && groupMembers(gid).length>=2)
+    rm.setBaseColor(_hexToRGB(weldGroupColor(gid)));                         // the weld preview itself
+}
 
 // ── Render entry points ───────────────────────────────────────────────────
 // The visible UI is 55-rail.js. These keep their old names: the import,

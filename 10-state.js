@@ -367,8 +367,12 @@ function syncCurrentRecipeFromActiveBody(){
   // it while keeping iridescent shimmer. If no override (colorHex is null),
   // pass null which sets the no-op sentinel and shader falls back to default.
   if(rm && rm.setBaseColor){
+    // A weld member is drawn in its weld's colour.
     const b = bodies.get(activeBodyId);
-    if(b && b.colorHex){
+    const _wg = bodyGroup.get(activeBodyId);
+    if(_wg && weldGroups.has(_wg)){
+      rm.setBaseColor(_hexToRGB(weldGroupColor(_wg)));
+    } else if(b && b.colorHex){
       rm.setBaseColor(_hexToRGB(b.colorHex));
     } else {
       rm.setBaseColor(null);
@@ -390,6 +394,10 @@ function syncGhostsToRaymarcher(){
     for(const b of bodies.values()) for(const g of bodyShapeGrids(b)) live.add(g);
     rm.pruneGridTextures(live);
   }
+  // v0.14.0: shells and every other part are members of the preview scene
+  // (16-preview-scene.js), which redraws next frame. The ghost list below is
+  // still kept on the raymarcher for code that reads it.
+  if(typeof previewSceneChanged === 'function') previewSceneChanged();
   if(!importedShape || !importedShape.shapeData && !(importedShape.sdfGrid)){
     // No active body — no scene to render ghosts against.
     rm.clearGhosts();
@@ -700,11 +708,12 @@ let _visPrevT = 0;
 function _visibilityChanged(ids){
   if(typeof updateExportEstimate === 'function') updateExportEstimate();
   const ag = (typeof activeGroupId === 'function') ? activeGroupId() : null;
+  // v0.14.0: the scene redraws at once (no weld bake).
+  if(typeof previewSceneChanged === 'function') previewSceneChanged();
   if(!ag || !ids.some(id => bodyGroup.get(id) === ag)) return;
   if(groupMembers(ag).length < 2) return;
-  if(rm && rm.holdView) rm.holdView();   // v0.13.0: old union stays until the new one lands
-  clearTimeout(_visPrevT);
-  _visPrevT = setTimeout(() => { if(typeof triggerPreview === 'function') triggerPreview(rm && rm._quality || 'draft'); }, 200);
+  if(typeof groupVisibleMembers === 'function' && groupVisibleMembers(ag).length === 0 && typeof meshToast === 'function')
+    meshToast('Every part in this weld is hidden');
 }
 
 // rc3.6: set a per-body color override. colorHex = null restores the family
@@ -725,6 +734,7 @@ function setBodyColor(bodyId, colorHex){
 }
 
 // rc3.6: resolve the effective color for a body. Priority:
+//   0. its weld's colour when it is in a weld (weldGroupColor)
 //   1. user-picked override (b.colorHex)
 //   2. family color from assigned recipe
 //   3. SOLID_COLOR_HEX for solid bodies
@@ -732,6 +742,8 @@ function setBodyColor(bodyId, colorHex){
 function resolveBodyColor(bodyId){
   const b = bodies.get(bodyId);
   if(!b) return '#888888';
+  const gid = bodyGroup.get(bodyId);
+  if(gid && weldGroups.has(gid)) return weldGroupColor(gid);
   if(b.colorHex) return b.colorHex;
   const rid = assignments.get(bodyId);
   if(isSolidAssignment(rid)) return SOLID_COLOR_HEX;

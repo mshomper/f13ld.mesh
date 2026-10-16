@@ -108,6 +108,15 @@ Same pattern as F13LD.lab and F13LD.sweep:
 - **Dock:** Configure opens a drawer with Part prep and Export; the dock tags summarise them (click one to jump to its tab); Export 3MF with its estimate. While an export runs, a strip above the dock shows the stage, elapsed time and Cancel.
 - **Phone:** one column, viewport first, the dock stays at the bottom and the drawer opens as a sheet.
 
+### Preview (v0.14.0)
+
+The preview draws every visible part together in one shader, from a small table of parts, welds and recipes:
+
+- **Every structure setting is live** for a single part and for every member of a weld: cell size, wall offset, rotation, shift, fill, skin, fillet, join rule and its distances. The next frame shows the change, with no bake and no held frame.
+- **Welded parts look welded** (fillet, join rule, weld colour) whether or not the weld is selected, and every part shows its real lattice all the time. The selected part (or weld) has a soft lime outline when more than one part is on screen.
+- **Bakes that remain are per recipe:** one tile for periodic recipes, shared by every part that uses it; for noise, spinodoid / GRF grain and warped bundle, the box the transformed part needs, re-baked in the background when rotation, shift or cell size moves it (the old one keeps drawing). Tiles, regions and part shapes live in three 3D-texture atlases, so there is no fixed limit on how many recipes show at once.
+- **Weak GPUs:** if frames get slow with several lattices on screen, the parts you aren't editing switch to shells by themselves. `?debug=1` shows frame time, scene size, atlas memory and shader compile time.
+
 ### Parts and fill
 
 Each part has its own fill: **Solid** (exported exactly as imported), **Lattice**, or **Lattice + skin** (a solid wall of set thickness along the part surface around the lattice). Lattice parts keep their own recipe, cell size, wall offset, rotation, shift and trim to nodes, so one recipe can fill several parts differently. Sliders update the preview live.
@@ -118,7 +127,7 @@ A weld joins parts into one exported part. Welds are cards in the parts list: cl
 
 - **Join:** drag a part onto another part (new weld) or onto a weld card (join it); or press and hold a row to tick parts or welds, then press Weld in the selection bar (the phone way). Merging two welds keeps the target weld's settings.
 - **Separate:** the unlink button on a member, dragging a member onto the "take it out" strip, or Separate all in the weld editor. A weld left with one part is dissolved ("Weld dissolved").
-- **Weld editor:** members (take out, add a part or weld), fillet radius, join rule, Show joins (tints where members meet), Separate all.
+- **Weld editor:** members (take out, add a part or weld), fillet radius, join rule, Show joins (tints where members meet), viewport colour (v0.14.0: every part in the weld draws in it), Separate all.
 - **Join rules (v0.12.0):** **Union** — smooth union with the fillet. **Graded** — lattice walls thicken toward the solid members over the set distance, so stiffness steps up gradually. **Anchor** — the lattice continues into the solid by the set depth; it only changes the part where trim to nodes would otherwise drop struts at the joint.
 - **Each member keeps its own structure settings on export** (rotation, shift, wall offset, trim, skin) since v0.12.0; before, welds used identity settings. Cell size is no longer locked while welded.
 - **Solids with a closed mesh are exported exactly as imported.** Only the space around lattice bodies is meshed at the export resolution. Where a lattice meets such a solid, the fillet is about one voxel smaller.
@@ -167,10 +176,12 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
 | `12-shape-sdf-bake.js` · `13-hu-bake.js` · `14-weld-bake.js` | Shape SDF, hyperuniform and weld-field bake worker pools; weld export plan and estimate |
 | `15-shape-preview-grids.js` | Per-quality preview shape grids (v0.13.0), kept apart from the export grid |
-| `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` · `23-view-strip.js` | Shared F13LD shading block · WebGL2 preview (section plane, show joins) · orientation gimbal · viewer shading menu · view strip tabs |
+| `16-preview-scene.js` | Preview scene (v0.14.0): members, weld groups and sources from the app state, signature check, source bakes and commit (`previewSceneChanged`) |
+| `17-member-field.js` | Plain-JS reference of the scene shader's member field in mm (v0.14.0), checked against the shader and the export by `tests/previewparity.js` |
+| `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` · `23-view-strip.js` | Shared F13LD shading block · WebGL2 scene shader (v0.14.0: member table uniform block, tile / region / shape atlases, single and multi variants, section plane, join tint, outline) · orientation gimbal · viewer shading menu · view strip tabs |
 | `30-shape-import.js` · `31-body-cards.js` | Body file intake · body / weld / fill state functions (assign, fill, skin, weld together, separate, join rule) |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
-| `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline (v0.13.0: warm bake-worker pool, slab split, cancel, baked-field cache in `42`; held view and one-step commit in `44`) |
+| `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline (v0.13.0: warm bake-worker pool, slab split, baked-field cache in `42`; v0.14.0: keyed cancel and shared in-flight bakes, `triggerPreview` = quality + scene settle in `44`) |
 | `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
 | `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` · `55-rail.js` · `56-dock.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · homogenization card · left rail (recipes, parts, welds, editor) · dock, Configure drawer, progress strip, inspector |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |

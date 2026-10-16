@@ -22,6 +22,15 @@
 - `tests/loadorder.js`: no forward references.
 - `tests/harness.js` main vs branch: all 23 exports byte-identical. `tests/fixtests2.js`: all pass (stale preview range, out-of-order previews, camera on add, structure settings, preview quality). `tests/partprep.js`: all pass. `tests/viewshot.js`: cube, shape and grain previews render.
 
+## Weld visibility fixes (after Matt's click-test, same day)
+Matt: P1 good, but weld groups still had visibility problems; check before merging. Traced 15 eye steps on main and the branch (same behaviour — all from v0.12.0) and approved fixes A–E; per-quality grid cap fine; a ghosted part's fillet disappearing from view while ghosted is acceptable.
+- **A · step size** (`20-raymarcher.js`): in weld mode the shape's Lipschitz (10 / cell) no longer caps the step — the union field is in world units with its own Lipschitz. Rays used to run out of steps before the thin walls, so welds looked faint and speckled at Draft / Low.
+- **B · finer weld bake** (`44 weldPreviewN`): about 8 voxels across the finest lattice cell in the weld, never below the quality's single-cell size, capped Draft 96 / Low 128 / Med 160 / High 192 / Ultra 256, a multiple of 4. Weld fields are stored at 16-bit (`useField(…, {hi16})`, R16F, clamped); single parts keep their tiled 8-bit field. Uploads use `UNPACK_ALIGNMENT 1`.
+- **C · hidden weld**: hiding every member re-previews (`_visibilityChanged`) to the empty view with "Every part in this weld is hidden"; it used to keep showing the weld.
+- **D · ghosts in the selected weld**: ghosted members (the selected one too, and a ghosted weld) leave the preview union and draw as translucent shells; export still includes them. The selected part's eye is no longer muted inside a weld.
+- **E**: the empty weld view commits the weld's box; a selected solid part commits a neutral box.
+- `tests/weldvis.js` (new) checks every step. Re-run after the fixes: `weldvis`, `previewcache`, `slabbake`, `loadorder`, `fixtests2` all pass; `harness.js` main vs branch, all 23 exports byte-identical.
+
 ## Open / next
 - P2 (scene shader with per-member uniforms, tile and region sources, all sliders live in welds) is next; then P3 (exact GLSL sources), P4 (speed), then the parallel slab mesher.
 - Bench page has no preview tab yet (P4).

@@ -41,6 +41,9 @@ const STL = { A: path.join(TMP, 'a.stl'), B: path.join(TMP, 'b.stl'), C: path.jo
 boxStl(STL.A, [0, 0, 0], [20, 16, 10]); boxStl(STL.B, [18, 0, 0], [38, 16, 10]); boxStl(STL.C, [50, 0, 0], [64, 12, 10]);
 const RECIPE = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8'))['tpms-gyroid-sheet'].recipe;
 
+// Selecting goes through the rail's own function: a click waits for the row to
+// be still, which a busy software-rendered frame can delay past the timeout.
+const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.switchActiveBody)(id), id);
 (async () => {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 820 } });
@@ -74,24 +77,24 @@ const RECIPE = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 
   }
   const ids = await page.evaluate(() => window.F13LD_weld.bodyIds());
   // A and B get the gyroid; C stays solid.
-  for (const i of [0, 1]) { await uiSelectBody(page, ids[i]); await idle(); await uiAssignRecipe(page); await idle(); }
+  for (const i of [0, 1]) { await sel(page, ids[i]); await idle(); await uiAssignRecipe(page); await idle(); }
   await page.waitForTimeout(500); await idle();
 
   // 1. Switching between two lattice parts with the same recipe and quality: no bake.
   let s0 = await stats();
-  await uiSelectBody(page, ids[0]); await idle();
-  await uiSelectBody(page, ids[1]); await idle();
-  await uiSelectBody(page, ids[0]); await idle();
+  await sel(page, ids[0]); await idle();
+  await sel(page, ids[1]); await idle();
+  await sel(page, ids[0]); await idle();
   let s1 = await stats();
   check(s1.bakes === s0.bakes, 'switch lattice parts: no bake', `bakes +${s1.bakes - s0.bakes}, hits +${s1.hits - s0.hits}`);
   // 2. Selecting a solid part: no bake.
-  await uiSelectBody(page, ids[2]); await idle();
+  await sel(page, ids[2]); await idle();
   let s2 = await stats();
   check(s2.bakes === s1.bakes, 'select solid part: no bake', `bakes +${s2.bakes - s1.bakes}`);
   const texCount = await page.evaluate(() => rm._gridTex ? rm._gridTex.size : -1);
   check(texCount >= 3, 'part shape textures kept on the GPU', `${texCount} grid textures`);
   // 3. Weld A + B: one bake; select the other member and back: no bake.
-  await uiSelectBody(page, ids[0]); await idle();
+  await sel(page, ids[0]); await idle();
   await page.evaluate(([a, b]) => window.F13LD_weld.group([a, b], 0.6), [ids[0], ids[1]]); await page.waitForTimeout(200); await idle();
   let s3 = await stats();
   check(s3.bakes > s2.bakes, 'weld A+B: baked', `bakes +${s3.bakes - s2.bakes}`);
@@ -100,14 +103,14 @@ const RECIPE = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 
   check(muts < 50, 'rail settles after the weld', `${muts} mutations in 2 s; animations ${JSON.stringify(anim)}`);
   const asm = await page.evaluate(() => rm._assemblyMode);
   check(asm === true, 'weld preview in assembly mode');
-  await uiSelectBody(page, ids[1]); await idle();
-  await uiSelectBody(page, ids[0]); await idle();
+  await sel(page, ids[1]); await idle();
+  await sel(page, ids[0]); await idle();
   let s4 = await stats();
   check(s4.bakes === s3.bakes, 'switch inside the weld: no bake', `bakes +${s4.bakes - s3.bakes}, hits +${s4.hits - s3.hits}`);
   // 4. Leave the weld (solid C) and come back: no bake, assembly mode back on.
-  await uiSelectBody(page, ids[2]); await idle();
+  await sel(page, ids[2]); await idle();
   const asmOff = await page.evaluate(() => rm._assemblyMode);
-  await uiSelectBody(page, ids[1]); await idle();
+  await sel(page, ids[1]); await idle();
   let s5 = await stats();
   check(asmOff === false && s5.bakes === s4.bakes, 'leave and re-enter the weld: no bake', `assembly off at C: ${asmOff === false}`);
   // 5. Weld rotation re-bakes, and the view is held while it runs.

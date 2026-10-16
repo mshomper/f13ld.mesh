@@ -44,27 +44,74 @@ function _previewPill(result){
   triPill.style.display='block';
   triPill.textContent=result.cached?'preview · cached':('preview · '+result.ms+'ms');
 }
+// ── v0.13.0 · weld preview helpers ──────────────────────────────────────────
+// Members of a weld drawn solid in the preview (not hidden, not ghosted).
+function _weldPreviewMembers(gid){
+  return groupMembers(gid).filter(id=>{ const b=bodies.get(id); const v=b&&(b.visibility||VIS_DEFAULT); return b && v!==VIS_HIDDEN && v!==VIS_GHOST; });
+}
+// mm box around the given bodies, or null.
+function _weldBoxMm(ids){
+  let mnx=Infinity,mny=Infinity,mnz=Infinity,mxx=-Infinity,mxy=-Infinity,mxz=-Infinity;
+  for(const id of ids){ const b=bodies.get(id); if(!b||!b.bbox) continue;
+    mnx=Math.min(mnx,b.bbox.mnx); mny=Math.min(mny,b.bbox.mny); mnz=Math.min(mnz,b.bbox.mnz);
+    mxx=Math.max(mxx,b.bbox.mxx); mxy=Math.max(mxy,b.bbox.mxy); mxz=Math.max(mxz,b.bbox.mxz); }
+  return isFinite(mnx)?{mnx,mny,mnz,mxx,mxy,mxz}:null;
+}
+// Weld preview grid size: about WELD_VOX_PER_CELL voxels across the finest
+// lattice cell in the weld, never below the quality's single-cell size and
+// capped per quality (Matt, 2026-10-16). A multiple of 4.
+const WELD_PREVIEW_CAP={draft:96,low:128,med:160,high:192,ultra:256};
+const WELD_VOX_PER_CELL=8;
+function weldPreviewN(quality, boxMm, specs){
+  const base=PREVIEW_BAKE_N[quality]||64, cap=WELD_PREVIEW_CAP[quality]||128;
+  let cell=Infinity;
+  for(const sp of specs) if(!sp.solid && sp.cellSizeMm>0) cell=Math.min(cell, sp.cellSizeMm);
+  if(!isFinite(cell) || !boxMm) return base;   // all solid: shapes only, the base grid is enough
+  const span=Math.max(boxMm.mxx-boxMm.mnx, boxMm.mxy-boxMm.mny, boxMm.mxz-boxMm.mnz);
+  const want=Math.ceil(span/cell*WELD_VOX_PER_CELL);
+  const n=Math.min(cap, Math.max(base, want));
+  return Math.max(4, Math.ceil(n/4)*4);
+}
 async function _triggerPreviewRun(quality, isCurrent){
   // -- Weld-group preview: bake the active group merged over its bbox ----------
   const _agid=activeGroupId();
   if(_agid && groupMembers(_agid).length>=2){
+    currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
+    rm.setQuality(quality);
+    const refCell=(bodies.get(activeBodyId)&&bodies.get(activeBodyId).cellSizeMm)||parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+    const s=10/refCell;
+    // v0.13.0: the preview union holds only the members drawn solid. Hidden
+    // members drop out (as in export); ghosted members drop out of the PREVIEW
+    // union and draw as translucent shells (syncGhostsToRaymarcher), so a
+    // ghosted part — the selected one included — can be seen through. Export
+    // still includes ghosted members (gatherGroupSpecs is unchanged).
+    const shown=_weldPreviewMembers(_agid);
+    // Commit for a weld with nothing solid to show: empty field over the
+    // weld's own box, shells / nothing on top.
+    const commitEmpty=()=>{
+      const fb=_weldBoxMm(groupMembers(_agid));
+      rm.setAssemblyMode(true);
+      if(fb) rm.setWorldBounds([fb.mnx*s,fb.mny*s,fb.mnz*s],[fb.mxx*s,fb.mxy*s,fb.mxz*s],false);
+      rm.setScaffoldField(new Float32Array(8).fill(1),2,0,1,1,null);   // all outside
+      syncGhostsToRaymarcher();
+      if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
+      if(window.viewStripSync) viewStripSync();
+      hideComputing(); setBtns(true);
+    };
     // v0.12.0: every member hidden → show an empty view (nothing would export).
     if(typeof groupVisibleMembers==='function' && groupVisibleMembers(_agid).length===0){
-      rm.setAssemblyMode(true);
-      rm.setScaffoldField(new Float32Array(8).fill(1),2,0,1,1,null);   // all outside
-      hideComputing(); setBtns(true);
+      commitEmpty();
       if(typeof meshToast==='function') meshToast('Every part in this weld is hidden');
       return;
     }
-    currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
-    rm.setQuality(quality);
+    if(!shown.length){ commitEmpty(); return; }   // every visible member ghosted
     try{
-      const gbb=computeGroupBbox(_agid);
-      const {specs}=await gatherGroupSpecs(_agid, 0, false);
+      const gbb=_weldBoxMm(shown);
+      const {specs:allSpecs}=await gatherGroupSpecs(_agid, 0, false);
       if(!isCurrent()) return;
-      const refCell=(bodies.get(activeBodyId)&&bodies.get(activeBodyId).cellSizeMm)||parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-      const s=10/refCell;
-      const N=PREVIEW_BAKE_N[quality]||64;
+      const shownSet=new Set(shown);
+      const specs=allSpecs.filter(sp=>shownSet.has(sp.bodyId));
+      const N=weldPreviewN(quality, gbb, specs);
       const wMin=[gbb.mnx*s,gbb.mny*s,gbb.mnz*s], wMax=[gbb.mxx*s,gbb.mxy*s,gbb.mxz*s];
       const bakeOpts={isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)};
       let result=_previewHit(currentRecipe, N, bakeOpts);
@@ -83,7 +130,9 @@ async function _triggerPreviewRun(quality, isCurrent){
       const _rMin = _asm?[_asm.mnx*s,_asm.mny*s,_asm.mnz*s]:wMin;
       const _rMax = _asm?[_asm.mxx*s,_asm.mxy*s,_asm.mxz*s]:wMax;
       if(rm.fitReachBounds) rm.fitReachBounds(_rMin,_rMax);
-      if(rm.useField) rm.useField(result.key,result);
+      // v0.13.0: weld fields are stored at 16-bit (thin walls over a big box).
+      const r16=Object.assign({},result,{hi16:true});
+      if(rm.useField) rm.useField(result.key+'.16',r16);
       else rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
       // Bodies outside the group render as ghosts (syncGhosts skips group members);
       // then set the lattice base color to the GROUP rail color so the welded mass
@@ -102,6 +151,7 @@ async function _triggerPreviewRun(quality, isCurrent){
   if(importedShape && activeBodyId!=null && rm.fieldTex
      && typeof isSolidAssignment==='function' && isSolidAssignment(assignments.get(activeBodyId))){
     rm.setAssemblyMode(false);
+    rm.setWorldBounds([-5,-5,-5],[5,5,5],true);   // the solid shader ignores the field; keep a neutral box
     if(window.viewStripSync) viewStripSync();
     hideComputing(); setBtns(true);
     return;

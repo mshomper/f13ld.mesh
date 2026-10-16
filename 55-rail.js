@@ -215,7 +215,9 @@ function rlPartRow(id, gid, sel){
   const b=bodies.get(id); if(!b) return '';
   const on=sel&&sel.t==='part'&&sel.id===id, tk=railTicked.has(id);
   const vis=rlVisInfo(b.visibility||VIS_DEFAULT);
-  const mutedVis=(id===activeBodyId)?' rl-muted':'';
+  // v0.13.0: inside a weld the selected part's eye works (ghost / hide it in
+  // the weld preview); a standalone selected part always draws, so muted.
+  const mutedVis=(id===activeBodyId && !gid)?' rl-muted':'';
   const hid=(b.visibility||VIS_DEFAULT)===VIS_HIDDEN;
   return '<div class="rl-part'+(on?' on':'')+(gid?' member':'')+(tk?' tk':'')+(hid?' hid':'')+'" data-body-id="'+esc(id)+'" draggable="true" tabindex="0" role="button" aria-pressed="'+(on?'true':'false')+'">'+
     '<button type="button" class="rl-ck'+(tk?' on':'')+'" data-act="tick" title="Tick" aria-label="Tick '+esc(rlName(id))+'">'+(tk?rlIc('check',11):'')+'</button>'+

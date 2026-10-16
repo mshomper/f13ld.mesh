@@ -402,7 +402,15 @@ function syncGhostsToRaymarcher(){
   const ghosts = [];
   const _ag = (typeof activeGroupId==='function') ? activeGroupId() : null;
   for(const bodyId of bodyOrder){
-    if(bodyId === activeBodyId) continue;
+    // v0.13.0: the selected part is drawn by the weld preview, except when it
+    // is a ghosted member of the selected weld — then it is a shell like any
+    // other ghosted member (the preview union leaves it out).
+    if(bodyId === activeBodyId){
+      const ab = bodies.get(bodyId);
+      const ghostedInWeld = !!(_ag && bodyGroup.get(bodyId)===_ag && groupMembers(_ag).length>=2
+        && ab && (ab.visibility||VIS_DEFAULT)===VIS_GHOST);
+      if(!ghostedInWeld) continue;
+    }
     // Members of the ACTIVE weld group are baked into the union field — don't
     // also draw them as ghosts (they'd overlap the welded mass). Bodies outside
     // the group still ghost normally, per their visibility.
@@ -672,15 +680,17 @@ function setGroupVisibility(gid, vis){
   _visibilityChanged(mem);
 }
 // A visibility change inside the active weld changes what the union holds
-// (hidden members drop out), so rebuild its preview a moment later; the export
-// estimate follows in every case. With every member hidden there is no union
-// to build, so the last preview stays until a member is shown again.
+// (hidden members drop out; v0.13.0: ghosted members leave the preview union
+// and draw as shells), so rebuild its preview a moment later; the export
+// estimate follows in every case. v0.13.0: with every member hidden the
+// preview rebuilds too, to the empty "every part is hidden" view (it used to
+// keep showing the weld).
 let _visPrevT = 0;
 function _visibilityChanged(ids){
   if(typeof updateExportEstimate === 'function') updateExportEstimate();
   const ag = (typeof activeGroupId === 'function') ? activeGroupId() : null;
   if(!ag || !ids.some(id => bodyGroup.get(id) === ag)) return;
-  if(groupMembers(ag).length < 2 || !groupVisibleMembers(ag).length) return;
+  if(groupMembers(ag).length < 2) return;
   if(rm && rm.holdView) rm.holdView();   // v0.13.0: old union stays until the new one lands
   clearTimeout(_visPrevT);
   _visPrevT = setTimeout(() => { if(typeof triggerPreview === 'function') triggerPreview(rm && rm._quality || 'draft'); }, 200);

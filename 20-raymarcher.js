@@ -109,12 +109,28 @@ MeshRaymarcher.prototype._fieldToR8=function(data,N,minV,maxV){
   return bytes;
 };
 // v0.13.0: upload a field into tex (created when null); returns the texture.
-MeshRaymarcher.prototype._uploadFieldTex=function(tex,data,N,minV,maxV){
+// hi16: weld (assembly) fields only — stored normalized in R16F with clamped
+// edges, so thin walls over a large weld box survive the precision the 8-bit
+// tiled path loses (the shader decodes both the same way, t*(max-min)+min).
+MeshRaymarcher.prototype._uploadFieldTex=function(tex,data,N,minV,maxV,hi16){
   var gl=this.gl;
-  var bytes=this._fieldToR8(data,N,minV,maxV);
   if(!tex) tex=gl.createTexture();
   gl.bindTexture(gl.TEXTURE_3D,tex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);   // rows of any width (8-bit rows of N bytes)
+  if(hi16){
+    var range=Math.max(maxV-minV,1e-6), f=new Float32Array(N*N*N);
+    for(var q=0;q<f.length;q++) f[q]=(data[q]-minV)/range;
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,f);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_3D,null);
+    return tex;
+  }
+  var bytes=this._fieldToR8(data,N,minV,maxV);
   gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
   gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
@@ -155,7 +171,7 @@ MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lips
   else { tex=this._uploadFieldTex(null,data,N,fieldMin,fieldMax); sc.push(tex); }
   this._applyField(tex,data,N,fieldMin,fieldMax,lipschitz,topology);
 };
-// v0.13.0: keyed field cache. r = {data,N,fieldMin,fieldMax,lipschitz,topology}.
+// v0.13.0: keyed field cache. r = {data,N,fieldMin,fieldMax,lipschitz,topology,hi16?}.
 // A cached key binds without re-upload; LRU over FIELD_TEX_MAX textures.
 MeshRaymarcher.prototype.FIELD_TEX_MAX=12;
 MeshRaymarcher.prototype.useField=function(key,r){
@@ -164,7 +180,7 @@ MeshRaymarcher.prototype.useField=function(key,r){
   key=String(key);
   var tex=lru.get(key);
   if(tex){ lru.delete(key); lru.set(key,tex); }
-  else { tex=this._uploadFieldTex(null,r.data,r.N,r.fieldMin,r.fieldMax); lru.set(key,tex); }
+  else { tex=this._uploadFieldTex(null,r.data,r.N,r.fieldMin,r.fieldMax,!!r.hi16); lru.set(key,tex); }
   this._applyField(tex,r.data,r.N,r.fieldMin,r.fieldMax,r.lipschitz,r.topology);
   this._evictFields();
 };
@@ -1060,7 +1076,10 @@ MeshRaymarcher.prototype._drawFrame=function(bc,skW){
   if(this._uShapeEps) gl.uniform1f(this._uShapeEps,shapeEps);
   // Shape SDF Lipschitz in world units = 10/cellSizeMm (from d_mm*(10/cellSizeMm) scaling).
   // Using 1.0 causes 5× overshoot at 2mm cells, jumping past boundaries into phantom hits.
-  var shapeLip=(this.hasShape&&this.shapeData)?(10.0/this.shapeData.cellSizeMm):0.0;
+  // v0.13.0: not in weld (assembly) mode — the union field is already in world
+  // units with its own Lipschitz; the shape bound there only shortened every
+  // step ~10/cell times, so rays ran out of steps before the thin walls.
+  var shapeLip=(this.hasShape&&this.shapeData&&!this._assemblyMode)?(10.0/this.shapeData.cellSizeMm):0.0;
   gl.uniform1f(this._uLipschitz,Math.max(this.lipschitz,shapeLip));
   gl.uniform1f(this._uIsPeriodic,this.isPeriodic?1.0:0.0);
   gl.uniform3f(this._uWorldMin,wn[0],wn[1],wn[2]);

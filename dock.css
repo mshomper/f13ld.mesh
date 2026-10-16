@@ -41,7 +41,7 @@
 #dock #expBtn.dk-run::before{content:"";width:15px;height:15px;flex:none;background:currentColor;
   -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12M7 10l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat;
   mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12M7 10l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat}
-#dock #expBtn.dk-run:hover:not(:disabled){background:#82105e}
+#dock #expBtn.dk-run:hover:not(:disabled){background:color-mix(in srgb,var(--mesh-deep) 80%,var(--mesh))}
 #dock #expBtn.dk-run:disabled{opacity:.55;cursor:default;background:var(--mesh-deep);border-color:transparent;color:var(--mesh-tile)}
 #dock #expBtn.dk-run.sweeping{animation:dkPulse 1.4s ease-in-out infinite}
 @keyframes dkPulse{50%{opacity:.7}}
@@ -91,7 +91,7 @@
 .dr-btn .ic-ico{width:15px;height:15px;flex:none}
 .dr-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font:500 10px var(--mono);color:var(--t3)}
 .dr-sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
-.dr-sw.red{background:#f24242}.dr-sw.amb{background:var(--warn)}.dr-sw.jade{background:var(--brand-green)}
+.dr-sw.red{background:var(--bad)}.dr-sw.amb{background:var(--warn)}.dr-sw.jade{background:var(--brand-green)}
 
 /* ── inspector cards ───────────────────────────────────────────────── */
 .ic{background:var(--s1);border:1px solid var(--hair);border-radius:12px;min-width:0;flex:none}
@@ -114,7 +114,7 @@
 .ic-stat .v{font:600 13px var(--mono);color:var(--t1);margin-top:2px;overflow-wrap:anywhere}
 .ic-stat .v small{font-size:10px;color:var(--t3);font-weight:500;margin-left:3px}
 .ic-note{font-size:11px;color:var(--t3);line-height:1.5;margin:6px 0 0}
-.ic-warn{font-size:11px;color:#f0c674;background:#2a1f0a;border:1px solid #7a5a14;border-radius:7px;padding:6px 9px;margin:8px 0;line-height:1.45}
+.ic-warn{font-size:11px;color:var(--warn);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.4);border-radius:7px;padding:6px 9px;margin:8px 0;line-height:1.45}
 .ic-sub{font:600 9px var(--mono);color:var(--t3);letter-spacing:.14em;text-transform:uppercase;margin:12px 0 6px}
 .ic-btn{width:100%;margin-top:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:30px;border-radius:8px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 12px 'Exo 2',sans-serif;cursor:pointer}
 .ic-btn:hover{border-color:var(--mesh-ring);color:var(--mesh-tile)}
@@ -123,15 +123,19 @@
 .ic-hist{display:flex;flex-direction:column;gap:3px;margin:4px 0}
 .ic-hrow{display:grid;grid-template-columns:42px minmax(0,1fr) 50px;align-items:center;gap:6px;font:500 10px var(--mono);color:var(--t3)}
 .ic-hbar{height:7px;background:var(--hair);border-radius:3px;overflow:hidden}
-.ic-hf{display:block;height:100%;background:#555a6e}
-.ic-hf.bad{background:#f24242}
+.ic-hf{display:block;height:100%;background:var(--t3)}
+.ic-hf.bad{background:var(--bad)}
 .ic-hv{text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* export report chips and the where-the-time-went bar (Measured card) */
 #expReport:empty{display:none}
 #expReport .exp-report{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px}
 #expReport .exp-chip{font:500 10.5px var(--mono);color:var(--t3);background:var(--s2);border:1px solid var(--hair);border-radius:6px;padding:3px 8px;min-width:0;overflow-wrap:anywhere}
 #expReport .exp-chip b{color:var(--t1);font-weight:600}
-#expReport .exp-err{font-size:11px;color:var(--bad);line-height:1.5;margin:0 0 8px;overflow-wrap:anywhere}
+#expReport .exp-err{position:relative;padding-left:20px;font-size:11px;color:var(--bad);line-height:1.5;margin:0 0 8px;overflow-wrap:anywhere}
+/* drawn warning triangle (mask) instead of a glyph */
+#expReport .exp-err::before{content:"";position:absolute;left:0;top:2px;width:14px;height:14px;background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2.5 20h19z'/%3E%3Cpath d='M12 10v5M12 18v.5'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 2.5 20h19z'/%3E%3Cpath d='M12 10v5M12 18v.5'/%3E%3C/svg%3E") center/contain no-repeat}
 .exp-split{flex:1 0 100%;min-width:0}
 .exp-split .ic-sub{margin-top:6px}
 .split{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--hair);margin:6px 0 4px}

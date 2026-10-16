@@ -256,6 +256,7 @@ function weldSetFillet(gid, mm){
   if(activeBodyId && bodyGroup.get(activeBodyId)===gid && groupMembers(gid).length>=2)
     triggerPreview(rm&&rm._quality||'draft');
   updateExportEstimate();
+  if(typeof renderRailParts==='function') renderRailParts();   // the weld card's summary line
 }
 function weldSetRule(gid, rule){
   const g=weldGroups.get(gid); if(!g || WELD_RULES.indexOf(rule)<0) return;
@@ -263,6 +264,7 @@ function weldSetRule(gid, rule){
   if(g.anchorMm==null) g.anchorMm=0.6;
   if(g.gradeMm==null) g.gradeMm=1.5;
   _weldPreviewIfActive(gid); updateExportEstimate();
+  if(typeof renderRailParts==='function') renderRailParts();
 }
 function weldSetAnchor(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.anchorMm=Math.max(0, +mm||0); _weldPreviewIfActive(gid); updateExportEstimate(); }
 function weldSetGrade(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.gradeMm=Math.max(0.05, +mm||0.05); _weldPreviewIfActive(gid); updateExportEstimate(); }

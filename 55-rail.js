@@ -20,7 +20,7 @@ const RL_ICONS={
   part:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
   link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   weld:'<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>',
-  unlink:'<path d="M9 15 6.5 17.5a3 3 0 0 1-4.2-4.2L5 10.6M15 9l2.5-2.5a3 3 0 0 1 4.2 4.2L19 13.4"/><path d="M8 5V3M5 8H3M16 19v2M19 16h2"/>',
+  unlink:'<path d="M14 4h6v6M20 4l-8.5 8.5"/><path d="M10 6H5.5A1.5 1.5 0 0 0 4 7.5v11A1.5 1.5 0 0 0 5.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/>',
   eye:'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/>',
   ghost:'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" stroke-dasharray="2.6 2.4"/><circle cx="12" cy="12" r="2.5" stroke-dasharray="1.6 1.6"/>',
   eyeOff:'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" opacity=".45"/><path d="M4 20 20 4"/>',

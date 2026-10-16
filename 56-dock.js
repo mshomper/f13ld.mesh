@@ -228,7 +228,7 @@ function _dkStage(){
   const sub=_dkEl('coSub'), main=_dkEl('coMain');
   const txt=String((sub&&sub.textContent)||(main&&main.textContent)||'working').trim();
   const st=_dkEl('pgStage'); if(!st) return;
-  const cut=/\s[—·]\s|:\s/.exec(txt);
+  const cut=/\s[—·(]|:\s|\.\.\./.exec(txt);
   st.innerHTML='';
   if(cut){ const b=document.createElement('b'); b.textContent=txt.slice(0,cut.index); st.appendChild(b); st.appendChild(document.createTextNode(txt.slice(cut.index))); }
   else { const b=document.createElement('b'); b.textContent=txt; st.appendChild(b); }

@@ -26,7 +26,7 @@ function sidebarEnhance(root){
       while(row && !row.classList.contains('homo-row') && !row.classList.contains('sec-lbl')) row=row.nextElementSibling;
       if(!row || !row.classList.contains('homo-row')) continue;
       const hr=lbl.previousElementSibling;
-      const title=lbl.textContent.replace(/^\s*homogenization\s*[·.]?\s*/i,'').trim();
+      const title=lbl.textContent.replace(/^\s*homogenization\s*[·.]?\s*/i,'').replace(/\s*·\s*/g,' · ').trim();
       if(body){ body.innerHTML=''; body.appendChild(row); }
       if(method) method.textContent=title;
       if(hr && hr.tagName==='HR') hr.remove();

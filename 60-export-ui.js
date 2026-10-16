@@ -130,7 +130,7 @@ function featureRatioErrorHtml(chk, featMm, edgeMm, qual, bodyLabel){
   const fix = (chk.suggestCell!=null)
     ? (bodyLabel?'Increase its cell size to ~':'Increase cell size to ~')+chk.suggestCell+'mm, or lower export quality.'
     : 'Increase cell size, or lower export quality.';
-  return '<div class="exp-err">&#9888; '+
+  return '<div class="exp-err">'+
     'Walls too thin for this quality. '+subject+', but '+qual+' quality uses a '+
     edgeMm.toFixed(3)+'mm voxel edge ('+chk.ratio.toFixed(1)+'\u00d7 \u2014 needs '+
     chk.floor+'\u00d7 or more). '+fix+'</div>';

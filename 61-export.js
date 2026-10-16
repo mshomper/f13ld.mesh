@@ -179,7 +179,7 @@ async function _exportWeldGroup(gid){
     if(elapsedEl)elapsedEl.style.display='none';
     if(meshWorker){meshWorker.terminate();meshWorker=null;}
     hideComputing();showCancelBtn(false);
-    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">&#9888; '+esc(e.message||e)+'</div>';
+    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">'+esc(e.message||e)+'</div>';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
     if(e.message!=='cancelled') console.error('[weld export]',e);
   }
@@ -196,7 +196,7 @@ let _exportBusy=false;
 window.triggerExport=async function(){
   if(_exportBusy){
     const rep=document.getElementById('expReport');
-    if(rep) rep.innerHTML='<div class="exp-err">&#9888; An export is already running — wait for it to finish or press cancel.</div>';
+    if(rep) rep.innerHTML='<div class="exp-err">An export is already running — wait for it to finish or press cancel.</div>';
     return;
   }
   _exportBusy=true;
@@ -216,7 +216,7 @@ function _exportFailUI(e){
   if(btn){ btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF'; }
   const cancelled=e&&e.message==='cancelled';
   const rep=document.getElementById('expReport');
-  if(rep && !cancelled) rep.innerHTML='<div class="exp-err">&#9888; '+esc((e&&e.message)||e)+'</div>';
+  if(rep && !cancelled) rep.innerHTML='<div class="exp-err">'+esc((e&&e.message)||e)+'</div>';
   if(!cancelled) console.error('[export]',e);
 }
 
@@ -265,7 +265,7 @@ async function _triggerExportImpl(){
       // v0.8.3: show the failure in the export report, not just the console.
       console.error('[export] solid body export failed:', e);
       const rep=document.getElementById('expReport');
-      if(rep) rep.innerHTML='<div class="exp-err">&#9888; Solid body export failed — '+esc(e.message||e)+'</div>';
+      if(rep) rep.innerHTML='<div class="exp-err">Solid body export failed — '+esc(e.message||e)+'</div>';
     } finally {
       btn.disabled=false; btn.classList.remove('sweeping'); btn.textContent='Export 3MF';
     }
@@ -717,7 +717,7 @@ async function _triggerExportImpl(){
     if(elapsedEl){elapsedEl.style.display='none';}
     if(meshWorker){meshWorker.terminate();meshWorker=null;}
     hideComputing();showCancelBtn(false);
-    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">&#9888; '+esc(e.message||e)+'</div>';
+    report.innerHTML=(e.message==='cancelled')?'':'<div class="exp-err">'+esc(e.message||e)+'</div>';
     btn.classList.remove('sweeping');btn.textContent='Export 3MF';
     if(e.message!=='cancelled') console.error(e);
   }

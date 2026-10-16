@@ -174,3 +174,5 @@
   .rl-sl.one{grid-template-columns:minmax(0,1fr) 62px}
   .rl-num{width:62px}
 }
+.rl-seg button[data-v=skin]{flex:1.8}
+.rl-seg button[data-v=solid]{flex:.9}

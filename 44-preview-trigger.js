@@ -18,6 +18,14 @@ async function triggerPreview(quality){
   // -- Weld-group preview: bake the active group merged over its bbox ----------
   const _agid=activeGroupId();
   if(_agid && groupMembers(_agid).length>=2){
+    // v0.12.0: every member hidden → show an empty view (nothing would export).
+    if(typeof groupVisibleMembers==='function' && groupVisibleMembers(_agid).length===0){
+      rm.setAssemblyMode(true);
+      rm.setScaffoldField(new Float32Array(8).fill(1),2,0,1,1,null);   // all outside
+      hideComputing(); setBtns(true);
+      if(typeof meshToast==='function') meshToast('Every part in this weld is hidden');
+      return;
+    }
     currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
     setBtns(false);showCancelBtn(false);
     showComputing('building weld preview…','baking field…');

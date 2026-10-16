@@ -1,6 +1,6 @@
 # F13LD.mesh — session recap, 2026-10-15 (c) · v0.12.0 UI refresh
 
-**Branch:** `ui-refresh` (not merged; waiting on Matt's click-test). Mockup: `docs/mockups/mesh-ui-v0.12.html` (v3 is the approved one).
+**Main:** v0.12.0, merged from `ui-refresh` on 2026-10-16 after Matt's click-test and the fixes below. Mockup: `docs/mockups/mesh-ui-v0.12.html` (v3 is the approved one).
 
 ## Matt's decisions
 - Layout in line with F13LD.lab / F13LD.sweep: header actions, view strip, dock + Configure drawer, inspector.
@@ -24,3 +24,10 @@
 - Show joins handles up to 4 members; large welds look speckled at the 64³ preview grid.
 - Anchor only matters with trim to nodes — revisit with Matt whether to keep it.
 - Parallel slab mesher prototypes (scratch only): exact seams work; next is snapping near-corner crossings and a seam-band simplify.
+
+## Click-test fixes (2026-10-16, merged with v0.12.0)
+- Status pill shows the full F13LD mark (both waves ripple while busy); the centre loader is the F13LD robot "Centrifuge" from Matt's animation sampler (`05-ui-chrome.js`; reduced motion shows it still). The header status keeps the mark.
+- Cell size is a number box only (no slider, no upper bound); wall offset slider −2…+2 mm; shift sliders ± one structural period per axis (`structurePeriodMm`, `45-structure-handlers.js`); number boxes accept any value.
+- Larger type everywhere (labels 12 px, values 13 px, hints / buttons 12.5–13 px); quality chips centred.
+- Weld visibility: the weld header has its own shown / ghost / hidden button; member eyes work inside welds; welding a hidden part shows it; **everything hidden drops out of export** and no longer stretches the weld box; all-hidden weld or a hidden single part → clear message, empty view.
+- Next session: the preview rebuild (`docs/PREVIEW_REBUILD_SPEC.md`), then the parallel slab mesher (appendix of the same spec).

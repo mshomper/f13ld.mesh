@@ -289,6 +289,12 @@ MeshRaymarcher.prototype.setSolidMode=function(isSolid, color){
 // uSolidMode/uGhostCount to 0 at draw time so the baked union field renders
 // as-is. Leaves the active body's shape texture binding intact, so returning
 // to a single-body preview is immediate (no re-upload).
+// v0.13.0: visibility of the selected part outside a weld ('solid' draws it,
+// 'ghost' / 'hidden' leave it out; syncGhostsToRaymarcher adds the ghost shell).
+MeshRaymarcher.prototype.setActiveVis=function(v){
+  v=(v==='ghost'||v==='hidden')?v:'solid';
+  if(v!==this._activeVis){ this._activeVis=v; this._dirty=true; }
+};
 MeshRaymarcher.prototype.setAssemblyMode=function(on){
   this._assemblyMode = !!on;
   this._dirty = true;
@@ -585,7 +591,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     'float sampleRaw(vec3 p){vec3 uvw;if(uIsPeriodic>0.5)uvw=(p-uWorldMin)/uWorldSize;else uvw=clamp((p-uWorldMin)/uWorldSize,0.0,1.0);float t=texture(uField,uvw).r;return t*(uFieldMax-uFieldMin)+uFieldMin;}',
     'float rawToSDF(float raw){float val;if(uBakeRaw>0.5){float norm=(raw-uFieldMid)/uFieldHalfR;float adj=norm-uCenter;if(uTopoMode<0.5)val=abs(adj)-uHalfW;else if(uTopoMode<1.5)val=uHalfInvert>0.5?adj:-adj;else val=uHalfW-abs(adj);}else val=raw;return val;}',
     'float sampleScaffoldSDF(vec3 p){return rawToSDF(sampleRaw(xformStructure(p)))+uStructIsoWorld;}',
-    'float sampleShape(vec3 p){vec3 pm=p*(uCellSizeMm/10.0);vec3 uvw=(pm-uBboxMin)/uBboxSize;if(any(lessThan(uvw,vec3(0.0)))||any(greaterThan(uvw,vec3(1.0)))){vec3 bmax=uBboxMin+uBboxSize;vec3 q=max(uBboxMin-pm,pm-bmax);return length(max(q,vec3(0.0)))*(10.0/uCellSizeMm);}float d_mm=texture(uShapeSDF,uvw).r;return d_mm*(10.0/uCellSizeMm);}',
+    'float sampleShape(vec3 p){vec3 pm=p*(uCellSizeMm/10.0);vec3 uvw=(pm-uBboxMin)/uBboxSize;if(any(lessThan(uvw,vec3(0.0)))||any(greaterThan(uvw,vec3(1.0)))){vec3 bmax=uBboxMin+uBboxSize;vec3 q=max(uBboxMin-pm,pm-bmax);float bd=length(max(q,vec3(0.0)));float dc=texture(uShapeSDF,clamp(uvw,0.0,1.0)).r;return max(bd,dc-bd)*(10.0/uCellSizeMm);}float d_mm=texture(uShapeSDF,uvw).r;return d_mm*(10.0/uCellSizeMm);}',
     // rc3.5: implicit() short-circuits when uSolidMode is on. Returns the
     // shape SDF directly so the raymarch hits the body surface as if it were
     // a filled solid. uHasShape must still be 1.0 for solid mode to render —
@@ -974,7 +980,7 @@ MeshRaymarcher.prototype.render=function(){
 MeshRaymarcher.prototype.HOLD_KEYS=['fieldTex','fieldMin','fieldMax','lipschitz','bakeN','topology',
   'worldMin','worldMax','isPeriodic','viewH','hasShape','shapeTex','shapeData','_assemblyMode',
   '_structXform','_solidMode','_solidColor','_ghostCount','_ghostMeta','_ghostTex','_joinTex',
-  '_joinMeta','_joinCount','_joinBand'];
+  '_joinMeta','_joinCount','_joinBand','_activeVis'];
 MeshRaymarcher.prototype._captureState=function(){
   function arr(a){ return a?Array.prototype.slice.call(a):null; }
   var s={};
@@ -1074,13 +1080,17 @@ MeshRaymarcher.prototype._drawFrame=function(bc,skW){
   if(this.hasShape&&this.shapeData&&!this._assemblyMode){ var sdv=this.shapeData;
     shapeEps=Math.max(sdv.bboxSize[0],sdv.bboxSize[1],sdv.bboxSize[2])/Math.max(sdv.N,1)*(10.0/sdv.cellSizeMm); }
   if(this._uShapeEps) gl.uniform1f(this._uShapeEps,shapeEps);
-  // Shape SDF Lipschitz in world units = 10/cellSizeMm (from d_mm*(10/cellSizeMm) scaling).
-  // Using 1.0 causes 5× overshoot at 2mm cells, jumping past boundaries into phantom hits.
-  // v0.13.0: not in weld (assembly) mode — the union field is already in world
-  // units with its own Lipschitz; the shape bound there only shortened every
-  // step ~10/cell times, so rays ran out of steps before the thin walls.
-  var shapeLip=(this.hasShape&&this.shapeData&&!this._assemblyMode)?(10.0/this.shapeData.cellSizeMm):0.0;
-  gl.uniform1f(this._uLipschitz,Math.max(this.lipschitz,shapeLip));
+  // v0.13.0: Lipschitz of the field the rays march, in world units. The shape
+  // SDF is mm distance × (10/cell) sampled at p × (cell/10), so its Lipschitz
+  // is 1 in world units — the old 10/cell bound (from before sampleShape was
+  // scaled) shortened every step 3–7×: lattices inside parts ran out of steps
+  // (dark, pitted) and shadows / occlusion over-darkened solids. Solid part:
+  // the shape alone (1). Lattice in a part: max(lattice, shape). Weld: the
+  // union field's own.
+  var solidNow=!this._assemblyMode&&(this._solidMode||0)>0.5&&this.hasShape&&this.shapeData;
+  var lipNow=this._assemblyMode?this.lipschitz
+    :(solidNow?1.0:Math.max(this.lipschitz,(this.hasShape&&this.shapeData)?1.0:0.0));
+  gl.uniform1f(this._uLipschitz,Math.max(lipNow,1e-3));
   gl.uniform1f(this._uIsPeriodic,this.isPeriodic?1.0:0.0);
   gl.uniform3f(this._uWorldMin,wn[0],wn[1],wn[2]);
   gl.uniform3f(this._uWorldSize,wx[0]-wn[0],wx[1]-wn[1],wx[2]-wn[2]);
@@ -1113,7 +1123,10 @@ MeshRaymarcher.prototype._drawFrame=function(bc,skW){
     gl.uniform1f(this._uStructIsoWorld,0.0);
   }
   // rc3.5: solid-mode uniforms. Default to off if never set.
-  if(this._uSolidMode) gl.uniform1f(this._uSolidMode, this._assemblyMode?0.0:(this._solidMode || 0.0));
+  // v0.13.0: a hidden or ghosted selected part isn't drawn here (a ghost is
+  // drawn as a shell in the ghost list): solid mode with no shape = empty.
+  var hideActive=!this._assemblyMode&&this.hasShape&&(this._activeVis==='hidden'||this._activeVis==='ghost');
+  if(this._uSolidMode) gl.uniform1f(this._uSolidMode, this._assemblyMode?0.0:(hideActive?1.0:(this._solidMode || 0.0)));
   if(this._uSolidColor){
     var sc = this._solidColor || [0.8, 0.8, 0.8];
     gl.uniform3f(this._uSolidColor, sc[0], sc[1], sc[2]);
@@ -1134,7 +1147,7 @@ MeshRaymarcher.prototype._drawFrame=function(bc,skW){
     gl.uniform1f(this._uAOCell, Math.max(aoCell, 1e-3));
   }
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);gl.uniform1i(this._uField,0);
-  gl.uniform1f(this._uHasShape, this._assemblyMode?0.0:(this.hasShape&&this.shapeTex?1.0:0.0));
+  gl.uniform1f(this._uHasShape, (this._assemblyMode||hideActive)?0.0:(this.hasShape&&this.shapeTex?1.0:0.0));
   if(this.hasShape&&this.shapeTex&&this.shapeData){
     var sd=this.shapeData;
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,this.shapeTex);gl.uniform1i(this._uShapeSDF,1);

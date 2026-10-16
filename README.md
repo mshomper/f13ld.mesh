@@ -166,6 +166,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `05-ui-chrome.js` | Spinner orb, status indicator |
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
 | `12-shape-sdf-bake.js` · `13-hu-bake.js` · `14-weld-bake.js` | Shape SDF, hyperuniform and weld-field bake worker pools; weld export plan and estimate |
+| `15-shape-preview-grids.js` | Per-quality preview shape grids (v0.13.0), kept apart from the export grid |
 | `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` · `23-view-strip.js` | Shared F13LD shading block · WebGL2 preview (section plane, show joins) · orientation gimbal · viewer shading menu · view strip tabs |
 | `30-shape-import.js` · `31-body-cards.js` | Body file intake · body / weld / fill state functions (assign, fill, skin, weld together, separate, join rule) |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |

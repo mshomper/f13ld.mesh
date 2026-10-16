@@ -31,6 +31,14 @@ Matt: P1 good, but weld groups still had visibility problems; check before mergi
 - **E**: the empty weld view commits the weld's box; a selected solid part commits a neutral box.
 - `tests/weldvis.js` (new) checks every step. Re-run after the fixes: `weldvis`, `previewcache`, `slabbake`, `loadorder`, `fixtests2` all pass; `harness.js` main vs branch, all 23 exports byte-identical.
 
+## Single-part view fixes (Matt's second click-test, same day)
+Matt: selected parts didn't hide; changing quality didn't sharpen a part; banding rings on a sphere. All three were already on main. Approved all fixes; wants finer shape grids at High / Ultra; accepts the lighter, even solid shading (the old darkening was the bug).
+- **Hiding the selected part** (`10-state.js` `syncGhostsToRaymarcher` → `rm.setActiveVis`): hidden isn't drawn ("This part is hidden"), ghosted draws as a translucent shell; its eye is no longer greyed out. Export already refused a hidden part.
+- **Per-quality shape grids** (new `15-shape-preview-grids.js`): Draft 96 / Low 128 / Med 192 / High 224 / Ultra 256 (capped by the GPU's 3D texture size), baked in the background on the shape-SDF pool, newest request first, "refining shape" in the pill; weld members up to 160. Kept in `body.previewGrids`, separate from `body.sdfGrid`, which export reads — so 3MF output doesn't depend on preview quality. LRU budget 512 MB, the selected part and its weld kept. A quality click now also sets the ray steps for a solid part (it returned before `setQuality`).
+- **Rings** (`20-raymarcher.js` `sampleShape`): outside the part's box the distance was the distance to the box, so shadow rays leaving near a box face saw a near hit and drew rings. Now `max(box distance, grid value at the box − box distance)`, still a lower bound.
+- **Step size**: the shape SDF is Lipschitz 1 in world units; the old 10 / cell bound (from before `sampleShape` was scaled) shortened steps 3–7×. Solid part: 1; lattice in a part: max(lattice, 1); weld: the union's. Lattices inside parts no longer look dark and pitted; occlusion no longer over-darkens solids.
+- `tests/shapeview.js` (new): rings, grid per quality with the export grid untouched, the selected part's eye, a gyroid in the sphere drawn solidly. Full re-run: `shapeview`, `weldvis`, `previewcache`, `slabbake`, `loadorder`, `partprep`, `fixtests2` all pass; `harness.js` main vs branch, all 23 exports byte-identical.
+
 ## Open / next
 - P2 (scene shader with per-member uniforms, tile and region sources, all sliders live in welds) is next; then P3 (exact GLSL sources), P4 (speed), then the parallel slab mesher.
 - Bench page has no preview tab yet (P4).

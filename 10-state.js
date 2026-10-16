@@ -125,7 +125,7 @@ function switchActiveBody(newBodyId){
     // rc3.5: pass assembly bbox so viewH spans all bodies, not just active.
     const asmBbox = computeAssemblyBbox();
     // v0.13.0: keep the camera (the part's texture is cached on the GPU).
-    rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);
+    rm.setShapeSDF(previewShapeGrid(b), b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);
     if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
     rm._dirty = true;
   }
@@ -245,7 +245,7 @@ function clearActiveBody(bodyId){
         const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
         // rc3.5: pass assembly bbox so viewH spans remaining bodies.
         const asmBbox = computeAssemblyBbox();
-        rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);   // v0.13.0
+        rm.setShapeSDF(previewShapeGrid(b), b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);   // v0.13.0
         if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
         rm._dirty = true;
       }
@@ -387,7 +387,7 @@ function syncGhostsToRaymarcher(){
   // v0.13.0: free GPU textures of shape grids no body owns any more.
   if(rm.pruneGridTextures){
     const live = new Set();
-    for(const b of bodies.values()){ if(b.sdfGrid) live.add(b.sdfGrid); if(b.sdfGhost) live.add(b.sdfGhost); }
+    for(const b of bodies.values()) for(const g of bodyShapeGrids(b)) live.add(g);
     rm.pruneGridTextures(live);
   }
   if(!importedShape || !importedShape.shapeData && !(importedShape.sdfGrid)){
@@ -405,11 +405,11 @@ function syncGhostsToRaymarcher(){
     // v0.13.0: the selected part is drawn by the weld preview, except when it
     // is a ghosted member of the selected weld — then it is a shell like any
     // other ghosted member (the preview union leaves it out).
+    // v0.13.0: the same for a standalone selected part — ghosted it is a
+    // shell, hidden it isn't drawn (rm.setActiveVis below).
     if(bodyId === activeBodyId){
       const ab = bodies.get(bodyId);
-      const ghostedInWeld = !!(_ag && bodyGroup.get(bodyId)===_ag && groupMembers(_ag).length>=2
-        && ab && (ab.visibility||VIS_DEFAULT)===VIS_GHOST);
-      if(!ghostedInWeld) continue;
+      if(!(ab && (ab.visibility||VIS_DEFAULT)===VIS_GHOST)) continue;
     }
     // Members of the ACTIVE weld group are baked into the union field — don't
     // also draw them as ghosts (they'd overlap the welded mass). Bodies outside
@@ -443,6 +443,14 @@ function syncGhostsToRaymarcher(){
   }
   if(ghosts.length === 0) rm.clearGhosts();
   else rm.setGhosts(ghosts, cellMm);
+  // v0.13.0: the selected part outside a weld follows its own eye (in a weld
+  // the weld preview decides what is drawn).
+  if(rm.setActiveVis){
+    const ab = bodies.get(activeBodyId);
+    const welded = !!(_ag && groupMembers(_ag).length >= 2);
+    rm.setActiveVis(welded ? 'solid' : ((ab && ab.visibility) || VIS_DEFAULT) === VIS_HIDDEN ? 'hidden'
+      : ((ab && ab.visibility) === VIS_GHOST ? 'ghost' : 'solid'));
+  }
 }
 
 // Tiny hex → [r,g,b] in 0..1 helper for shader uniforms.
@@ -668,6 +676,9 @@ function setBodyVisibility(bodyId, vis){
   b.visibility = vis;
   renderBodyCards();
   syncGhostsToRaymarcher();
+  // v0.13.0: the selected part now hides too; say so, since the view empties.
+  if(bodyId === activeBodyId && vis === VIS_HIDDEN && !bodyGroup.get(bodyId) && typeof meshToast === 'function')
+    meshToast('This part is hidden');
   _visibilityChanged([bodyId]);
 }
 // v0.12.0: one visibility for every member of a weld (the weld card's eye).

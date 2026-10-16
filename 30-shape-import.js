@@ -288,7 +288,7 @@ async function _handleShapeFileImpl(file){
         // and pass preserveCamera so the user's current zoom is kept.
         const activeBody = bodies.get(activeBodyId);
         if(activeBody){
-          rm.setShapeSDF(activeBody.sdfGrid, activeBody.bbox, cellSizeMm, asmBbox, /*preserveCamera=*/true);
+          rm.setShapeSDF(previewShapeGrid(activeBody), activeBody.bbox, cellSizeMm, asmBbox, /*preserveCamera=*/true);   // v0.13.0: finest preview grid
         }
       }
       // Push (identity) transform so uniforms are initialized correctly.

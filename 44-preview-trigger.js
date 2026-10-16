@@ -105,12 +105,19 @@ async function _triggerPreviewRun(quality, isCurrent){
       return;
     }
     if(!shown.length){ commitEmpty(); return; }   // every visible member ghosted
+    // v0.13.0: refine the members' shape grids for this quality (background).
+    if(typeof requestPreviewShapeGrids==='function') requestPreviewShapeGrids(shown, quality, true);
     try{
       const gbb=_weldBoxMm(shown);
       const {specs:allSpecs}=await gatherGroupSpecs(_agid, 0, false);
       if(!isCurrent()) return;
       const shownSet=new Set(shown);
       const specs=allSpecs.filter(sp=>shownSet.has(sp.bodyId));
+      // Preview only: each member's finest preview grid (export reads sdfGrid).
+      if(typeof previewShapeGrid==='function') for(const sp of specs){
+        const g=previewShapeGrid(bodies.get(sp.bodyId), WELD_MEMBER_GRID_MAX);
+        if(g && g.N>sp.shapeN){ sp.shapeSdfData=g.data.buffer; sp.shapeN=g.N; }
+      }
       const N=weldPreviewN(quality, gbb, specs);
       const wMin=[gbb.mnx*s,gbb.mny*s,gbb.mnz*s], wMax=[gbb.mxx*s,gbb.mxy*s,gbb.mxz*s];
       const bakeOpts={isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)};
@@ -148,6 +155,10 @@ async function _triggerPreviewRun(quality, isCurrent){
   // v0.13.0: a standalone solid part needs no lattice field — leave the last
   // one bound (the solid shader ignores it) instead of baking a recipe it
   // doesn't use. Only once some field exists, so the view can draw at all.
+  // v0.13.0: refine the selected part's shape grid for this quality (background),
+  // and set the quality's ray steps even when no field is baked (solid part).
+  if(importedShape && activeBodyId!=null && typeof requestPreviewShapeGrids==='function') requestPreviewShapeGrids([activeBodyId], quality, false);
+  rm.setQuality(quality);
   if(importedShape && activeBodyId!=null && rm.fieldTex
      && typeof isSolidAssignment==='function' && isSolidAssignment(assignments.get(activeBodyId))){
     rm.setAssemblyMode(false);

@@ -68,7 +68,7 @@ button{font-family:inherit}
 .mini{font:600 9px var(--mono);color:var(--t3);letter-spacing:.14em}
 
 /* body */
-.main{flex:1;min-height:0;display:grid;grid-template-columns:240px minmax(0,1fr) 300px;gap:12px;padding:12px 14px;position:relative}
+.main{flex:1;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr) 280px;gap:12px;padding:12px 14px;position:relative}
 .col{min-height:0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;scrollbar-width:thin}
 .card{background:var(--panel);border:1px solid var(--hair);border-radius:12px;min-width:0}
 .card-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--hair)}
@@ -215,6 +215,42 @@ select:hover,.num:hover{border-color:var(--hair2)}
 .weld .wl span{color:var(--t3);font-weight:500;letter-spacing:.04em}
 .place{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
 
+.wgrp{border:1px solid var(--hair2);border-radius:10px;background:rgba(107,10,76,.10);margin-bottom:8px;overflow:hidden}
+.wgrp.on{border-color:var(--mesh);box-shadow:0 0 0 1px var(--mesh-ring)}
+.wgrp.drop,.part.drop{border-color:var(--neon);box-shadow:0 0 0 1px rgba(200,245,66,.45)}
+.whead{display:grid;grid-template-columns:20px 26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 8px 8px 6px;cursor:pointer}
+.whead:hover{background:rgba(255,255,255,.03)}
+.wgrp.on .whead{background:var(--mesh-soft)}
+.wtile{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--mesh-deep);color:var(--mesh-tile)}
+.wname{font:700 12px 'Exo 2';color:var(--t1)}
+.wsub{font:500 10px var(--mono);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wbody{padding:0 8px 6px 18px;position:relative}
+.wbody::before{content:'';position:absolute;left:15px;top:0;bottom:14px;width:1px;background:var(--mesh-ring)}
+.wgrp.folded .wbody{display:none}
+.wgrp.folded .fold svg{transform:rotate(-90deg)}
+.fold{border:0;background:transparent;color:var(--t2);padding:0;cursor:pointer;display:grid;place-items:center}
+.part{grid-template-columns:16px 8px minmax(0,1fr) auto!important}
+.ck{width:14px;height:14px;border-radius:4px;border:1px solid var(--hair2);display:grid;place-items:center;cursor:pointer;background:transparent;padding:0}
+.ck.on{background:var(--neon);border-color:var(--neon);color:#0b0d15}
+.prbtns{display:flex;gap:4px}
+.selbar{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:9px;background:rgba(200,245,66,.08);border:1px solid rgba(200,245,66,.35);margin-bottom:8px;font:500 11px var(--mono);color:var(--t1)}
+.selbar .sp{flex:1}
+.sbtn{height:26px;padding:0 10px;border-radius:7px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 11.5px 'Exo 2';cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.sbtn.prim{background:var(--mesh-deep);border-color:var(--mesh-ring);color:var(--mesh-tile)}
+.sbtn.warn{color:var(--bad);border-color:rgba(251,113,133,.4);background:transparent}
+.sbtn:disabled{opacity:.4;cursor:default}
+.outzone{display:none;align-items:center;justify-content:center;gap:8px;padding:10px;border:1px dashed var(--mesh-ring);border-radius:9px;color:var(--mesh-ink);font-size:11.5px;margin-bottom:8px}
+.dragging-member .outzone{display:flex}
+.outzone.drop{border-color:var(--neon);color:var(--neon)}
+[data-hint]{position:relative}
+.drop[data-hint]::after{content:attr(data-hint);position:absolute;right:8px;top:-9px;font:600 9.5px var(--mono);background:var(--neon);color:#0b0d15;padding:1px 6px;border-radius:5px;letter-spacing:.04em;pointer-events:none}
+.mlist{display:flex;flex-direction:column;gap:5px}
+.mrow{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;background:var(--s1);border:1px solid var(--hair);font:500 11.5px 'Exo 2'}
+.mrow .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow small{font:500 10px var(--mono);color:var(--t3)}
+.toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:#141725;border:1px solid var(--mesh-ring);color:var(--t1);font:500 12px 'Exo 2';padding:8px 14px;border-radius:9px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
+.toast.on{opacity:1}
+
 /* review notes */
 .nb{display:none;position:absolute;z-index:40;width:18px;height:18px;border-radius:50%;background:var(--neon);color:#0b0d15;font:700 10px var(--mono);place-items:center;box-shadow:0 0 0 2px #0b0d15;pointer-events:none}
 body.notes .nb{display:grid}
@@ -298,7 +334,7 @@ body.notes .notesPanel{display:block}
         <div class="card-h"><span class="lbl">PARTS</span><div class="r"><button class="ibtn" title="Fold" data-fold><span data-i="chev"></span></button></div></div>
         <div class="card-b"><div id="parts"></div>
           <div class="addtile" id="dropTile"><span data-i="part"></span>Drop a part · STL OBJ 3MF STEP</div>
-          <p class="note">Drag a recipe onto a part to fill it. Drag one part onto another to weld them.</p>
+          <p class="note">Drag a recipe onto a part to fill it. Drag a part onto another part or a weld to join; tick parts and press Weld to join without dragging.</p>
         </div>
       </div>
       <div id="railSlot"></div>
@@ -392,6 +428,7 @@ body.notes .notesPanel{display:block}
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
   <div class="notesPanel" id="notesPanel">
     <h3>WHAT CHANGES · v0.12</h3>
     <ol>
@@ -404,12 +441,13 @@ body.notes .notesPanel{display:block}
       <li><b>Export is the primary action</b> at the bottom right with its estimate beside it, and a progress strip with stages and Cancel above the dock while it runs.</li>
       <li><b>Mesh colour.</b> Tool name, active tabs and the Export button use the Mesh brand pair (tile #FCEAF5, stroke #6B0A4C) with a lighter on-dark accent, as Lab does with its red.</li>
       <li><b>Phone.</b> One column: viewport first, rails below, the dock stays at the bottom, the drawer opens as a sheet. No horizontal scrolling anywhere.</li>
-      <li><b>Structure is edited next to the view, not in the drawer.</b> Select a part and its editor opens beside the viewport (right column by default; try the other two placements below). Every slider updates the preview live.</li>
-      <li><b>Each part owns its fill.</b> Solid, Lattice, or Lattice + skin, with its own recipe, cell size, wall offset, rotation and shift — the same recipe can fill two parts at different cell sizes. Drag a recipe card onto a part to fill it.</li>
-      <li><b>Welds are objects you can select.</b> Click the weld header to edit how its parts join: fillet radius, and a join rule — Union (plain fillet), Anchor (lattice runs into the solid by a set depth so it bonds) or Graded (walls thicken toward the solid over a set distance). Show joins highlights the contact zone.</li>
+      <li><b>Structure is edited in the left rail, right under the parts.</b> Select a part and its editor opens there, so the view stays clear. Every slider updates the preview live.</li>
+      <li><b>Each part owns its fill.</b> Solid, Lattice, or Lattice + skin, with its own recipe, cell size, wall offset, rotation and shift. Drag a recipe card onto a part, or pick it in the editor.</li>
+      <li><b>A weld is a card with its own header.</b> The header (link icon, name, part count, join summary) selects the weld; the parts inside it select themselves. The fold arrow hides the members.</li>
+      <li><b>Joining parts — three ways.</b> (a) Drag a part onto another part: a new weld. (b) Drag a part onto a weld card: it joins that weld. (c) Tick the boxes on two or more parts or welds and press Weld in the selection bar — the phone-friendly way. Merging two welds keeps the target's settings.</li>
+      <li><b>Taking welds apart — three ways.</b> (a) The unlink button on a member row takes that part out. (b) Drag a member out: a "drop here to take it out" strip appears while you drag. (c) Separate all, in the weld editor. A weld left with one part dissolves on its own and says so.</li>
+      <li><b>The part editor shows its weld too.</b> "Weld with…" for a loose part, or "In Weld A · Leave weld" for a member, so you can join and separate without dragging.</li>
     </ol>
-    <div class="mini" style="margin-top:10px">EDITOR PLACEMENT · try each</div>
-    <div class="place" id="placeSeg"><button class="chip on" data-pl="insp">Right column</button><button class="chip" data-pl="rail">Left rail, under parts</button><button class="chip" data-pl="float">Floating over view</button></div>
   </div>
 </div>
 
@@ -433,6 +471,10 @@ const IC={
   export:'<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
   orient:'<path d="M12 20V5M7 10l5-5 5 5"/><path d="M5 20h14"/>',
   download:'<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
+  weld:'<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>',
+  unlink:'<path d="M9 15 6.5 17.5a3 3 0 0 1-4.2-4.2L5 10.6M15 9l2.5-2.5a3 3 0 0 1 4.2 4.2L19 13.4"/><path d="M8 5V3M5 8H3M16 19v2M19 16h2"/>',
+  check:'<path d="M5 12.5l4.5 4.5L19 7"/>',
+  split:'<path d="M12 3v18"/><path d="M8 7 4 12l4 5M16 7l4 5-4 5"/>',
 };
 function paintIcons(root){ for(const el of (root||document).querySelectorAll('[data-i]')){ const n=el.dataset.i; const sz=(n==='partSm'||el.closest('.vtab,.tag,.dtab'))?14:15;
   el.innerHTML='<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="'+(n==='chev'||n==='chevUp'?'chev':'')+'">'+IC[n]+'</svg>'; el.style.display='inline-grid'; } }
@@ -470,7 +512,7 @@ function updateEstimate(){
   $('tMat').textContent=$('material').selectedOptions[0].textContent.split(' (')[0].split(' ·')[0];
   const rho=+$('material').selectedOptions[0].dataset.r; $('rhoHint').textContent=rho.toFixed(2)+' g/cm³ · same list as F13LD.lab';
   $('tOri').textContent=S.orient; $('tTilt').textContent=(+$('tiltX').value||0)+'° · '+(+$('tiltY').value||0)+'°';
-  const sp=PARTS.find(x=>x.id===SEL)||PARTS[0]; const iso=sp.iso||0;
+  const sp=PARTS.find(x=>x.id===SEL_PART)||PARTS[0]; const iso=sp.iso||0;
   $('tSel').textContent=sp.name.replace(/\.stl$/,''); $('tSelFill').textContent=sp.fill==='solid'?'solid':(recipeOf(sp).name.split(' ')[0].toLowerCase()+' · '+sp.cell+' mm'+(sp.fill==='skin'?' · skin':''));
   const qn=S.qual[0].toUpperCase()+S.qual.slice(1); $('tQual').textContent=qn; $('mvExp').textContent=qn;
   $('tDom').textContent=e+' mm · '+dom+' mm';
@@ -549,7 +591,7 @@ const cv=$('cv'); const gl=cv.getContext('webgl',{antialias:false});
 let prog=null, U={}, yaw=0.7, pitch=0.45, shapeMode=0, drag=null;
 const VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
 const FS=`precision highp float;
-uniform vec2 res; uniform float yaw,pitch,view,cut,crit,stand,mode,iso,cellk,fill,skin,fillet,rule,anchor,grade,joins,plateOn; uniform mat3 R,L; uniform vec3 col,shift;
+uniform vec2 res; uniform float yaw,pitch,view,cut,crit,stand,mode,iso,cellk,fill,skin,fillet,rule,anchor,grade,joins,plateOn,welded; uniform mat3 R,L; uniform vec3 col,shift;
 float box(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
 float smin(float a,float b,float k){ if(k<=0.) return min(a,b); float h=clamp(.5+.5*(b-a)/k,0.,1.); return mix(b,a,h)-k*h*(1.-h); }
 float lat(vec3 p,float w){
@@ -570,7 +612,7 @@ float part(vec3 p){
   if(fill>1.5){ float sx=max(abs(p.x),abs(p.z))-1.; d=min(d,max(b,-(sx+skin))); }
   return d;
 }
-float scene(vec3 p){ vec3 q=R*p; float d=part(q); if(plateOn>.5) d=smin(d,plate(q),fillet); if(view>1.5) d=max(d,q.x-cut); return d; }
+float scene(vec3 p){ vec3 q=R*p; float d=part(q); if(plateOn>.5) d=welded>.5?smin(d,plate(q),fillet):min(d,plate(q+vec3(0.,.08,0.))); if(view>1.5) d=max(d,q.x-cut); return d; }
 vec3 nrm(vec3 p){vec2 e=vec2(.0015,0.);return normalize(vec3(scene(p+e.xyy)-scene(p-e.xyy),scene(p+e.yxy)-scene(p-e.yxy),scene(p+e.yyx)-scene(p-e.yyx)));}
 void main(){
   vec2 uv=(gl_FragCoord.xy-0.5*res)/res.y;
@@ -584,9 +626,9 @@ void main(){
   if(view>0.5&&view<1.5){ float tp=(floorY-ro.y)/rd.y; if(tp>0.&&(!hit||tp<t)){ vec3 pp=ro+rd*tp; float g=step(.96,fract(pp.x*2.))+step(.96,fract(pp.z*2.)); c=mix(vec3(.09,.1,.13),vec3(.2,.22,.28),min(g,1.)); c=mix(c,bg,smoothstep(2.,6.,length(pp.xz))); } }
   if(hit){ vec3 p=ro+rd*t; vec3 n=nrm(p); vec3 Ld=normalize(vec3(.6,.9,.4)); vec3 q=R*p;
     float dif=max(dot(n,Ld),0.), amb=.35+.25*n.y, rim=pow(1.-max(dot(n,-rd),0.),3.);
-    bool onPlate=plateOn>.5&&plate(q)<part(q);
+    bool onPlate=plateOn>.5&&(welded>.5?plate(q):plate(q+vec3(0.,.08,0.)))<part(q);
     vec3 base=onPlate?vec3(.55,.57,.62):(fill<0.5?vec3(.6,.62,.68):col*.72+.16);
-    if(joins>.5&&plateOn>.5){ float band=max(fillet,.04)+.05; if(abs(plate(q))<band&&part(q)<band) base=mix(base,vec3(.89,.42,.69),.85); }
+    if(joins>.5&&plateOn>.5&&welded>.5){ float band=max(fillet,.04)+.05; if(abs(plate(q))<band&&part(q)<band) base=mix(base,vec3(.89,.42,.69),.85); }
     if(view>0.5&&view<1.5){ float down=-n.y; float lim=cos(radians(90.-crit));
       base=vec3(.62,.64,.7);
       if(p.y<floorY+0.02 && down>.9) base=vec3(.2,.83,.6);
@@ -600,7 +642,7 @@ function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShade
 function initGL(){ if(!gl) return; prog=gl.createProgram(); gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS)); gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS)); gl.linkProgram(prog); gl.useProgram(prog);
   const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
   const l=gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);
-  for(const n of ['res','yaw','pitch','view','cut','crit','stand','mode','iso','R','col','L','shift','cellk','fill','skin','fillet','rule','anchor','grade','joins','plateOn']) U[n]=gl.getUniformLocation(prog,n); }
+  for(const n of ['res','yaw','pitch','view','cut','crit','stand','mode','iso','R','col','L','shift','cellk','fill','skin','fillet','rule','anchor','grade','joins','plateOn','welded']) U[n]=gl.getUniformLocation(prog,n); }
 function rotM(){ // part orientation (+Z up in part frame → which axis faces up) then tilt
   const o=S.orient, tx=(+$('tiltX').value||0)*Math.PI/180, ty=(+$('tiltY').value||0)*Math.PI/180;
   const base={'+Z':[1,0,0,0,1,0,0,0,1],'-Z':[1,0,0,0,-1,0,0,0,-1],'+X':[0,1,0,-1,0,0,0,0,1],'-X':[0,-1,0,1,0,0,0,0,1],'+Y':[1,0,0,0,0,1,0,-1,0],'-Y':[1,0,0,0,0,-1,0,1,0]}[o];
@@ -615,11 +657,11 @@ let raf=0;
 function draw(){ if(!gl||!prog) return; cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>{
   gl.viewport(0,0,cv.width,cv.height); gl.uniform2f(U.res,cv.width,cv.height); gl.uniform1f(U.yaw,yaw); gl.uniform1f(U.pitch,pitch);
   gl.uniform1f(U.view,S.view==='print'?1:S.view==='section'?2:0); gl.uniform1f(U.cut,(+$('secR').value)/100);
-  gl.uniform1f(U.crit,+$('crit').value||45); gl.uniform1f(U.stand,+$('stand').value||0); const sp=PARTS[0], wd=WELD;
+  gl.uniform1f(U.crit,+$('crit').value||45); gl.uniform1f(U.stand,+$('stand').value||0); const sp=PARTS[0], g1=groupOf('p1'), welded=!!(g1&&g1.members.includes('p2')), wd=g1||{fillet:0,rule:'union',anchor:0,grade:1,joins:false};
   gl.uniform1f(U.mode,({g:0,f:1,b:2})[sp.recipe]); gl.uniform1f(U.iso,sp.iso*0.25); gl.uniform1f(U.cellk,5/sp.cell);
   gl.uniform1f(U.fill,({solid:0,lattice:1,skin:2})[sp.fill]); gl.uniform1f(U.skin,sp.skin/5);
   gl.uniformMatrix3fv(U.L,false,new Float32Array(eulerM(sp.rx,sp.ry,sp.rz))); gl.uniform3f(U.shift,sp.sx*sp.cell/5,sp.sy*sp.cell/5,sp.sz*sp.cell/5);
-  gl.uniform1f(U.plateOn,PARTS[1].visible?1:0); gl.uniform1f(U.fillet,wd.fillet/5); gl.uniform1f(U.rule,({union:0,anchor:1,graded:2})[wd.rule]);
+  gl.uniform1f(U.plateOn,PARTS[1].visible?1:0); gl.uniform1f(U.fillet,wd.fillet/5); gl.uniform1f(U.rule,welded?({union:0,anchor:1,graded:2})[wd.rule]:0); gl.uniform1f(U.welded,welded?1:0);
   gl.uniform1f(U.anchor,wd.anchor/5); gl.uniform1f(U.grade,Math.max(.05,wd.grade/5)); gl.uniform1f(U.joins,wd.joins?1:0);
   gl.uniformMatrix3fv(U.R,false,new Float32Array(rotM())); gl.uniform3fv(U.col,famRGB[PARTS[0].recipe]);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }); }
@@ -627,53 +669,129 @@ cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};cv.setPoint
 cv.addEventListener('pointermove',e=>{ if(!drag) return; yaw-=(e.clientX-drag.x)*0.008; pitch=Math.max(-1.3,Math.min(1.3,pitch+(e.clientY-drag.y)*0.008)); drag={x:e.clientX,y:e.clientY}; draw(); });
 cv.addEventListener('pointerup',()=>drag=null);
 
-// ── parts, weld, editor (v2) ──────────────────────────────────────────
+// ── parts, welds, editor (v3: left rail, explicit join / separate) ─────
 const PARTS=[
   {id:'p1', name:'cage_body.stl', fill:'lattice', recipe:'g', cell:3, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
   {id:'p2', name:'endplate_cap.stl', fill:'solid', recipe:'g', cell:3, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
+  {id:'p3', name:'screw_boss.stl', fill:'solid', recipe:'g', cell:3, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
+  {id:'p4', name:'spacer_core.stl', fill:'lattice', recipe:'f', cell:2.5, iso:0, skin:0.4, rx:0, ry:0, rz:0, sx:0, sy:0, sz:0, trim:true, visible:true},
 ];
-const WELD={id:'A', members:['p1','p2'], fillet:0.4, rule:'anchor', anchor:0.6, grade:1.5, joins:true};
-let SEL='p1', PLACE='insp';
+let GROUPS=[{id:'A', members:['p1','p2'], fillet:0.4, rule:'anchor', anchor:0.6, grade:1.5, joins:true, folded:false}];
+let SEL={t:'part', id:'p1'};
+const MULTI=new Set();          // ticked part ids and weld ids ('w:A')
+let dragId=null;
+const partById=id=>PARTS.find(x=>x.id===id);
+const groupOf=pid=>GROUPS.find(g=>g.members.includes(pid));
 const recipeOf=pt=>RECIPES.find(r=>r.id===pt.recipe);
+const short=n=>n.replace(/\.stl$/,'');
 function eulerM(ax,ay,az){ const r=Math.PI/180, a=ax*r,b=ay*r,c=az*r, ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(c),sc=Math.sin(c);
   const X=[1,0,0,0,ca,-sa,0,sa,ca], Y=[cb,0,sb,0,1,0,-sb,0,cb], Z=[cc,-sc,0,sc,cc,0,0,0,1];
   const mul=(m,n)=>{const o=new Array(9);for(let i=0;i<3;i++)for(let j=0;j<3;j++){let v=0;for(let k=0;k<3;k++)v+=m[i*3+k]*n[k*3+j];o[i*3+j]=v;}return o;}; return mul(Z,mul(Y,X)); }
+function nextLetter(){ for(const L of 'ABCDEFGH') if(!GROUPS.some(g=>g.id===L)) return L; return '?'; }
+let toastT=0;
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2600); }
+
+// join: any mix of loose parts and welds becomes one weld (target keeps its settings)
+function weldTogether(partIds, targetGid){
+  let target=targetGid?GROUPS.find(g=>g.id===targetGid):null;
+  const involved=new Set();
+  for(const pid of partIds){ const g=groupOf(pid); if(g) involved.add(g); }
+  if(!target) target=[...involved][0]||null;
+  if(!target){ target={id:nextLetter(), members:[], fillet:0.4, rule:'union', anchor:0.6, grade:1.5, joins:true, folded:false}; GROUPS.push(target); }
+  for(const g of involved) if(g!==target){ for(const m of g.members) if(!target.members.includes(m)) target.members.push(m); GROUPS=GROUPS.filter(x=>x!==g); }
+  for(const pid of partIds) if(!target.members.includes(pid)){ const g=groupOf(pid); if(g&&g!==target) g.members=g.members.filter(x=>x!==pid); target.members.push(pid); }
+  GROUPS=GROUPS.filter(g=>g.members.length>=2||g===target);
+  SEL={t:'weld', id:target.id};
+  toast('Weld '+target.id+' · '+target.members.map(m=>short(partById(m).name)).join(' + '));
+}
+function leaveWeld(pid){
+  const g=groupOf(pid); if(!g) return;
+  g.members=g.members.filter(x=>x!==pid);
+  if(g.members.length<2){ GROUPS=GROUPS.filter(x=>x!==g); toast(short(partById(pid).name)+' left Weld '+g.id+' — only one part was left, so Weld '+g.id+' was dissolved'); }
+  else toast(short(partById(pid).name)+' left Weld '+g.id);
+  if(SEL.t==='weld'&&!GROUPS.some(x=>x.id===SEL.id)) SEL={t:'part', id:pid};
+}
+function separateAll(gid){ const g=GROUPS.find(x=>x.id===gid); if(!g) return; GROUPS=GROUPS.filter(x=>x!==g); SEL={t:'part', id:g.members[0]}; toast('Weld '+gid+' separated into '+g.members.length+' parts'); }
+
+function ck(key){ return '<button class="ck'+(MULTI.has(key)?' on':'')+'" data-ck="'+key+'" title="Tick to weld several at once" aria-label="Tick">'+(MULTI.has(key)?'<span data-i="check"></span>':'')+'</button>'; }
 function partRow(pt){
-  const r=recipeOf(pt), col=pt.fill==='solid'?'#8a8fa8':r.col;
-  const fillTxt=pt.fill==='solid'?'solid':r.name.toLowerCase()+' · cell '+pt.cell+' mm'+(pt.fill==='skin'?' · skin '+pt.skin+' mm':'');
-  return '<div class="part'+(SEL===pt.id?' on':'')+'" data-id="'+pt.id+'"><span class="fillsw" style="background:'+col+'"></span><div style="min-width:0"><div class="nm">'+pt.name+'</div><div class="as">'+fillTxt+'</div></div><button class="ibtn eye" title="'+(pt.visible?'Hide':'Show')+'" style="opacity:'+(pt.visible?1:.4)+'"><span data-i="eye"></span></button></div>';
+  const r=recipeOf(pt), col=pt.fill==='solid'?'#8a8fa8':r.col, g=groupOf(pt.id);
+  const fillTxt=pt.fill==='solid'?'solid':r.name.toLowerCase()+' · '+pt.cell+' mm'+(pt.fill==='skin'?' · skin':'');
+  return '<div class="part'+(SEL.t==='part'&&SEL.id===pt.id?' on':'')+'" data-id="'+pt.id+'" draggable="true">'+ck(pt.id)+
+    '<span class="fillsw" style="background:'+col+'"></span><div style="min-width:0"><div class="nm">'+pt.name+'</div><div class="as">'+fillTxt+'</div></div>'+
+    '<div class="prbtns">'+(g?'<button class="ibtn unl" title="Take out of Weld '+g.id+'"><span data-i="unlink"></span></button>':'')+
+    '<button class="ibtn eye" title="'+(pt.visible?'Hide':'Show')+'" style="opacity:'+(pt.visible?1:.4)+'"><span data-i="eye"></span></button></div></div>';
+}
+function weldCard(g){
+  const on=SEL.t==='weld'&&SEL.id===g.id;
+  return '<div class="wgrp'+(on?' on':'')+(g.folded?' folded':'')+'" data-g="'+g.id+'">'+
+    '<div class="whead" data-g="'+g.id+'"><button class="fold" title="Fold"><span data-i="chev"></span></button><span class="wtile"><span data-i="weld"></span></span>'+
+    '<div style="min-width:0"><div class="wname">Weld '+g.id+'</div><div class="wsub">'+g.members.length+' parts · fillet '+g.fillet.toFixed(1)+' mm · '+g.rule+'</div></div>'+ck('w:'+g.id)+'</div>'+
+    '<div class="wbody">'+g.members.map(m=>partRow(partById(m))).join('')+'</div></div>';
 }
 function renderParts(){
-  $('parts').innerHTML='<div class="weld'+(SEL==='weld'?' on':'')+'" id="weldA"><div class="wl">WELD A · ONE PART<span>fillet '+WELD.fillet.toFixed(1)+' · '+WELD.rule+'</span></div>'+PARTS.map(partRow).join('')+'</div>';
-  paintIcons($('parts'));
-  $('weldA').onclick=e=>{ if(e.target.closest('.part')) return; SEL='weld'; refresh(); };
+  const loose=PARTS.filter(p=>!groupOf(p.id));
+  const n=MULTI.size, parts=[...MULTI].filter(k=>!k.startsWith('w:')).length, welds=n-parts;
+  let h='';
+  if(n) h+='<div class="selbar"><span class="sp">'+n+' ticked'+(welds?' · '+welds+' weld'+(welds>1?'s':''):'')+'</span><button class="sbtn prim" id="weldSel"'+(n<2?' disabled title="Tick at least two"':'')+'><span data-i="weld"></span>Weld</button><button class="sbtn" id="clrSel">Clear</button></div>';
+  h+=GROUPS.map(weldCard).join('');
+  h+='<div class="outzone" id="outzone" data-hint="take out"><span data-i="unlink"></span>Drop here to take it out of its weld</div>';
+  h+=loose.map(partRow).join('');
+  $('parts').innerHTML=h; paintIcons($('parts'));
+  const ws=$('weldSel'); if(ws) ws.onclick=()=>{ const ids=[], gids=[]; for(const k of MULTI){ if(k.startsWith('w:')) gids.push(k.slice(2)); else ids.push(k); }
+    const tgt=gids[0]||null; for(const gid of gids.slice(1)){ const g=GROUPS.find(x=>x.id===gid); if(g) ids.push(...g.members); }
+    weldTogether(ids, tgt); MULTI.clear(); refresh(); };
+  const cs=$('clrSel'); if(cs) cs.onclick=()=>{ MULTI.clear(); refresh(); };
+  for(const b of $('parts').querySelectorAll('.ck')) b.onclick=e=>{ e.stopPropagation(); const k=b.dataset.ck; MULTI.has(k)?MULTI.delete(k):MULTI.add(k); renderParts(); };
+  for(const el of $('parts').querySelectorAll('.whead')) el.onclick=e=>{ const g=GROUPS.find(x=>x.id===el.dataset.g);
+    if(e.target.closest('.fold')){ g.folded=!g.folded; renderParts(); return; } if(e.target.closest('.ck')) return; SEL={t:'weld', id:g.id}; refresh(); };
   for(const el of $('parts').querySelectorAll('.part')){
-    const pt=PARTS.find(x=>x.id===el.dataset.id);
-    el.onclick=e=>{ if(e.target.closest('.eye')){ pt.visible=!pt.visible; refresh(); return; } SEL=pt.id; refresh(); };
-    el.ondragover=e=>{ e.preventDefault(); el.classList.add('drop'); };
+    const pt=partById(el.dataset.id);
+    el.onclick=e=>{ if(e.target.closest('.eye')){ pt.visible=!pt.visible; refresh(); return; } if(e.target.closest('.unl')){ leaveWeld(pt.id); refresh(); return; } if(e.target.closest('.ck')) return; SEL={t:'part', id:pt.id}; refresh(); };
+    el.ondragstart=e=>{ dragId=pt.id; e.dataTransfer.setData('text/part',pt.id); e.dataTransfer.effectAllowed='move'; if(groupOf(pt.id)) $('partCard').classList.add('dragging-member'); };
+    el.ondragend=()=>{ dragId=null; $('partCard').classList.remove('dragging-member'); for(const d of document.querySelectorAll('.drop')) d.classList.remove('drop'); };
+    el.ondragover=e=>{ e.preventDefault(); e.stopPropagation(); if(dragId===pt.id) return; el.classList.add('drop');
+      const g=groupOf(pt.id); el.dataset.hint=!dragId?'fill with recipe':(g?'join Weld '+g.id:'weld with '+short(pt.name)); };
     el.ondragleave=()=>el.classList.remove('drop');
-    el.ondrop=e=>{ e.preventDefault(); const rid=e.dataTransfer.getData('text/recipe'); if(rid){ pt.recipe=rid; if(pt.fill==='solid') pt.fill='lattice'; SEL=pt.id; refresh(); } };
+    el.ondrop=e=>{ e.preventDefault(); e.stopPropagation(); el.classList.remove('drop');
+      const rid=e.dataTransfer.getData('text/recipe'); if(rid){ pt.recipe=rid; if(pt.fill==='solid') pt.fill='lattice'; SEL={t:'part', id:pt.id}; toast(short(pt.name)+' filled with '+recipeOf(pt).name); refresh(); return; }
+      const src=e.dataTransfer.getData('text/part'); if(!src||src===pt.id) return;
+      const g=groupOf(pt.id); weldTogether([src, pt.id], g?g.id:null); refresh(); };
   }
+  for(const el of $('parts').querySelectorAll('.wgrp')){
+    el.ondragover=e=>{ e.preventDefault(); if(!dragId) return; const g=GROUPS.find(x=>x.id===el.dataset.g); if(g.members.includes(dragId)) return; el.classList.add('drop'); el.dataset.hint='join Weld '+g.id; };
+    el.ondragleave=e=>{ if(!el.contains(e.relatedTarget)) el.classList.remove('drop'); };
+    el.ondrop=e=>{ e.preventDefault(); el.classList.remove('drop'); const src=e.dataTransfer.getData('text/part'); const g=GROUPS.find(x=>x.id===el.dataset.g); if(src&&!g.members.includes(src)){ weldTogether([src], g.id); refresh(); } };
+  }
+  const oz=$('outzone');
+  oz.ondragover=e=>{ e.preventDefault(); oz.classList.add('drop'); }; oz.ondragleave=()=>oz.classList.remove('drop');
+  oz.ondrop=e=>{ e.preventDefault(); const src=e.dataTransfer.getData('text/part'); if(src) leaveWeld(src); $('partCard').classList.remove('dragging-member'); refresh(); };
 }
 function slider(key,label,min,max,step,val,unit,sym){ return '<div class="sl'+(sym?'':' one')+'"><span>'+(sym||'')+'</span><input type="range" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'" data-k="'+key+'" aria-label="'+label+'"><output id="o-'+key+'">'+fmtv(val,step)+(unit||'')+'</output></div>'; }
 function fmtv(v,step){ return (+v).toFixed(step<1?(step<0.1?2:1):0); }
-function editorHtml(){
-  if(SEL==='weld'){
-    const w=WELD;
-    return '<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">WELD A · 2 parts</span><div class="r"><span class="mini">one part on export</span></div></div><div class="card-b">'+
-      '<div class="erow"><label>Fillet radius <em id="e-fillet">'+w.fillet.toFixed(1)+' mm</em></label>'+slider('w.fillet','Fillet radius',0,1.5,0.1,w.fillet,'','')+'</div>'+
-      '<div class="erow"><label>Join rule</label><div class="seg full" id="ruleSeg"><button data-r="union"'+(w.rule==='union'?' class="on"':'')+'>Union</button><button data-r="anchor"'+(w.rule==='anchor'?' class="on"':'')+'>Anchor</button><button data-r="graded"'+(w.rule==='graded'?' class="on"':'')+'>Graded</button></div>'+
-        '<div class="hint" style="font-size:10.5px;color:var(--t3);line-height:1.45">'+({union:'Plain union with the fillet above.',anchor:'The lattice runs into the solid by the depth below, so it bonds through the joint rather than touching at a face.',graded:'Lattice walls thicken toward the solid over the distance below, so stiffness steps up gradually.'})[w.rule]+'</div></div>'+
-      (w.rule==='anchor'?'<div class="erow"><label>Anchor depth <em>'+w.anchor.toFixed(1)+' mm</em></label>'+slider('w.anchor','Anchor depth',0,2,0.1,w.anchor,'','')+'</div>':'')+
-      (w.rule==='graded'?'<div class="erow"><label>Grade over <em>'+w.grade.toFixed(1)+' mm</em></label>'+slider('w.grade','Grade distance',0.2,5,0.1,w.grade,'','')+'</div>':'')+
-      '<div class="erow"><label>Show joins</label><div class="pair"><button class="sw'+(w.joins?' on':'')+'" id="joinSw" aria-label="Show joins"></button><span style="font:500 11px var(--mono);color:var(--t3)">highlight where parts meet</span></div></div>'+
-      '<div class="hint" style="font-size:10.5px;color:var(--t3)">Solids with a closed mesh export exactly as imported; only the lattice is meshed.</div>'+
-    '</div></div>';
-  }
-  const pt=PARTS.find(x=>x.id===SEL), r=recipeOf(pt);
-  const fillSeg='<div class="seg full" id="fillSeg"><button data-f="solid"'+(pt.fill==='solid'?' class="on"':'')+'>Solid</button><button data-f="lattice"'+(pt.fill==='lattice'?' class="on"':'')+'>Lattice</button><button data-f="skin"'+(pt.fill==='skin'?' class="on"':'')+'>Lattice + skin</button></div>';
-  let h='<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">'+pt.name.replace(/\.stl$/,'').toUpperCase()+'</span><div class="r"><span class="mini">'+(pt.fill==='solid'?'solid':r.fam)+'</span></div></div><div class="card-b">'+
-    '<div class="erow"><label>Fill</label>'+fillSeg+'</div>';
+const hint=t=>'<div style="font-size:10.5px;color:var(--t3);line-height:1.45">'+t+'</div>';
+function weldEditor(g){
+  const others=[...PARTS.filter(p=>!g.members.includes(p.id)&&!groupOf(p.id)).map(p=>['p:'+p.id,short(p.name)]), ...GROUPS.filter(x=>x!==g).map(x=>['g:'+x.id,'Weld '+x.id+' (merge)'])];
+  return '<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">WELD '+g.id+' · '+g.members.length+' PARTS</span><div class="r"><span class="mini">one part on export</span></div></div><div class="card-b">'+
+    '<div class="erow"><label>Parts in this weld</label><div class="mlist">'+g.members.map(m=>{ const pt=partById(m); return '<div class="mrow"><span class="nm">'+short(pt.name)+'</span><small>'+(pt.fill==='solid'?'solid':recipeOf(pt).fam.toLowerCase())+'</small><button class="ibtn" data-out="'+m+'" title="Take out"><span data-i="unlink"></span></button></div>'; }).join('')+'</div>'+
+      (others.length?'<select id="addTo"><option value="">Add a part or weld…</option>'+others.map(([v,n])=>'<option value="'+v+'">'+n+'</option>').join('')+'</select>':'')+'</div>'+
+    '<div class="erow"><label>Fillet radius <em>'+g.fillet.toFixed(1)+' mm</em></label>'+slider('w.fillet','Fillet radius',0,1.5,0.1,g.fillet,'','')+'</div>'+
+    '<div class="erow"><label>Join rule</label><div class="seg full" id="ruleSeg"><button data-r="union"'+(g.rule==='union'?' class="on"':'')+'>Union</button><button data-r="anchor"'+(g.rule==='anchor'?' class="on"':'')+'>Anchor</button><button data-r="graded"'+(g.rule==='graded'?' class="on"':'')+'>Graded</button></div>'+
+      hint(({union:'Plain union with the fillet above.',anchor:'Lattice runs into the solid by the depth below, so it bonds through the joint rather than touching at a face.',graded:'Lattice walls thicken toward the solid over the distance below.'})[g.rule])+'</div>'+
+    (g.rule==='anchor'?'<div class="erow"><label>Anchor depth <em>'+g.anchor.toFixed(1)+' mm</em></label>'+slider('w.anchor','Anchor depth',0,2,0.1,g.anchor,'','')+'</div>':'')+
+    (g.rule==='graded'?'<div class="erow"><label>Grade over <em>'+g.grade.toFixed(1)+' mm</em></label>'+slider('w.grade','Grade distance',0.2,5,0.1,g.grade,'','')+'</div>':'')+
+    '<div class="erow"><label>Show joins</label><div class="pair"><button class="sw'+(g.joins?' on':'')+'" id="joinSw" aria-label="Show joins"></button><span style="font:500 11px var(--mono);color:var(--t3)">highlight where parts meet</span></div></div>'+
+    '<button class="sbtn warn" id="sepAll"><span data-i="split"></span>Separate all parts</button>'+
+  '</div></div>';
+}
+function partEditor(pt){
+  const r=recipeOf(pt), g=groupOf(pt.id);
+  const targets=[...PARTS.filter(p=>p.id!==pt.id&&!(g&&g.members.includes(p.id))).map(p=>['p:'+p.id,(groupOf(p.id)?'Weld '+groupOf(p.id).id+' · ':'')+short(p.name)]), ...GROUPS.filter(x=>x!==g).map(x=>['g:'+x.id,'Weld '+x.id])];
+  let h='<div class="ed" id="editorHost"><div class="card-h"><span class="lbl">'+short(pt.name).toUpperCase()+'</span><div class="r"><span class="mini">'+(pt.fill==='solid'?'solid':r.fam)+'</span></div></div><div class="card-b">';
+  h+='<div class="erow"><label>Weld</label>'+(g
+     ? '<div class="pair"><span style="font:600 12px \'Exo 2\';color:var(--mesh-ink)">In Weld '+g.id+'</span><button class="sbtn" id="goWeld">Edit weld</button><button class="sbtn warn" id="leave"><span data-i="unlink"></span>Leave</button></div>'
+     : '<select id="weldWith"><option value="">Not welded · weld with…</option>'+targets.map(([v,n])=>'<option value="'+v+'">'+n+'</option>').join('')+'</select>')+'</div>';
+  h+='<div class="erow"><label>Fill</label><div class="seg full" id="fillSeg"><button data-f="solid"'+(pt.fill==='solid'?' class="on"':'')+'>Solid</button><button data-f="lattice"'+(pt.fill==='lattice'?' class="on"':'')+'>Lattice</button><button data-f="skin"'+(pt.fill==='skin'?' class="on"':'')+'>Lattice + skin</button></div></div>';
   if(pt.fill!=='solid'){
     h+='<div class="erow"><label>Recipe</label><select id="recSel">'+RECIPES.map(x=>'<option value="'+x.id+'"'+(x.id===pt.recipe?' selected':'')+'>'+x.fam+' · '+x.name+'</option>').join('')+'</select></div>';
     if(pt.fill==='skin') h+='<div class="erow"><label>Skin thickness <em>'+pt.skin.toFixed(1)+' mm</em></label>'+slider('skin','Skin thickness',0.2,1.5,0.1,pt.skin,'','')+'</div>';
@@ -681,34 +799,42 @@ function editorHtml(){
        '<div class="erow"><label>Wall offset <em>'+(pt.iso>0?'+':'')+pt.iso.toFixed(2)+' mm</em></label>'+slider('iso','Wall offset',-0.3,0.3,0.01,pt.iso,'','')+'</div>'+
        '<div class="erow"><label>Rotation <em>°</em></label>'+slider('rx','Rotate X',-90,90,1,pt.rx,'°','X')+slider('ry','Rotate Y',-90,90,1,pt.ry,'°','Y')+slider('rz','Rotate Z',-90,90,1,pt.rz,'°','Z')+'</div>'+
        '<div class="erow"><label>Shift <em>cells</em></label>'+slider('sx','Shift X',-0.5,0.5,0.05,pt.sx,'','X')+slider('sy','Shift Y',-0.5,0.5,0.05,pt.sy,'','Y')+slider('sz','Shift Z',-0.5,0.5,0.05,pt.sz,'','Z')+'</div>';
-    if(r.fam==='BEAM') h+='<div class="erow"><label>Trim to nodes</label><div class="pair"><button class="sw'+(pt.trim?' on':'')+'" id="trimSw" aria-label="Trim struts"></button><span style="font:500 11px var(--mono);color:var(--t3)">drop struts cut by the surface</span></div></div>';
-  } else h+='<div class="hint" style="font-size:11px;color:var(--t3);line-height:1.5">Exported exactly as imported. Drag a recipe onto this part, or pick Lattice, to fill it.</div>';
+    if(r.fam==='BEAM') h+='<div class="erow"><label>Trim to nodes</label><div class="pair"><button class="sw'+(pt.trim?' on':'')+'" id="trimSw" aria-label="Trim struts"></button></div></div>';
+  } else h+=hint('Exported exactly as imported. Drag a recipe onto this part, or pick Lattice, to fill it.');
   return h+'</div></div>';
 }
 function renderEditor(){
-  for(const id of ['inspSlot','railSlot','floatSlot']) $(id).innerHTML='';
-  const slot=({insp:'inspSlot',rail:'railSlot',float:'floatSlot'})[PLACE];
-  $(slot).innerHTML=editorHtml(); paintIcons($(slot));
-  const host=$(slot);
-  for(const rng of host.querySelectorAll('input[type=range]')) rng.oninput=()=>{
+  const slot=$('railSlot');
+  const g=SEL.t==='weld'?GROUPS.find(x=>x.id===SEL.id):null;
+  if(SEL.t==='weld'&&!g) SEL={t:'part', id:'p1'};
+  slot.innerHTML=g?weldEditor(g):partEditor(partById(SEL.id)); paintIcons(slot);
+  for(const rng of slot.querySelectorAll('input[type=range]')) rng.oninput=()=>{
     const k=rng.dataset.k, v=+rng.value;
-    if(k.startsWith('w.')) WELD[k.slice(2)]=v; else PARTS.find(x=>x.id===SEL)[k]=v;
+    if(k.startsWith('w.')) g[k.slice(2)]=v; else partById(SEL.id)[k]=v;
     const lab=rng.closest('.erow').querySelector('label em'); const out=$('o-'+k);
     if(out) out.textContent=fmtv(v,+rng.step)+(k.startsWith('r')&&k.length===2?'°':'');
     if(lab&&!['rx','ry','rz','sx','sy','sz'].includes(k)) lab.textContent=(k==='iso'?(v>0?'+':'')+v.toFixed(2):v.toFixed(1))+' mm';
     renderParts(); updateEstimate(); };
-  const fs=host.querySelector('#fillSeg'); if(fs) for(const b of fs.querySelectorAll('button')) b.onclick=()=>{ PARTS.find(x=>x.id===SEL).fill=b.dataset.f; refresh(); };
-  const rs=host.querySelector('#ruleSeg'); if(rs) for(const b of rs.querySelectorAll('button')) b.onclick=()=>{ WELD.rule=b.dataset.r; refresh(); };
-  const sel=host.querySelector('#recSel'); if(sel) sel.onchange=()=>{ PARTS.find(x=>x.id===SEL).recipe=sel.value; refresh(); };
-  const js=host.querySelector('#joinSw'); if(js) js.onclick=()=>{ WELD.joins=!WELD.joins; refresh(); };
-  const ts=host.querySelector('#trimSw'); if(ts) ts.onclick=()=>{ const pt=PARTS.find(x=>x.id===SEL); pt.trim=!pt.trim; refresh(); };
+  const q=sel=>slot.querySelector(sel);
+  if(q('#fillSeg')) for(const b of q('#fillSeg').querySelectorAll('button')) b.onclick=()=>{ partById(SEL.id).fill=b.dataset.f; refresh(); };
+  if(q('#ruleSeg')) for(const b of q('#ruleSeg').querySelectorAll('button')) b.onclick=()=>{ g.rule=b.dataset.r; refresh(); };
+  if(q('#recSel')) q('#recSel').onchange=e=>{ partById(SEL.id).recipe=e.target.value; refresh(); };
+  if(q('#joinSw')) q('#joinSw').onclick=()=>{ g.joins=!g.joins; refresh(); };
+  if(q('#trimSw')) q('#trimSw').onclick=()=>{ const pt=partById(SEL.id); pt.trim=!pt.trim; refresh(); };
+  if(q('#sepAll')) q('#sepAll').onclick=()=>{ separateAll(g.id); refresh(); };
+  for(const b of slot.querySelectorAll('[data-out]')) b.onclick=()=>{ leaveWeld(b.dataset.out); refresh(); };
+  if(q('#addTo')) q('#addTo').onchange=e=>{ const v=e.target.value; if(!v) return; if(v.startsWith('p:')) weldTogether([v.slice(2)], g.id); else { const o=GROUPS.find(x=>x.id===v.slice(2)); weldTogether([...o.members], g.id); } refresh(); };
+  if(q('#weldWith')) q('#weldWith').onchange=e=>{ const v=e.target.value; if(!v) return; const id=SEL.id; if(v.startsWith('p:')){ const og=groupOf(v.slice(2)); weldTogether([id, v.slice(2)], og?og.id:null); } else weldTogether([id], v.slice(2)); refresh(); };
+  if(q('#leave')) q('#leave').onclick=()=>{ leaveWeld(SEL.id); refresh(); };
+  if(q('#goWeld')) q('#goWeld').onclick=()=>{ SEL={t:'weld', id:groupOf(SEL.id).id}; refresh(); };
 }
 function refresh(){ renderParts(); renderEditor(); updateEstimate(); const r=recipeOf(PARTS[0]);
   $('famBadge').textContent=PARTS[0].fill==='solid'?'SOLID':r.fam+' · '+r.name.toUpperCase(); $('famBadge').style.color=r.col; $('famBadge').style.borderColor=r.col; placeNotes(); }
-for(const b of $('placeSeg').querySelectorAll('.chip')) b.onclick=()=>{ for(const x of $('placeSeg').querySelectorAll('.chip')) x.classList.toggle('on',x===b); PLACE=b.dataset.pl; refresh(); };
-$('selTag').onclick=()=>{ SEL=PARTS[0].id; refresh(); };
+$('selTag').onclick=()=>{ SEL={t:'part', id:'p1'}; refresh(); };
+let SELID='p1'; Object.defineProperty(window,'SEL_PART',{get:()=>SEL.t==='part'?SEL.id:'p1'});
 
 paintIcons(); renderRecipes(); initGL(); resize(); refresh();
+
 $('famBadge').style.color='var(--fam-tpms)'; $('famBadge').style.borderColor='var(--fam-tpms)';
 </script>
 </body>

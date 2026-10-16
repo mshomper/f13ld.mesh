@@ -45,6 +45,12 @@ Matt: pinch to zoom didn't work in the mobile browser. Approved: pinch zooms abo
 - `ui12.css`: `#rmCanvas{touch-action:none}` so the browser doesn't zoom the page from the view.
 - `tests/pinch.js` (new) passes.
 
+## v0.13.2 · view fits its pane on high-density screens
+Found while testing pinch: the canvas draws at up to 1.5× screen pixels but had no CSS size, so on phones (and Windows scaling above 100 %) it showed at its pixel size and the pane cropped it — the model sat off-centre. `ui12.css`: `#rmCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}`. `tests/pinch.js` now also checks the canvas fills its pane at 2× and 3× density; `shapeview.js` and `partprep.js` pass.
+
+## P2 scope
+Matt asked for a detailed P2 scope to run in another session: `docs/P2_SCENE_SHADER_SCOPE.md` (scene = members + groups + sources, GLSL port of the weld math, tile / region sources, UBO layout ready for WebGPU, tests, work plan S1–S6, questions Q1–Q4 for the start of that session).
+
 ## Open / next
 - P2 (scene shader with per-member uniforms, tile and region sources, all sliders live in welds) is next; then P3 (exact GLSL sources), P4 (speed), then the parallel slab mesher.
 - Bench page has no preview tab yet (P4).

@@ -63,3 +63,8 @@ body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
 
 /* v0.13.1: the viewer handles its own touch gestures (rotate, pinch zoom, pan) — the browser must not zoom or scroll the page from the canvas. */
 #rmCanvas{touch-action:none}
+/* v0.13.2: the canvas draws at up to 1.5× screen pixels (20-raymarcher.js); show it at the size of its pane.
+   Without this, on high-density screens (phones, Windows scaling above 100 %) it showed at its pixel size and
+   the pane cropped its right and bottom — the model sat off-centre. Absolute, so its pixel size never feeds back
+   into the pane's layout. */
+#rmCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}

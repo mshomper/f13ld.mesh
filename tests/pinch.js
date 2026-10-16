@@ -3,7 +3,8 @@
 // fingers moving together pan, lifting one finger keeps rotating from the
 // other without a jump, and the canvas asks the browser not to zoom the page.
 //
-//   node pinch.js <build>
+//   node pinch.js <build>     (DPR=n sets the pixel density, default 2)
+// v0.13.2: also checks the view canvas fills its pane exactly (not cropped).
 const fs = require('fs'), os = require('os'), path = require('path');
 const { chromium } = require('playwright');
 const NM = path.join(__dirname, 'node_modules');
@@ -41,7 +42,7 @@ const RECIPE = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: +(process.env.DPR || 2) });
   const site = 'build.test';
   await ctx.route('**/*', async route => {
     const u = new URL(route.request().url());
@@ -74,6 +75,9 @@ const RECIPE = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 
   const check = (ok, label, extra) => { console.log((ok ? 'ok    ' : 'FAIL  ') + label + (extra ? '  ' + extra : '')); if (!ok) fails++; };
   const ta = await page.evaluate(() => getComputedStyle(rm.canvas).touchAction);
   check(ta === 'none', 'canvas tells the browser not to zoom the page', 'touch-action ' + ta);
+  const fit = await page.evaluate(() => { const c = rm.canvas.getBoundingClientRect(), a = document.getElementById('previewArea').getBoundingClientRect(); return { c: [c.left, c.top, c.width, c.height], a: [a.left, a.top, a.width, a.height], dpr: devicePixelRatio }; });
+  const fits = fit.c.every((v, i) => Math.abs(v - fit.a[i]) <= 2);
+  check(fits, 'view fills its pane exactly at ' + fit.dpr + 'x pixel density (not cropped)', 'canvas ' + fit.c.map(v => v.toFixed(0)).join(',') + ' pane ' + fit.a.map(v => v.toFixed(0)).join(','));
   console.log('canvas ' + box.w.toFixed(0) + ' x ' + box.h.toFixed(0) + ' px, page ' + JSON.stringify(await page.evaluate(() => ({ inner: innerWidth, scroll: document.documentElement.scrollWidth, vv: visualViewport && visualViewport.width }))));
   let c0 = await cam();
   await pinch(80, 200); await touch('touchEnd', []);

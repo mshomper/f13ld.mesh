@@ -23,7 +23,7 @@ const FIELD_BAKE_MAX_POINTS=150e6;    // above this don't pre-bake (memory)
 const FIELD_BAKE_COPY_BUDGET=1.5e9;   // bytes of shape / HU grids copied across workers
 const FIELD_BAKE_STALL_MS=120000;     // no slab for this long → give up on the pool
 const FIELD_BAKE_SPEC_KEYS=['mode','recipe','shapeSdfData','shapeN','bbox','cellSizeMm','relEdgeMm',
-  'structXform','pruneToNodes','pruneInsetMult','huGridData','huGridN','huFieldMin','huFieldMax','huBbox','edgeWorld'];
+  'structXform','pruneToNodes','pruneInsetMult','huGridData','huGridN','huFieldMin','huFieldMax','huBbox','edgeWorld','fill','skinMm'];
 
 // Pool sizing (v0.11.0). Each bake worker loads the scripts and rebuilds the
 // recipe before evaluating anything, so the pool only pays when the field is

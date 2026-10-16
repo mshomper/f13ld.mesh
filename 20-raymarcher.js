@@ -1,6 +1,7 @@
 /* ============================================================
    F13LD.mesh · 20-raymarcher.js
    MeshRaymarcher — WebGL2 raymarched preview (scaffold + shape + ghosts).
+   v0.12.0: preview-only section (clip) plane and weld join tint.
    ============================================================ */
 'use strict';
 
@@ -377,6 +378,73 @@ MeshRaymarcher.prototype.setPrintView=function(cfg,snap){
     this.camZoom=Math.max(this.camZoom||0,(this.viewH||5)*4.6);
   }
   this._dirty=true;
+  if(this.onViewChange) this.onViewChange();   // 23-view-strip.js keeps its tabs in sync
+};
+// ── v0.12.0 · Section (clip) plane — preview only, export never sees it ───
+// cfg = null (off) or {axis:0|1|2, flip:bool, t:-1..1}. The plane is axis-
+// aligned in the part frame; t slides it across the extent of the content.
+// Everything on the +axis side of the plane is cut away (flip: the -axis side).
+MeshRaymarcher.prototype.setClip=function(cfg){
+  this._clip=cfg?{axis:cfg.axis|0,flip:!!cfg.flip,t:Math.max(-1,Math.min(1,+cfg.t||0))}:null;
+  this._dirty=true;
+};
+// World units per mm for the current scene (cube: export domain; shape/weld: cell size).
+MeshRaymarcher.prototype._worldPerMm=function(){
+  if(this.hasShape&&this.shapeData&&this.shapeData.cellSizeMm>0) return 10.0/this.shapeData.cellSizeMm;
+  var dm=(typeof exportDomainMm!=='undefined'&&exportDomainMm>0)?exportDomainMm:10;
+  return 10.0/dm;
+};
+// Slider extent along an axis, in world units.
+MeshRaymarcher.prototype.clipRange=function(axis){
+  var H=this.viewH||5, lo=-H, hi=H, wpm=this._worldPerMm();
+  var multi=this._ghostCount>0;
+  if(this._assemblyMode&&this.worldMin&&this.worldMax){ lo=this.worldMin[axis]; hi=this.worldMax[axis]; }
+  else if(this.hasShape&&this.shapeData&&!multi){
+    var sd=this.shapeData, k=10.0/sd.cellSizeMm; lo=sd.bboxMin[axis]*k; hi=(sd.bboxMin[axis]+sd.bboxSize[axis])*k;
+  }
+  lo=Math.max(lo,-H); hi=Math.min(hi,H);
+  if(!(hi>lo)){ lo=-H; hi=H; }
+  return {lo:lo,hi:hi,perMm:wpm};
+};
+// Plane for the shader: keep dot(p,n) <= d.  pos/posMm = plane position on the axis.
+MeshRaymarcher.prototype.clipPlane=function(){
+  var c=this._clip; if(!c) return null;
+  var r=this.clipRange(c.axis), pos=r.lo+(c.t+1)*0.5*(r.hi-r.lo);
+  var n=[0,0,0]; n[c.axis]=c.flip?-1:1;
+  return {n:n,d:c.flip?-pos:pos,axis:c.axis,pos:pos,posMm:pos/r.perMm,loMm:r.lo/r.perMm,hiMm:r.hi/r.perMm};
+};
+// ── v0.12.0 · Weld joins tint ─────────────────────────────────────────────
+// members = [{key, sdf (the body's 48³ ghost grid), bbox}], up to JOIN_MAX.
+// Lattice surface where two or more members are within bandMm of their shape
+// surface is tinted in the Mesh colour (assembly mode only). Pass [] to clear.
+MeshRaymarcher.prototype.JOIN_MAX=4;
+MeshRaymarcher.prototype.setJoins=function(members,bandMm){
+  var gl=this.gl; if(!gl) return;
+  members=(members||[]).slice(0,this.JOIN_MAX);
+  if(!this._joinTex){ this._joinTex=new Array(this.JOIN_MAX).fill(null); this._joinMeta=new Array(this.JOIN_MAX).fill(null); }
+  var changed=members.length!==(this._joinCount||0)||bandMm!==this._joinBand;
+  for(var i=0;i<members.length;i++){
+    var m=members[i], prev=this._joinMeta[i];
+    if(!prev||prev.sdf!==m.sdf){
+      if(!this._joinTex[i]) this._joinTex[i]=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_3D,this._joinTex[i]);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+      gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,m.sdf.N,m.sdf.N,m.sdf.N,0,gl.RED,gl.FLOAT,m.sdf.data);
+      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+      gl.bindTexture(gl.TEXTURE_3D,null);
+      changed=true;
+    }
+    this._joinMeta[i]={sdf:m.sdf,bboxMin:[m.bbox.mnx,m.bbox.mny,m.bbox.mnz],
+      bboxSize:[m.bbox.mxx-m.bbox.mnx,m.bbox.mxy-m.bbox.mny,m.bbox.mxz-m.bbox.mnz]};
+  }
+  for(var j=members.length;j<this.JOIN_MAX;j++) this._joinMeta[j]=null;
+  this._joinCount=members.length>=2?members.length:0;
+  this._joinBand=bandMm;
+  if(changed) this._dirty=true;
 };
 MeshRaymarcher.prototype.setQuality=function(q){
   if(this._quality===q&&this.prog)return;
@@ -433,6 +501,10 @@ MeshRaymarcher.prototype._buildShader=function(){
     // ── v0.10.0 · Print view: build plate + overhang tint ─────────────────
     'uniform float uPrintOn;uniform float uTintOn;uniform vec3 uBuildDir;uniform vec3 uPlateU;uniform vec3 uPlateV;',
     'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;uniform float uPlateAlpha;uniform float uLifted;',
+    // ── v0.12.0 · Section plane + weld join tint ──────────────────────────
+    'uniform float uClipOn;uniform vec3 uClipN;uniform float uClipD;',
+    'uniform highp sampler3D uJoinSDF0;uniform highp sampler3D uJoinSDF1;uniform highp sampler3D uJoinSDF2;uniform highp sampler3D uJoinSDF3;',
+    'uniform vec3 uJoinBboxMin[4];uniform vec3 uJoinBboxSize[4];uniform float uJoinCount;uniform float uJoinBand;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
     // GHOST_MAX separate sampler3D textures for non-active body silhouettes.
     // Each has its own world-mm bbox and family color. uGhostCount controls
@@ -463,7 +535,10 @@ MeshRaymarcher.prototype._buildShader=function(){
     // shape SDF directly so the raymarch hits the body surface as if it were
     // a filled solid. uHasShape must still be 1.0 for solid mode to render —
     // a solid body without geometry isn't meaningful.
-    'float implicit(vec3 p){if(uSolidMode>0.5){return uHasShape>0.5?sampleShape(p):1.0;}float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    'float implicit0(vec3 p){if(uSolidMode>0.5){return uHasShape>0.5?sampleShape(p):1.0;}float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    // v0.12.0: section plane. Positive on the cut-away side; one more max() on the implicit.
+    'float clipD(vec3 p){return uClipOn>0.5?dot(p,uClipN)-uClipD:-1e4;}',
+    'float implicit(vec3 p){return max(implicit0(p),clipD(p));}',
     // ── rc3 · Ghost SDF sampler ────────────────────────────────────────────
     // Returns world-units SDF for ghost in slot i; positive outside, negative
     // inside. Uses an AABB fast-reject: outside the world-mm bbox we synthesize
@@ -488,6 +563,17 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  else if(slot == 6) d_mm = texture(uGhostSDF6, uvw).r;',
     '  return d_mm * (10.0/uCellSizeMm);',
     '}',
+    // v0.12.0: distance (mm, negative inside) of weld member `slot`; 2+ members near their surface = a join.
+    'float sampleJoinSlot(int slot, vec3 p){',
+    '  vec3 bmin = uJoinBboxMin[slot]; vec3 bsize = uJoinBboxSize[slot];',
+    '  vec3 pm = p * (uCellSizeMm/10.0); vec3 uvw = (pm - bmin) / bsize;',
+    '  if(any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))){ vec3 q = max(bmin - pm, pm - (bmin + bsize)); return length(max(q, vec3(0.0))); }',
+    '  if(slot == 0) return textureLod(uJoinSDF0, uvw, 0.0).r;',
+    '  if(slot == 1) return textureLod(uJoinSDF1, uvw, 0.0).r;',
+    '  if(slot == 2) return textureLod(uJoinSDF2, uvw, 0.0).r;',
+    '  return textureLod(uJoinSDF3, uvw, 0.0).r;',
+    '}',
+    'float joinZone(vec3 p){ int c = 0; for(int i = 0; i < 4; i++){ if(float(i) >= uJoinCount) break; if(sampleJoinSlot(i, p) < uJoinBand) c++; } return c >= 2 ? 1.0 : 0.0; }',
     'vec3 boxNormal(vec3 pos){vec3 ap=abs(pos)/uViewH;if(ap.x>ap.y&&ap.x>ap.z)return vec3(sign(pos.x),0.0,0.0);if(ap.y>ap.z)return vec3(0.0,sign(pos.y),0.0);return vec3(0.0,0.0,sign(pos.z));}',
     'vec3 nrmScaffold(vec3 p){float e=uNrmStep;return normalize(vec3(sampleScaffoldSDF(p+vec3(e,0,0))-sampleScaffoldSDF(p-vec3(e,0,0)),sampleScaffoldSDF(p+vec3(0,e,0))-sampleScaffoldSDF(p-vec3(0,e,0)),sampleScaffoldSDF(p+vec3(0,0,e))-sampleScaffoldSDF(p-vec3(0,0,e))));}',
     'vec3 nrmShape(vec3 p){float e=uNrmStep;return normalize(vec3(sampleShape(p+vec3(e,0,0))-sampleShape(p-vec3(e,0,0)),sampleShape(p+vec3(0,e,0))-sampleShape(p-vec3(0,e,0)),sampleShape(p+vec3(0,0,e))-sampleShape(p-vec3(0,0,e))));}',
@@ -542,6 +628,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  for(int i = 0; i < GHOST_STEPS; i++){',
     '    float t = tEn + (float(i) + jit) * dtBase;',
     '    vec3 p = ro + rd * t;',
+    '    if(uClipOn > 0.5 && dot(p, uClipN) > uClipD) continue;',
     '    for(int g = 0; g < GHOST_MAX; g++){',
     '      if(g >= nGhosts) break;',
     '      float d = sampleGhostSlot(g, p);',
@@ -641,11 +728,19 @@ MeshRaymarcher.prototype._buildShader=function(){
     // uBaseColor). Negative-R sentinel → neutral clay fallback.
     // Cut faces (view-box caps, or where the shape clip is the active
     // surface) are drawn slightly lighter/desaturated, like a CAD section.
+    // v0.12.0: a hit where the section plane (not the lattice) is the surface
+    // is the cut face: snap it onto the plane and use the plane normal.
+    '  bool onClip=false;',
+    '  if(uClipOn>0.5&&hit&&!nearCap){',
+    '    float cdp=dot(pos,uClipN)-uClipD;',
+    '    if(cdp>implicit0(pos)-0.0005){ onClip=true; pos-=uClipN*cdp; n=uClipN; if(dot(n,-rd)<0.0)n=-n; }',
+    '  }',
     '  bool isCut=false;',
     '  if(uSolidMode<0.5){',
     '    if(nearCap||!hit) isCut=true;',
     '    else if(uHasShape>0.5&&sampleShape(pos)>sampleScaffoldSDF(pos)) isCut=true;',
     '  }',
+    '  if(onClip) isCut=true;',
     '  vec3 baseCol;',
     '  if(uSolidMode>0.5) baseCol=uSolidColor;',
     '  else if(uBaseColor.r>=0.0) baseCol=uBaseColor;',
@@ -660,6 +755,9 @@ MeshRaymarcher.prototype._buildShader=function(){
     '    else if(uTintOn>0.5&&dn>uCritCos) baseCol=mix(baseCol,vec3(0.95,0.26,0.26),0.85);',
     '    else if(uTintOn>0.5&&dn>uWarnCos) baseCol=mix(baseCol,vec3(0.96,0.62,0.04),0.7);',
     '  }',
+    // v0.12.0: show-joins tint (assembly mode) and the Mesh-coloured cut face.
+    '  if(uJoinCount>1.5&&!onClip&&joinZone(pos)>0.5) baseCol=mix(baseCol,vec3(0.894,0.42,0.69),0.8);',
+    '  if(onClip) baseCol=mix(baseCol,vec3(0.894,0.42,0.69),0.72);',
     '  float sEps=uNrmStep;',
     '  if(uHasShape>0.5&&uShapeEps>0.0&&(uSolidMode>0.5||sampleShape(pos)>=sampleScaffoldSDF(pos))) sEps=max(uNrmStep,uShapeEps);',
     '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,sEps,1.6*uViewH);',
@@ -754,6 +852,16 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uGridStep = gl.getUniformLocation(p, 'uGridStep');
   this._uPlateAlpha = gl.getUniformLocation(p, 'uPlateAlpha');
   this._uLifted = gl.getUniformLocation(p, 'uLifted');
+  // v0.12.0 · section plane + weld joins
+  this._uClipOn = gl.getUniformLocation(p, 'uClipOn');
+  this._uClipN = gl.getUniformLocation(p, 'uClipN');
+  this._uClipD = gl.getUniformLocation(p, 'uClipD');
+  this._uJoinSDF = [];
+  for(var ji = 0; ji < 4; ji++) this._uJoinSDF.push(gl.getUniformLocation(p, 'uJoinSDF' + ji));
+  this._uJoinBboxMin = gl.getUniformLocation(p, 'uJoinBboxMin');
+  this._uJoinBboxSize = gl.getUniformLocation(p, 'uJoinBboxSize');
+  this._uJoinCount = gl.getUniformLocation(p, 'uJoinCount');
+  this._uJoinBand = gl.getUniformLocation(p, 'uJoinBand');
   // rc3 · Ghost envelope uniforms
   this._uGhostSDF = new Array(this.GHOST_MAX).fill(null);
   for(var i = 0; i < this.GHOST_MAX; i++){
@@ -935,6 +1043,33 @@ MeshRaymarcher.prototype.render=function(){
   if(this._uGhostColor)    gl.uniform3fv(this._uGhostColor,    colorFlat);
   if(this._uGhostKind)     gl.uniform1fv(this._uGhostKind,     kindFlat);
   if(this._uGhostCount)    gl.uniform1f(this._uGhostCount, ghostCount);
+  // ── v0.12.0 · section plane ────────────────────────────────────────────
+  var cpl=this._clip?this.clipPlane():null;
+  if(this._uClipOn){
+    gl.uniform1f(this._uClipOn,cpl?1.0:0.0);
+    gl.uniform3f(this._uClipN,cpl?cpl.n[0]:0,cpl?cpl.n[1]:0,cpl?cpl.n[2]:0);
+    gl.uniform1f(this._uClipD,cpl?cpl.d:0.0);
+  }
+  // ── v0.12.0 · weld joins: units 9..12 (0 field, 1 shape, 2..8 ghosts) ──
+  var jc=(this._assemblyMode&&this.hasShape&&this.shapeData&&this._joinTex)?(this._joinCount||0):0;
+  var jMin=new Float32Array(12), jSize=new Float32Array(12);
+  for(var jj=0;jj<4;jj++){
+    var jm=this._joinMeta&&this._joinMeta[jj];
+    gl.activeTexture(gl.TEXTURE0+9+jj);
+    if(jm&&this._joinTex[jj]&&jj<jc){
+      gl.bindTexture(gl.TEXTURE_3D,this._joinTex[jj]);
+      for(var ax=0;ax<3;ax++){ jMin[jj*3+ax]=jm.bboxMin[ax]; jSize[jj*3+ax]=jm.bboxSize[ax]; }
+    } else {
+      gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);
+      jSize[jj*3]=1; jSize[jj*3+1]=1; jSize[jj*3+2]=1;
+    }
+    if(this._uJoinSDF&&this._uJoinSDF[jj]) gl.uniform1i(this._uJoinSDF[jj],9+jj);
+  }
+  if(this._uJoinBboxMin)  gl.uniform3fv(this._uJoinBboxMin,jMin);
+  if(this._uJoinBboxSize) gl.uniform3fv(this._uJoinBboxSize,jSize);
+  if(this._uJoinCount)    gl.uniform1f(this._uJoinCount,jc);
+  if(this._uJoinBand)     gl.uniform1f(this._uJoinBand,this._joinBand||0.5);
+  gl.activeTexture(gl.TEXTURE0);
   gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
   gl.enableVertexAttribArray(this._pLoc);
   gl.vertexAttribPointer(this._pLoc,2,gl.FLOAT,false,0,0);

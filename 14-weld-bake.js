@@ -9,6 +9,9 @@
                    the mesh worker then reads those values instead of
                    evaluating the field on one thread
    estimateWeldExport  time estimate for the export panel (41-quality-estimate)
+   decorateWeldSpecs   (v0.12.0) stamps each member's own structure settings,
+                   trim, fill and the group's join rule onto the specs the
+                   mesh worker sees; see worker/m30-sdf-assembly.js
 
    Grid formula: see worker/m31-weld-grid.js (weldGridDims is mirrored here;
    the bake checks the worker's dims against these before using them).
@@ -90,6 +93,83 @@ function solidMeshForWorker(b){
   return {pos:b.posArr.slice().buffer, idx:idx.buffer};
 }
 
+// ── Per-member settings and join rule (v0.12.0) ────────────────────────────
+// Spec fields the worker reads (all optional; absent = the old weld field):
+//   per lattice member  structXform {rotMat (R^T col-major), spatialOffsetMm:[x,y,z], isoOffsetMm}
+//                       pruneToNodes, pruneInsetMult   (beam trim, as single-body export)
+//                       fill 'lattice'|'skin', skinMm
+//   on every spec       joinRule 'union'|'anchor'|'graded', anchorMm, gradeMm, gradeMaxMm
+// Body record fields read (defensively): structureTransform {rotMat,
+// spatialOffsetMmX/Y/Z, isoOffsetMm}, trimToNodes, trimInsetMult, fill, skinMm.
+// The active body is read live (structureTransform global, trim controls), the
+// others from their records, the way snapshotActiveBodyState keeps them.
+// Group record fields read: weldGroups.get(gid) {joinRule, anchorMm, gradeMm, gradeMaxMm}.
+function _isIdentityXf(xf){
+  const r=xf.rotMat, o=xf.spatialOffsetMm;
+  return r[0]===1&&r[4]===1&&r[8]===1&&r[1]===0&&r[2]===0&&r[3]===0&&r[5]===0&&r[6]===0&&r[7]===0&&
+         o[0]===0&&o[1]===0&&o[2]===0&&!xf.isoOffsetMm;
+}
+function weldMemberSettings(sp){
+  const out={};
+  if(weldIsLattice(sp) === false) return out;
+  const b=(typeof bodies!=='undefined' && bodies.get)?bodies.get(sp.bodyId):null;
+  if(!b) return out;
+  const live=(typeof activeBodyId!=='undefined' && sp.bodyId===activeBodyId);
+  const tr=(live && typeof structureTransform!=='undefined' && structureTransform) ? structureTransform : b.structureTransform;
+  if(tr && Array.isArray(tr.rotMat) && tr.rotMat.length===9){
+    const xf={rotMat:tr.rotMat.slice(),
+      spatialOffsetMm:[+tr.spatialOffsetMmX||0, +tr.spatialOffsetMmY||0, +tr.spatialOffsetMmZ||0],
+      isoOffsetMm:+tr.isoOffsetMm||0};
+    if(!_isIdentityXf(xf)) out.structXform=xf;
+  }
+  let trimOn=(b.trimToNodes!==undefined)?!!b.trimToNodes:true, mult=b.trimInsetMult;
+  if(live && typeof document!=='undefined'){
+    const tg=document.getElementById('trimToNodes'); if(tg) trimOn=!!tg.checked;
+    const mu=document.getElementById('trimInsetMult'); if(mu) mult=parseFloat(mu.value);
+  }
+  const fd=(typeof familyOf==='function' && sp.recipe)?familyOf(sp.recipe):null;
+  if(fd && fd.options && fd.options.trimToNodes && trimOn){
+    out.pruneToNodes=true;
+    out.pruneInsetMult=(isFinite(mult)&&mult>=1.0&&mult<=2.0)?mult:1.0;
+  }
+  if(b.fill==='skin' && b.skinMm>0){ out.fill='skin'; out.skinMm=+b.skinMm; }
+  return out;
+}
+function weldGroupJoin(gid){
+  const g=(typeof weldGroups!=='undefined' && weldGroups.get)?weldGroups.get(gid):null;
+  if(!g || !g.joinRule || g.joinRule==='union') return null;
+  const j={joinRule:g.joinRule};
+  if(g.joinRule==='anchor') j.anchorMm=+g.anchorMm>0?+g.anchorMm:0;
+  if(g.joinRule==='graded'){ j.gradeMm=+g.gradeMm>0?+g.gradeMm:0; if(g.gradeMaxMm>0) j.gradeMaxMm=+g.gradeMaxMm; }
+  return j;
+}
+// Idempotent. Call on gatherGroupSpecs output (done below for you) or any spec
+// list that will reach buildAssemblySDF.
+function decorateWeldSpecs(specs, gid){
+  const j=weldGroupJoin(gid);
+  for(const sp of specs){
+    Object.assign(sp, weldMemberSettings(sp));
+    if(j) Object.assign(sp, j);
+  }
+  return specs;
+}
+// gatherGroupSpecs lives in 10-state.js; wrap it once so every caller (export,
+// preview) gets decorated specs without touching that file.
+if(typeof gatherGroupSpecs==='function' && !gatherGroupSpecs._weldDecorated){
+  const _gatherPlain=gatherGroupSpecs;
+  const _gatherDecorated=async function(gid, ensureN, cloneBuffers){
+    const r=await _gatherPlain(gid, ensureN, cloneBuffers);
+    try{ decorateWeldSpecs(r.specs, gid); }catch(e){ console.warn('[weld] spec decoration failed', e); }
+    return r;
+  };
+  _gatherDecorated._weldDecorated=true;
+  window.gatherGroupSpecs=_gatherDecorated;
+}
+function weldAnchorMm(specs){
+  for(const sp of specs) if(sp.joinRule==='anchor' && sp.anchorMm>0) return +sp.anchorMm;
+  return 0;
+}
+
 // Mirror of worker/m31-weld-grid.js weldGridDims.
 function weldGridDims(min, max, edge){
   const n=[0,0,0], s=[0,0,0];
@@ -122,7 +202,7 @@ function planWeld(specs, blendK, edge, gbb){
   // + 3 voxels (its bbox already has 6% padding around the mesh), clamped to
   // the group box. Overlapping or touching boxes merge, so no lattice is ever
   // cut by another region's box face.
-  const pad=k+3*edge;
+  const pad=k+3*edge+weldAnchorMm(specs);   // v0.12.0: an anchored lattice reaches anchorMm into the solids
   let boxes=[];
   specs.forEach((sp,i)=>{
     if(solidOk[i]) return;
@@ -151,6 +231,9 @@ function planWeld(specs, blendK, edge, gbb){
 // chosen on the full grid exactly as makeShapeSampler does, so the cropped
 // sampler returns the same values bit-for-bit inside that range.
 function cropSpecToRegion(sp, region, marginMm){
+  // v0.12.0: a trimmed beam member builds its keep-mask from endpoints all over
+  // its shape, so it needs the whole grid.
+  if(sp.pruneToNodes) return Object.assign({}, sp);
   const N=sp.shapeN, bb=sp.bbox;
   const org=[bb.mnx,bb.mny,bb.mnz], dim=[bb.mxx-bb.mnx,bb.mxy-bb.mny,bb.mxz-bb.mnz];
   const r=[0,1,2].map(a=>{
@@ -297,6 +380,7 @@ function estimateWeldExport(gid, qual){
     mem.push({solid:isSolid, recipe:isSolid?null:recipes.get(rid), bbox:b.bbox, cellSizeMm, bodyId:id, body:b});
   }
   if(mem.length<2) return null;
+  try{ decorateWeldSpecs(mem, gid); }catch(_){}
   const capVox=mem.reduce((m,sp)=>weldIsLattice(sp)?Math.min(m,getMaxExportVoxels(sp.recipe)):m, MAX_EXPORT_VOXELS_DEFAULT);
   const edge=clampEdgeMm(QUAL_EDGE_MM[qual]||0.10, gbb, capVox).safeEdge;
   const k=groupFilletMm(gid);

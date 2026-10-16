@@ -43,6 +43,7 @@ const partPrep=(function(){
 function ppSave(){
   try{ localStorage.setItem(PP_STORE_KEY, JSON.stringify({proc:partPrep.proc, mat:partPrep.mat, customRho:partPrep.customRho,
     up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg, plateOpacity:partPrep.plateOpacity, standoff:partPrep.standoff})); }catch(_){}
+  if(typeof dockRefresh==='function') dockRefresh();   // v0.12.0: dock tags
 }
 let ppLast=null;          // exact stats of the last export (rendered in the panel)
 let ppLastEst=null;       // last live estimate
@@ -256,7 +257,7 @@ function ppShapeVolume(shape){
 // Called by the export paths once the 3MF is downloaded.
 function ppAfterExport(vp, tv, scale, ctx){
   const box=document.getElementById('ppExact');
-  if(box) box.innerHTML='<div class="pp-note">measuring the exported part…</div>';
+  if(box) box.innerHTML='<div class="ic-note">measuring the exported part…</div>';
   setTimeout(()=>{
     try{ ppLast=ppComputeStats(vp, tv, scale, ctx); }
     catch(e){ console.error('[part prep] stats failed', e); ppLast=null;
@@ -381,18 +382,14 @@ function ppScheduleEstimate(){
 // ── Formatting ───────────────────────────────────────────────────────────────
 function _ppFmt(v,d){ if(v==null||!isFinite(v)) return '—'; return v.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function _ppSig(v){ if(v==null||!isFinite(v)) return '—'; const a=Math.abs(v); return _ppFmt(v, a>=1000?0:a>=100?1:a>=10?2:3); }
-function _ppCard(l,v,u,wide){ return '<div class="mc'+(wide?' pp-wide':'')+'"><div class="mc-lbl">'+esc(l)+'</div><div class="mc-val">'+esc(v)+(u?'<span class="mc-unit">'+esc(u)+'</span>':'')+'</div></div>'; }
+function _ppCard(l,v,u,wide){ return '<div class="ic-stat'+(wide?' ic-wide':'')+'"><div class="l">'+esc(l)+'</div><div class="v">'+esc(v)+(u?'<small>'+esc(u)+'</small>':'')+'</div></div>'; }
 function _ppSizeStr(s){ return s?(_ppSig(s[0])+' × '+_ppSig(s[1])+' × '+_ppSig(s[2])):'—'; }
 
 // ── Panel ────────────────────────────────────────────────────────────────────
-function partPrepPanel(){
-  // v0.10.0: three sidebar groups (54-sidebar.js makes them collapsible).
-  return '<hr class="div"><div class="sec-lbl">part prep</div><div id="ppBox">'+ppInner()+'</div>'+
-    '<hr class="div"><div class="sec-lbl">estimate · from preview</div><div id="ppEst">'+ppEstimateHtml()+'</div>'+
-    '<hr class="div"><div class="sec-lbl">measured · exported part</div><div id="ppExact">'+ppExactHtml()+'</div>';
-}
-const PP_ICON_PRINT='<svg class="pp-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2 17.5h16" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".5"/><rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.5v2.4M8.4 3.9 10 2.5l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const PP_ICON_DOC='<svg class="pp-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3 3v12H5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7.5 9h5M7.5 11.5h5M7.5 14h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
+// v0.12.0: ppInner() fills #ppBox in the dock drawer's Part prep tab, ppEstimateHtml()
+// #ppEst (Estimate card) and ppExactHtml() #ppExact (Measured card); see 56-dock.js.
+const PP_ICON_PRINT='<svg class="ic-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2 17.5h16" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".5"/><rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.5v2.4M8.4 3.9 10 2.5l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PP_ICON_DOC='<svg class="ic-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3 3v12H5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7.5 9h5M7.5 11.5h5M7.5 14h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
 function ppInner(){
   const p=ppProcess(partPrep.proc);
   const mats=ppMaterialsFor(p.id);
@@ -407,33 +404,32 @@ function ppInner(){
   }
   matOpts+='<option value="custom"'+(matSel==='custom'?' selected':'')+'>Custom density</option>';
   const m=ppMaterial();
-  let h='';
-  h+='<label class="pp-lbl" for="ppProc">process</label><select id="ppProc" class="pp-sel" onchange="ppSetProc(this.value)">'+procOpts+'</select>';
-  h+='<label class="pp-lbl" for="ppMat">material</label><select id="ppMat" class="pp-sel" onchange="ppSetMat(this.value)">'+matOpts+'</select>';
+  let h='<div class="dr-grid">';
+  h+='<div class="dr-f"><label for="ppProc">Process</label><select id="ppProc" class="dr-sel" onchange="ppSetProc(this.value)">'+procOpts+'</select></div>';
+  h+='<div class="dr-f"><label for="ppMat">Material</label><select id="ppMat" class="dr-sel" onchange="ppSetMat(this.value)">'+matOpts+'</select>';
   if(matSel==='custom'){
-    h+='<div class="exp-row"><span class="exp-label">density</span><input type="number" class="exp-num" min="0.1" max="25" step="0.01" value="'+partPrep.customRho+'" oninput="ppSetCustomRho(this.value)"><span class="exp-unit">g/cm³</span></div>';
-    if(!mats.length) h+='<div class="pp-note">The F13LD material library has no '+(p.id==='resin'?'resins':'materials for this process')+' yet — enter the density from the data sheet.</div>';
+    h+='<div class="dr-pair"><input type="number" id="ppRho" class="dr-num" min="0.1" max="25" step="0.01" value="'+partPrep.customRho+'" oninput="ppSetCustomRho(this.value)" aria-label="Density"><span>g/cm³</span></div>';
+    if(!mats.length) h+='<div class="dr-hint">The F13LD material library has no '+(p.id==='resin'?'resins':'materials for this process')+' yet — enter the density from the data sheet.</div>';
   } else if(m){
-    h+='<div class="pp-note">'+_ppFmt(m.rho_kgm3/1000,2)+' g/cm³ · '+esc(m.process)+'</div>';
+    h+='<div class="dr-hint">'+_ppFmt(m.rho_kgm3/1000,2)+' g/cm³ · '+esc(m.process)+'</div>';
   }
-  h+='<div class="pp-sub">build orientation</div>';
-  h+='<div class="pp-lbl">part axis facing up</div><div class="pp-up">';
-  for(const c of PP_UP_CODES) h+='<button type="button" class="qual-btn'+(partPrep.up===c?' active':'')+'" onclick="ppSetUp(\''+c+'\')">'+c+'</button>';
   h+='</div>';
-  h+='<div class="exp-row"><span class="exp-label">tilt about X</span><input type="number" class="exp-num" step="5" value="'+partPrep.tiltX+'" oninput="ppSetTilt(\'x\',this.value)"><span class="exp-unit">°</span></div>';
-  h+='<div class="exp-row"><span class="exp-label">tilt about Y</span><input type="number" class="exp-num" step="5" value="'+partPrep.tiltY+'" oninput="ppSetTilt(\'y\',this.value)"><span class="exp-unit">°</span></div>';
+  h+='<div class="dr-f"><label>Part axis facing up</label><div class="dr-chips" id="ppUp">';
+  for(const c of PP_UP_CODES) h+='<button type="button" class="dr-chip'+(partPrep.up===c?' on':'')+'" aria-pressed="'+(partPrep.up===c)+'" onclick="ppSetUp(\''+c+'\')">'+(c.charAt(0)==='-'?'−'+c.slice(1):c)+'</button>';
+  h+='</div></div>';
+  h+='<div class="dr-f"><label>Tilt</label><div class="dr-pair"><span>about X</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltX+'" oninput="ppSetTilt(\'x\',this.value)" aria-label="Tilt about X"><span>about Y</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltY+'" oninput="ppSetTilt(\'y\',this.value)" aria-label="Tilt about Y"><span>°</span></div><div class="dr-hint" id="ppOrientNote">'+ppOrientNote()+'</div></div>';
   if(p.supports){
-    h+='<div class="exp-row"><span class="exp-label">overhang limit</span><input type="number" class="exp-num" min="0" max="89" step="1" value="'+partPrep.critDeg+'" oninput="ppSetCrit(this.value)"><span class="exp-unit">°</span></div>';
-    h+='<div class="pp-note">Measured from the plate: a downward face tilted less than this needs support.</div>';
-    h+='<div class="exp-row"><span class="exp-label">standoff</span><input type="number" class="exp-num" min="0" max="50" step="0.5" value="'+partPrep.standoff+'" oninput="ppSetStandoff(this.value)"><span class="exp-unit">mm</span></div>';
-    h+='<div class="pp-note">Gap between the plate and the part, filled with support. Changes the view and the support numbers; the export is not moved.</div>';
+    h+='<div class="dr-f"><label>Overhang limit</label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="89" step="1" value="'+partPrep.critDeg+'" oninput="ppSetCrit(this.value)" aria-label="Overhang limit"><span>° from the plate</span></div><div class="dr-hint">A downward face tilted less than this needs support.</div></div>';
+    h+='<div class="dr-f"><label>Standoff</label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="50" step="0.5" value="'+partPrep.standoff+'" oninput="ppSetStandoff(this.value)" aria-label="Standoff"><span>mm</span></div><div class="dr-hint">Gap between plate and part, filled with support. Changes the view and the support numbers; the export is not moved.</div></div>';
   } else {
-    h+='<div class="pp-note">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div>';
+    h+='<div class="dr-f"><label>Supports</label><div class="dr-hint">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div></div>';
   }
-  h+='<button type="button" id="ppViewBtn" class="pp-btn'+(partPrep.printView?' on':'')+'" onclick="ppTogglePrintView()">'+PP_ICON_PRINT+'<span>'+(partPrep.printView?'Print view on':'Print view')+'</span></button>';
-  if(partPrep.printView) h+='<div class="exp-row"><span class="exp-label">plate opacity</span><input type="range" class="pp-range" min="0" max="100" step="5" value="'+partPrep.plateOpacity+'" oninput="ppSetPlateOpacity(this.value)" aria-label="Build plate opacity"><span class="exp-unit" id="ppPlateOpVal">'+partPrep.plateOpacity+' %</span></div>';
-  if(partPrep.printView) h+='<div class="pp-legend">'+(p.supports?'<span><span class="pp-sw pp-sw-red"></span>needs support</span><span><span class="pp-sw pp-sw-amb"></span>within 10° of limit</span>':'')+'<span><span class="pp-sw pp-sw-jade"></span>on plate</span></div>';
-  h+='<div class="pp-note" id="ppOrientNote">'+ppOrientNote()+'</div>';
+  h+='<div class="dr-f dr-wide"><label>Print view</label><div class="dr-pair">';
+  h+='<button type="button" id="ppViewBtn" class="dr-btn'+(partPrep.printView?' on':'')+'" aria-pressed="'+!!partPrep.printView+'" onclick="ppTogglePrintView()">'+PP_ICON_PRINT+'<span>'+(partPrep.printView?'Print view on':'Print view')+'</span></button>';
+  if(partPrep.printView) h+='<span>plate opacity</span><input type="range" class="dr-range" min="0" max="100" step="5" value="'+partPrep.plateOpacity+'" oninput="ppSetPlateOpacity(this.value)" aria-label="Build plate opacity"><span id="ppPlateOpVal">'+partPrep.plateOpacity+' %</span>';
+  h+='</div>';
+  if(partPrep.printView) h+='<div class="dr-leg">'+(p.supports?'<span><i class="dr-sw red"></i>needs support</span><span><i class="dr-sw amb"></i>within 10° of limit</span>':'')+'<span><i class="dr-sw jade"></i>on plate</span></div>';
+  h+='</div></div>';
   return h;
 }
 function ppOrientNote(){
@@ -442,8 +438,8 @@ function ppOrientNote(){
 function ppEstimateHtml(){
   const e=ppLastEst;
   let h='';
-  if(!e){ return '<div class="pp-note">Waiting for the preview…</div>'; }
-  h+='<div class="pp-grid">';
+  if(!e){ return '<div class="ic-note">Waiting for the preview…</div>'; }
+  h+='<div class="ic-stats">';
   if(e.ok){
     const rho=ppDensity();
     h+=_ppCard('volume filled','≈ '+_ppFmt(e.vfPct,1),'%');
@@ -455,13 +451,13 @@ function ppEstimateHtml(){
     h+=_ppCard('build size X × Y × Z'+(e.approxSize?' (box)':''),_ppSizeStr(e.size),'mm',true);
   }
   h+='</div>';
-  if(e.ok) h+='<div class="pp-note">'+(e.envelope==='shape'?'Volume filled is measured against the bounding shape.':'Volume filled is measured against the export cube.')+' Exact numbers appear after export.</div>';
-  if(e.note) h+='<div class="pp-note">'+esc(e.note)+'</div>';
+  if(e.ok) h+='<div class="ic-note">'+(e.envelope==='shape'?'Volume filled is measured against the bounding shape.':'Volume filled is measured against the export cube.')+' Exact numbers appear after export.</div>';
+  if(e.note) h+='<div class="ic-note">'+esc(e.note)+'</div>';
   return h;
 }
 function ppExactHtml(){
-  const s=ppLast; if(!s) return '<div class="pp-note">Export the part to measure it.</div>';
-  let h='<div class="pp-grid">';
+  const s=ppLast; if(!s) return '<div class="ic-note">Export once to measure the real part: exact volume, support area, plate contact and where the time went.</div>';
+  let h='<div class="ic-stats">';
   h+=_ppCard('part volume',_ppSig(s.volMm3),'mm³');
   h+=_ppCard('mass',_ppSig(s.massG),'g');
   if(s.vfPct!=null){ h+=_ppCard('volume filled',_ppFmt(s.vfPct,2),'%'); h+=_ppCard('porosity',_ppFmt(100-s.vfPct,2),'%'); }
@@ -471,38 +467,31 @@ function ppExactHtml(){
   h+=_ppCard('pieces',String(s.pieces),'');
   h+=_ppCard('build height',_ppSig(s.size[2]+(s.standoff||0)),'mm');
   h+='</div>';
-  if(s.recipeVf!=null && s.vfPct!=null) h+='<div class="pp-note">Design tool reported '+_ppFmt(s.recipeVf,1)+' % volume filled.</div>';
-  if(s.pieces>1) h+='<div class="pp-warn">'+s.pieces+' separate pieces — the largest holds '+_ppFmt(s.largestPct,1)+' % of the volume'+(s.smallPieces?'; '+s.smallPieces+' are tiny fragments':'')+'. Loose pieces will not print attached.</div>';
+  if(s.recipeVf!=null && s.vfPct!=null) h+='<div class="ic-note">Design tool reported '+_ppFmt(s.recipeVf,1)+' % volume filled.</div>';
+  if(s.pieces>1) h+='<div class="ic-warn">'+s.pieces+' separate pieces — the largest holds '+_ppFmt(s.largestPct,1)+' % of the volume'+(s.smallPieces?'; '+s.smallPieces+' are tiny fragments':'')+'. Loose pieces will not print attached.</div>';
   // Overhangs
-  h+='<div class="pp-sub">downward-facing surfaces</div>';
+  h+='<div class="ic-sub">downward-facing surfaces</div>';
   if(s.critDeg!=null){
     const pct=s.areaMm2>0?100*s.supportArea/s.areaMm2:0;
-    h+='<div class="pp-grid">'+_ppCard('needs support',_ppSig(s.supportArea),'mm²')+_ppCard('share of surface',_ppFmt(pct,1),'%')
+    h+='<div class="ic-stats">'+_ppCard('needs support',_ppSig(s.supportArea),'mm²')+_ppCard('share of surface',_ppFmt(pct,1),'%')
       +_ppCard('support footprint',_ppSig(s.footprint),'mm²')+_ppCard('on plate',_ppSig(s.plateArea),'mm²')+'</div>';
   } else {
-    h+='<div class="pp-grid">'+_ppCard('on plate',_ppSig(s.plateArea),'mm²')+'</div>';
+    h+='<div class="ic-stats">'+_ppCard('on plate',_ppSig(s.plateArea),'mm²')+'</div>';
   }
   const mx=Math.max(1e-9,...s.bins);
-  h+='<div class="pp-hist">';
+  h+='<div class="ic-hist">';
   for(let k=0;k<s.bins.length;k++){
     const lo=PP_BINS[k], hi=PP_BINS[k+1];
     const bad=s.critDeg!=null && lo<s.critDeg;
     const w=Math.max(0,100*s.bins[k]/mx);
-    h+='<div class="pp-hrow"><span class="pp-hl">'+lo+'–'+hi+'°</span><span class="pp-hbar"><span class="'+(bad?'pp-hf bad':'pp-hf')+'" style="width:'+w.toFixed(1)+'%"></span></span><span class="pp-hv">'+_ppSig(s.bins[k])+'</span></div>';
+    h+='<div class="ic-hrow"><span class="ic-hl">'+lo+'–'+hi+'°</span><span class="ic-hbar"><span class="'+(bad?'ic-hf bad':'ic-hf')+'" style="width:'+w.toFixed(1)+'%"></span></span><span class="ic-hv">'+_ppSig(s.bins[k])+'</span></div>';
   }
-  h+='</div><div class="pp-note">Area (mm²) of downward surfaces by tilt from horizontal; plate contact left out.'+(s.critDeg!=null?' Red bands are below the '+s.critDeg+'° limit.':'')+'</div>';
-  h+='<button type="button" class="pp-btn" onclick="ppDownloadReport()">'+PP_ICON_DOC+'<span>Download print report (.md)</span></button>';
+  h+='</div><div class="ic-note">Area (mm²) of downward surfaces by tilt from horizontal; plate contact left out.'+(s.critDeg!=null?' Red bands are below the '+s.critDeg+'° limit.':'')+'</div>';
+  h+='<button type="button" class="ic-btn" onclick="ppDownloadReport()">'+PP_ICON_DOC+'<span>Download print report (.md)</span></button>';
   return h;
 }
-function ppRenderEstimate(){ const b=document.getElementById('ppEst'); if(b) b.innerHTML=ppEstimateHtml(); ppPeeks(); }
-function ppRenderExact(){ const b=document.getElementById('ppExact'); if(b) b.innerHTML=ppExactHtml(); ppPeeks(); }
-// One-line readouts shown on the group headers while collapsed (54-sidebar.js).
-function ppPeeks(){
-  if(typeof sidebarPeek!=='function') return;
-  const e=ppLastEst, rho=ppDensity();
-  sidebarPeek('estimate', e&&e.ok?('≈ '+_ppFmt(e.vfPct,1)+' % · '+_ppSig(e.volMm3*rho/1000)+' g'):'');
-  sidebarPeek('measured', ppLast?(_ppSig(ppLast.volMm3)+' mm³ · '+_ppSig(ppLast.massG)+' g'):'');
-}
+function ppRenderEstimate(){ const b=document.getElementById('ppEst'); if(b) b.innerHTML=ppEstimateHtml(); }
+function ppRenderExact(){ const b=document.getElementById('ppExact'); if(b) b.innerHTML=ppExactHtml(); if(typeof dockFold==='function') dockFold('meas',false); }
 function ppRerender(){ const b=document.getElementById('ppBox'); if(b) b.innerHTML=ppInner(); }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -512,9 +501,9 @@ window.ppSetProc=function(id){
   partPrep.critDeg=p.critDeg==null?0:p.critDeg;
   const mats=ppMaterialsFor(p.id);
   partPrep.mat=mats.length?mats[0].id:'custom';
-  ppSave(); ppRerender(); ppApplyView();
+  ppSave(); ppRerender(); ppRenderEstimate(); ppApplyView();
 };
-window.ppSetMat=function(id){ partPrep.mat=id; ppSave(); ppRerender(); };
+window.ppSetMat=function(id){ partPrep.mat=id; ppSave(); ppRerender(); ppRenderEstimate(); };
 window.ppSetCustomRho=function(v){ const x=parseFloat(v); if(isFinite(x)&&x>0){ partPrep.customRho=x; ppSave(); ppRenderEstimate(); } };
 window.ppSetUp=function(c){ if(!PP_UP_CODES.includes(c)) return; partPrep.up=c; ppSave(); ppRerender(); ppScheduleEstimate(); ppApplyView(true); };
 window.ppSetTilt=function(axis,v){ const x=parseFloat(v); if(!isFinite(x)) return; if(axis==='x') partPrep.tiltX=x; else partPrep.tiltY=x; ppSave();

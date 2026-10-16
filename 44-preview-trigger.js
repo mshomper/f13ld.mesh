@@ -47,6 +47,7 @@ async function triggerPreview(quality){
       syncGhostsToRaymarcher();
       if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
       clearStale(); triPill.style.display='block'; triPill.textContent='preview · '+result.ms+'ms';
+      if(window.viewStripSync) viewStripSync();   // v0.12.0: show-joins tint + section readout
     }catch(e){ if(!isCurrent()) return; console.error('weld preview',e); if(e.message!=='cancelled') showError('Weld preview: '+(e.message||e)); }
     hideComputing(); setBtns(true);
     return;
@@ -54,6 +55,7 @@ async function triggerPreview(quality){
   if(!currentRecipe)return;
   const bakedRecipe=currentRecipe;
   rm.setAssemblyMode(false);   // single-body path: ensure the active-body clip is restored
+  if(window.viewStripSync) viewStripSync();   // joins are weld-only
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
   setBtns(false);showCancelBtn(false);
   showComputing('building preview…','baking field…');
@@ -140,6 +142,7 @@ async function triggerPreview(quality){
       triPill.style.display='block';
       triPill.textContent='preview · '+result.ms+'ms';
       seamPill.style.display='none';
+      if(window.viewStripSync) viewStripSync();
       hideComputing();
     }catch(e){
       if(!isCurrent()) return;
@@ -184,6 +187,7 @@ async function triggerPreview(quality){
     triPill.style.display='block';
     triPill.textContent='preview · '+result.ms+'ms';
     updateSeamPill(currentRecipe);
+    if(window.viewStripSync) viewStripSync();
     hideComputing();
   }catch(e){
     if(!isCurrent()) return;

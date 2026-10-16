@@ -86,6 +86,7 @@ window.onStructXformReset=function(){
   if(wasNonIdentity) _scheduleStructXformRebake();
   // rc2: persist reset state to active body record.
   snapshotActiveBodyState();
+  if(typeof renderRailEditor==='function') renderRailEditor();   // v0.12.0: sliders follow the reset
 };
 
 // Pushes current structureTransform values into the UI inputs. Called on
@@ -99,5 +100,48 @@ function refreshStructureTransformUI(){
   set('sxOffY',structureTransform.spatialOffsetMmY);
   set('sxOffZ',structureTransform.spatialOffsetMmZ);
   set('sxIso', structureTransform.isoOffsetMm);
+}
+
+// ── Rail editor drivers (v0.12.0) ─────────────────────────────────────────
+// The rail editor (55-rail.js) edits the ACTIVE body. Its sliders write the
+// value into the hidden legacy input and run the same handler an edit of that
+// input always ran, so per-body state saving (snapshotActiveBodyState) and the
+// preview rebakes behave exactly as before. Rapid slider moves are coalesced.
+const _RAIL_XFORM_INPUT={rotXDeg:'sxRotX',rotYDeg:'sxRotY',rotZDeg:'sxRotZ',
+  spatialOffsetMmX:'sxOffX',spatialOffsetMmY:'sxOffY',spatialOffsetMmZ:'sxOffZ',isoOffsetMm:'sxIso'};
+function railSetXform(key, val){
+  const id=_RAIL_XFORM_INPUT[key]; if(!id) return;
+  const el=document.getElementById(id); if(!el) return;
+  el.value=val;
+  window.onStructXformInput && window.onStructXformInput();
+}
+// Cell size. Same as typing in the cell-size input, except that it is NOT
+// locked while the part is welded (each member bakes at its own cell size), and
+// that aperiodic recipes (which need a re-bake over the new extent) refresh the
+// preview by themselves a moment after the slider stops instead of showing the
+// "preview outdated" banner.
+let _railCellTimer=null;
+function railSetCellMm(mm){
+  if(!importedShape) return;
+  mm=Math.max(0.05, +mm||3);
+  const inp=document.getElementById('shapeCellSizeMm'); if(inp) inp.value=mm;
+  if(rm && rm.setCellSize) rm.setCellSize(mm);
+  snapshotActiveBodyState();                      // body.cellSizeMm
+  if(typeof updateExportEstimate==='function') updateExportEstimate();
+  const welded=(typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
+  if(welded || (currentRecipe && !recipeIsPeriodic(currentRecipe))){
+    clearTimeout(_railCellTimer);
+    _railCellTimer=setTimeout(()=>{ _railCellTimer=null; if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low'); },300);
+  }
+}
+function railSetTrim(on){
+  const tg=document.getElementById('trimToNodes'); if(!tg) return;
+  tg.checked=!!on;
+  window.onTrimToNodesChange && window.onTrimToNodesChange();
+}
+function railSetTrimInset(mult){
+  const el=document.getElementById('trimInsetMult'); if(!el) return;
+  el.value=Math.max(1, Math.min(2, +mult||1));
+  window.onTrimInsetMultChange && window.onTrimInsetMultChange();
 }
 Object.defineProperty(window,'currentOversample',{get:()=>currentOversample});

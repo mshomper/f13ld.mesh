@@ -1,6 +1,9 @@
 /* ============================================================
    F13LD.mesh · 61-export.js
    Export pipeline: weld-group export, triggerExport, timings.
+   v0.12.0: progress shows in the strip above the dock (56-dock.js,
+   dockExportState); the centre compute overlay is left to preview bakes.
+   Stage text still goes to #coSub, which the strip mirrors.
    ============================================================ */
 'use strict';
 
@@ -35,8 +38,7 @@ async function _exportWeldGroup(gid){
     const exportN=EXPORT_SHAPE_SDF_N_BY_QUAL[currentExportQual]||192;
     coMain.textContent='preparing weld export...';
     coSub.textContent='refining member SDFs ('+exportN+'\u00b3)...';
-    overlay.classList.remove('hidden');showCancelBtn(true);
-    if(window._orbStart)_orbStart();
+    showCancelBtn(true);   // v0.12.0: progress shows in the strip above the dock, not the centre overlay
     const {specs}=await gatherGroupSpecs(gid, exportN, true);   // ensureN re-bake + clone for transfer
     if(!specs.length) throw new Error('no exportable members in weld group');
     showCancelBtn(false);
@@ -89,7 +91,7 @@ async function _exportWeldGroup(gid){
     }
     coMain.textContent='exporting weld...';
     coSub.textContent='planning weld...';
-    overlay.classList.remove('hidden');showCancelBtn(true);
+    showCancelBtn(true);
     // v0.9.3 plan: exact solids, fine regions, far-member reach.
     const blendK=groupFilletMm(gid);
     const plan=planWeld(specs, blendK, relEdgeMm, gbb);
@@ -198,9 +200,10 @@ window.triggerExport=async function(){
     return;
   }
   _exportBusy=true;
+  if(typeof dockExportState==='function') dockExportState(true);
   try{ await _triggerExportImpl(); }
   catch(e){ _exportFailUI(e); }
-  finally{ _exportBusy=false; _exportCancelReject=null; }
+  finally{ _exportBusy=false; _exportCancelReject=null; if(typeof dockExportState==='function') dockExportState(false); }
 };
 function _exportFailUI(e){
   if(_exportElapsedTimer) clearInterval(_exportElapsedTimer);
@@ -325,9 +328,7 @@ async function _triggerExportImpl(){
     if(!importedShape.sdfGrid||importedShape.sdfGrid.N<targetShapeN){
       coMain.textContent='preparing export...';
       coSub.textContent='refining shape SDF ('+targetShapeN+'³)...';
-      overlay.classList.remove('hidden');
       showCancelBtn(true);
-      if(window._orbStart)_orbStart();
       const bakeStart=performance.now();
       try{
         importedShape.sdfGrid=await computeShapeSDF(
@@ -419,7 +420,6 @@ async function _triggerExportImpl(){
       } else {
         coMain.textContent='preparing export...';
         coSub.textContent='pre-baking HU field ('+huN+'\u00b3 grid)...';
-        overlay.classList.remove('hidden');
         showCancelBtn(true);
         const huStart=performance.now();
         try{
@@ -477,7 +477,7 @@ async function _triggerExportImpl(){
     }
     coMain.textContent='exporting...';
     coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
-    overlay.classList.remove('hidden');showCancelBtn(true);
+    showCancelBtn(true);
     scale=1.0;
     domainLabel=importedShape.meta.bbox;
     edgeLabel=relEdgeMm.toFixed(2)+'mm';
@@ -537,6 +537,11 @@ async function _triggerExportImpl(){
         isoOffsetMm: structureTransform.isoOffsetMm
       }
     };
+    // v0.12.0: the active body's fill ('lattice' | 'skin') and skin thickness,
+    // when its record carries them (read by the worker as d.fill / d.skinMm).
+    const _fb=(activeBodyId!==null)?bodies.get(activeBodyId):null;
+    if(_fb && _fb.fill) workerMsg.fill=_fb.fill;
+    if(_fb && _fb.skinMm!=null) workerMsg.skinMm=_fb.skinMm;
   } else {
     const domainEl=document.getElementById('expDomainMm');
     const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl?.value)||10));
@@ -551,7 +556,7 @@ async function _triggerExportImpl(){
     exportEst=_est;
     coMain.textContent='exporting...';
     coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
-    overlay.classList.remove('hidden');showCancelBtn(true);
+    showCancelBtn(true);
     scale=domainMm/10;
     domainLabel=domainMm+'mm';
     edgeLabel=edgeMm+'mm';
@@ -726,7 +731,42 @@ async function _triggerExportImpl(){
 function expTimeSplitChip(bd){
   if(!bd||!(bd.total>0)) return '';
   const f=ms=>ms>=1000?(ms/1000).toFixed(1)+'s':Math.round(ms)+'ms';
-  return expChip('field · mesh · simplify',(bd.field>0?f(bd.field):'in mesh')+' · '+f(bd.levelSet||0)+' · '+(bd.simplify>0?f(bd.simplify):'—'));
+  const fld=bd.field>0?bd.field:0, mesh=bd.levelSet||0, simp=bd.simplify>0?bd.simplify:0;
+  const sum=fld+mesh+simp;
+  if(!(sum>0)) return '';
+  const pct=v=>Math.round(100*v/sum);
+  const seg=(v,col)=>v>0?'<i style="width:'+(100*v/sum).toFixed(1)+'%;background:'+col+'"></i>':'';
+  const key=(v,col,name,none)=>'<span><i style="background:'+col+'"></i>'+name+' '+(v>0?f(v)+' \u00b7 '+pct(v)+' %':none)+'</span>';
+  return '<div class="exp-split" title="field \u00b7 mesh \u00b7 simplify">'+
+    '<div class="ic-sub">where the time went</div>'+
+    '<div class="split">'+seg(fld,'var(--warn)')+seg(mesh,'var(--mesh)')+seg(simp,'#7c6ff7')+'</div>'+
+    '<div class="splitkey">'+key(fld,'var(--warn)','field','in mesh')+key(mesh,'var(--mesh)','mesh','\u2014')+key(simp,'#7c6ff7','simplify','\u2014')+'</div></div>';
 }
 function exportFieldCores(){ return Math.max(1,(navigator.hardwareConcurrency||2)-1); }
 function expChip(l,v){return`<div class="exp-chip">${esc(l)} <b>${esc(v)}</b></div>`;}
+
+// v0.12.0: the file name the next export would get (shown in the Export tab).
+// Mirrors the three name builders above; the date is today's.
+function exportFileNamePreview(){
+  try{
+    const wg=(typeof activeGroupId==='function')?activeGroupId():null;
+    if(wg && groupMembers(wg).length>=2){
+      return 'weld_'+weldGroupLetter(wg)+'_'+groupMembers(wg).length+'bodies'+ppOrientTag()+'_'+new Date().toISOString().slice(0,10)+'.3mf';
+    }
+    if(activeBodyId!==null && isSolidAssignment(assignments.get(activeBodyId)) && importedShape){
+      const nm=((importedShape.meta&&importedShape.meta.name)||'body').replace(/\.[^.]+$/,'');
+      return safeFilePart(nm)+'_solid'+ppOrientTag()+'_<date>.3mf';
+    }
+    if(!currentRecipe) return '\u2014';
+    const j=currentRecipe.json;
+    const preset=safeFilePart(j.surface?.preset||j.surface?.noise_type||j.field?.type||currentRecipe.subtype);
+    let mid='';
+    if(importedShape){
+      const fmtMm=v=>{ const abs=Math.abs(v).toFixed(2).replace(/\.?0+$/,''); return (v<0?'n':'')+(abs.replace('.','p')||'0')+'mm'; };
+      const cell=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+      const iso=structureTransform.isoOffsetMm||0;
+      mid='_'+safeFilePart(importedShape.meta.name.replace(/\.[^.]+$/,''))+'_cell'+fmtMm(cell)+'_iso'+(iso===0?'0':fmtMm(iso));
+    }
+    return currentRecipe.family+'_'+preset+mid+ppOrientTag()+'_'+new Date().toISOString().slice(0,10)+'.3mf';
+  }catch(_){ return '\u2014'; }
+}

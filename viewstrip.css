@@ -1,1 +1,112 @@
-/* F13LD.mesh · viewstrip.css — v0.12.0 */
+/* ============================================================
+   F13LD.mesh · viewstrip.css — v0.12.0
+   View strip (tabs, preview quality, view menu) and viewport overlays.
+   Loads after mesh.css and ui12.css, so these rules win over the old
+   absolutely-positioned overlay styles. Tokens come from ui12.css.
+   ============================================================ */
+
+/* ── strip ─────────────────────────────────────────────────── */
+#vstrip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:8px 14px;flex:none;position:relative;z-index:30;
+  background:var(--s3);border-bottom:1px solid var(--hair)}
+.vs-label{font:500 10px var(--mono);color:var(--t3);letter-spacing:.16em}
+.vs-tabs{display:flex;flex-wrap:wrap;gap:4px}
+.vtab{display:inline-flex;align-items:center;gap:7px;font:500 11px 'Exo 2',sans-serif;letter-spacing:.04em;white-space:nowrap;
+  padding:4px 12px 4px 5px;border-radius:20px;border:1px solid var(--hair2);background:transparent;color:var(--t2);cursor:pointer;
+  transition:color .12s,border-color .12s,background .12s}
+.vtab .ti{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;background:var(--s2);border:1px solid var(--hair)}
+.vtab:hover{color:var(--t1)}
+.vtab:focus-visible,.res-btn:focus-visible,#viewOptsBtn:focus-visible,#secPanel button:focus-visible{outline:2px solid var(--mesh-ring);outline-offset:1px}
+.vtab.on{background:var(--mesh-deep);color:var(--mesh-tile);border-color:var(--mesh);font-weight:600}
+.vtab.on .ti{background:rgba(252,234,245,.12);border-color:rgba(252,234,245,.25)}
+.vs-right{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.vs-mini{font:600 9px var(--mono);color:var(--t3);letter-spacing:.14em}
+
+/* preview quality: segmented control */
+#resStrip{position:static;display:inline-flex;gap:0;border:1px solid var(--hair2);border-radius:8px;overflow:hidden;background:var(--s1)}
+#resStrip .res-btn{border:0;border-radius:0;background:transparent;color:var(--t2);font:500 11px var(--mono);padding:4px 9px;cursor:pointer;transition:color .12s,background .12s}
+#resStrip .res-btn+.res-btn{border-left:1px solid var(--hair2)}
+#resStrip .res-btn:hover:not(:disabled){color:var(--t1)}
+#resStrip .res-btn.active{background:var(--mesh-soft);color:var(--mesh-tile);border-color:var(--hair2)}
+#resStrip .res-btn:disabled{opacity:.45;cursor:default}
+
+/* view menu: drawn-icon pill + dropdown */
+#viewOpts{position:relative;top:auto;left:auto;z-index:35;font-size:11px}
+#viewOptsBtn{display:inline-flex;align-items:center;gap:6px;font:600 11px 'Exo 2',sans-serif;letter-spacing:.04em;white-space:nowrap;
+  padding:4px 13px 4px 10px;border-radius:20px;border:1px solid var(--hair2);background:transparent;color:var(--t2);cursor:pointer}
+#viewOptsBtn svg{flex:none}
+#viewOptsBtn:hover{color:var(--mesh);border-color:var(--mesh)}
+#viewOptsBtn[aria-expanded=true]{color:var(--mesh-tile);border-color:var(--mesh-ring);background:var(--mesh-soft)}
+#viewOptsPanel{position:absolute;right:0;top:calc(100% + 6px);margin:0;min-width:176px;max-width:calc(100vw - 20px);
+  display:flex;flex-direction:column;gap:2px;padding:8px 12px 8px 10px;border-radius:12px;
+  background:#121522;border:1px solid var(--hair2);box-shadow:0 14px 36px rgba(0,0,0,.55)}
+#viewOptsPanel[hidden]{display:none}
+#viewOptsPanel label{display:flex;align-items:center;gap:8px;min-height:26px;color:var(--t1);font-size:12px;cursor:pointer;user-select:none;white-space:nowrap}
+#viewOptsPanel input{width:14px;height:14px;margin:0;accent-color:var(--mesh);cursor:pointer}
+#viewOptsReset{align-self:flex-start;margin-top:4px;padding:2px 10px;border-radius:12px;border:1px solid var(--hair2);background:none;color:var(--t3);font:500 10px var(--mono);cursor:pointer}
+#viewOptsReset:hover{color:var(--t1);border-color:var(--mesh-ring)}
+
+/* ── viewport overlays ─────────────────────────────────────── */
+#previewArea{border:1px solid var(--hair);background:#000}
+#typeBadge{top:10px;left:10px;z-index:5;max-width:calc(100% - 112px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:600 10px var(--mono);letter-spacing:.12em;padding:4px 10px;border-radius:20px;
+  color:var(--t2);border:1px solid var(--hair2);background:rgba(0,0,0,.45);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#typeBadge{border-width:1px!important}
+#orientGimbal{top:8px;right:8px;width:76px;height:76px;z-index:5;opacity:1;border-radius:50%;
+  background:rgba(10,12,19,.55);border:1px solid var(--hair2)}
+
+/* bottom-left chip row (triPill, seamPill, timingsPill are moved in by 23-view-strip.js) */
+#vpChips{position:absolute;left:10px;right:10px;bottom:10px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;pointer-events:none}
+#vpChips>*{pointer-events:auto}
+#vpChips #triPill,#vpChips #seamPill,#vpChips #timingsPill{position:static;bottom:auto;left:auto;z-index:auto;
+  font:500 10px var(--mono);letter-spacing:.02em;white-space:nowrap;padding:3px 10px;border-radius:20px;
+  background:rgba(10,12,19,.72);border:1px solid var(--hair2);color:var(--t2);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#vpChips #seamPill{color:#f0b35b;background:rgba(30,18,4,.8);border-color:rgba(245,158,11,.5)}
+#vpChips #timingsPill{gap:6px;font-variant-numeric:tabular-nums}
+#timingsPill .tp-label{color:var(--t3)}
+#timingsPill .tp-val{color:var(--t1)}
+#timingsPill .tp-sep{color:var(--t3)}
+
+/* stale banner: small amber chip, centred above the chip row */
+#staleBanner{left:50%;right:auto;bottom:56px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 20px);z-index:6;
+  flex-wrap:wrap;justify-content:center;gap:10px;padding:4px 5px 4px 14px;border-radius:20px;
+  font:500 11px 'Exo 2',sans-serif;color:var(--warn);background:rgba(30,18,4,.82);border:1px solid rgba(245,158,11,.5);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#staleRefreshBtn{display:inline-flex;align-items:center;gap:6px;padding:3px 12px 3px 9px;border-radius:14px;border:1px solid rgba(245,158,11,.6);
+  background:rgba(245,158,11,.16);color:var(--warn);font:600 11px 'Exo 2',sans-serif;cursor:pointer}
+#staleRefreshBtn:hover{background:rgba(245,158,11,.3)}
+#cancelMeshBtn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+#cancelMeshBtn .btn-ico,#staleRefreshBtn .btn-ico{flex:none}
+
+/* section plane controls (bottom-right while the Section tab is active) */
+#secPanel{position:absolute;right:10px;bottom:10px;z-index:6;display:flex;align-items:center;gap:10px;
+  padding:5px 8px 5px 12px;border-radius:20px;background:rgba(10,12,19,.78);border:1px solid var(--hair2);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#secPanel[hidden]{display:none}
+#secPanel .sp-t{font:600 9px var(--mono);letter-spacing:.14em;color:var(--t3)}
+#secPanel .sp-seg{display:inline-flex;border:1px solid var(--hair2);border-radius:8px;overflow:hidden}
+#secPanel .sp-seg button{border:0;background:transparent;color:var(--t2);font:600 11px var(--mono);padding:3px 9px;cursor:pointer}
+#secPanel .sp-seg button+button{border-left:1px solid var(--hair2)}
+#secPanel .sp-seg button.on{background:var(--mesh-soft);color:var(--ax,var(--mesh-tile))}
+#secPanel input[type=range]{width:150px;min-width:70px;flex:1 1 120px;accent-color:var(--mesh);margin:0}
+#secPanel .sp-read{font:500 10px var(--mono);color:var(--t1);min-width:78px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+#secPanel .sp-flip{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--hair2);background:transparent;color:var(--t2);cursor:pointer}
+#secPanel .sp-flip:hover{color:var(--mesh);border-color:var(--mesh-ring)}
+
+/* ── phone ─────────────────────────────────────────────────── */
+@media (max-width:860px){
+  #vstrip{padding:8px 10px;gap:8px 10px}
+  .vs-label,.vs-mini{display:none}
+  .vtab{padding:3px 10px 3px 4px}
+  #resStrip .res-btn{padding:4px 8px}
+  #viewOptsBtn{padding:4px 9px}
+  #viewOptsBtn .lbl{display:none}
+  #staleBanner{top:46px;bottom:auto}
+  #secPanel{left:10px;right:10px;bottom:42px;flex-wrap:wrap;justify-content:space-between;border-radius:14px;padding:6px 10px}
+  #secPanel input[type=range]{order:5;flex:1 1 100%;width:100%}
+}
+@media (max-width:420px){
+  .vtab{gap:5px;padding-right:9px}
+  #typeBadge{max-width:calc(100% - 100px)}
+}

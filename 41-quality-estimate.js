@@ -53,12 +53,31 @@ function getMaxExportVoxels(recipe){
 // getMaxExportVoxels(recipe) instead. Equals the most permissive family cap
 // so call sites that haven't migrated still produce sensible numbers.
 const MAX_EXPORT_VOXELS=50e6;
+// ── Export edge length for a quality tier (v0.12.0) ───────────────────────────
+// The mesh edge in mm that a quality would actually use for the current
+// recipe: with a bounding shape the clamp is against its bbox, for the open
+// cube against the domain size. Same maths as the export itself.
+function exportEdgeMm(qual){
+  const raw=QUAL_EDGE_MM[qual]||0.10;
+  const cap=currentRecipe?getMaxExportVoxels(currentRecipe):MAX_EXPORT_VOXELS_DEFAULT;
+  if(typeof importedShape!=='undefined' && importedShape && importedShape.bbox) return clampEdgeMm(raw,importedShape.bbox,cap).safeEdge;
+  const domainEl=document.getElementById('expDomainMm');
+  const domainMm=Math.max(1,Math.min(100,parseFloat(domainEl&&domainEl.value)||(typeof exportDomainMm!=='undefined'?exportDomainMm:10)));
+  const w=clampEdgeWorld(raw*10/domainMm,cap).safeEdge;
+  return +(w*domainMm/10).toFixed(4);
+}
 // ── Live export estimate display ──────────────────────────────────────────────
+// v0.12.0: the full line goes to #expEstimate (Export tab); the dock shows the
+// numbers (tris · seconds · cores) from the same estimate via dockSetEstimate.
 function updateExportEstimate(){
   // v0.10.0: refresh the part-prep live estimate (debounced, 53-part-prep.js).
   if(typeof ppScheduleEstimate==='function') ppScheduleEstimate();
   const el=document.getElementById('expEstimate');
-  if(!el) return;
+  const publish=(text,tris,sec,cores)=>{
+    if(el) el.textContent=text;
+    if(typeof dockSetEstimate==='function') dockSetEstimate(text?{tris,sec,cores,text}:null);
+  };
+  if(!el){ if(typeof dockRefresh==='function') dockRefresh(); return; }
   // Refresh quality-button voxel labels alongside the estimate (v0.5.0).
   // Only meaningful when a shape is loaded — without one, voxel size is
   // determined by domain-size only and isn't meaningfully different across
@@ -74,13 +93,13 @@ function updateExportEstimate(){
         const bits=[est.members+' bodies'];
         if(est.exactSolids) bits.push(est.exactSolids+' solid'+(est.exactSolids===1?'':'s')+' exact');
         if(est.workers>1) bits.push(est.workers+' cores');
-        el.textContent='~'+est.tris.toLocaleString()+' triangles · ~'+est.totalSec+'s · weld '+weldGroupLetter(wg)+' ('+bits.join(', ')+')'+
-          (est.sdfSec>0?' (includes ~'+est.sdfSec+'s SDF bake)':'');
+        publish('~'+est.tris.toLocaleString()+' triangles · ~'+est.totalSec+'s · weld '+weldGroupLetter(wg)+' ('+bits.join(', ')+')'+
+          (est.sdfSec>0?' (includes ~'+est.sdfSec+'s SDF bake)':''), est.tris, est.totalSec, Math.max(1,est.workers||1));
         return;
       }
     }
   }catch(e){ console.warn('[estimate] weld estimate failed', e); }
-  if(!currentRecipe){el.textContent='';return;}
+  if(!currentRecipe){publish('',0,0,1);return;}
   try{
     let edgeMm, bbox=null, cellSizeMm=null; // declare at outer scope
     if(importedShape){
@@ -135,7 +154,8 @@ function updateExportEstimate(){
     if(bakeSec>0)   bakeBits.push('~'+bakeSec+'s SDF bake');
     if(huBakeSec>0) bakeBits.push('~'+huBakeSec+'s HU bake');
     const bakeTxt = bakeBits.length ? ' (includes '+bakeBits.join(', ')+')' : '';
-    el.textContent='~'+estTris.toLocaleString()+' triangles · ~'+totalSec+'s'+bakeTxt;
+    publish('~'+estTris.toLocaleString()+' triangles · ~'+totalSec+'s'+bakeTxt, estTris, totalSec,
+      (typeof exportFieldCores==='function')?Math.min(15,exportFieldCores()):1);
     // v0.5.0-rc20: thinnest-wall warning removed. The formula
     // (half_width × cellSizeMm/10) is dimensionally wrong for stochastic
     // fields — half_width is an iso-band threshold on a normalized field,
@@ -143,7 +163,7 @@ function updateExportEstimate(){
     // half-units) and roughly correct for tpms thin walls, but the false
     // positives on grain/HU/spinodoid/GRF dominate. Quality-button voxel-
     // size labels already give users what they need to judge resolution.
-  }catch(e){el.textContent='';}
+  }catch(e){publish('',0,0,1);}
 }
 
 // ── Voxel-size labels on quality buttons (v0.5.0) ─────────────────────────
@@ -155,25 +175,17 @@ function updateQualButtonVoxelSizes(){
   const ids={draft:'qlDraft',low:'qlLow',med:'qlMed',high:'qlHigh',ultra:'qlUltra'};
   const allEls=Object.entries(ids).map(([q,id])=>[q,document.getElementById(id)]).filter(([,el])=>el);
   if(allEls.length===0) return;
-  if(!importedShape || !currentRecipe){
-    allEls.forEach(([,el])=>{el.textContent='—';});
-    return;
-  }
-  const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
-  // Compute each quality's voxel size; collapse duplicates (small shapes
-  // hit the bbox/voxel-budget clamp at fine qualities, producing the same
-  // voxel size as a coarser tier).
+  // v0.12.0: labels are shown for the open cube too (edge in mm, clamped by
+  // the voxel budget of the domain size), not only with a bounding shape.
   const sizes={};
-  for(const [q,] of allEls){
-    sizes[q]=voxelSizeForQuality(q,currentRecipe,cellSizeMm,importedShape.bbox);
-  }
+  for(const [q,] of allEls) sizes[q]=exportEdgeMm(q);
   // Format: show in mm with trailing-zero trim. Annotate "(=Med)" etc when
   // a quality clamps to the same size as a coarser tier.
   const order=['draft','low','med','high','ultra'];
   const labels={draft:'Draft',low:'Low',med:'Med',high:'High',ultra:'Ultra'};
   const fmt=mm=>mm<0.1?(mm*1000).toFixed(0)+'µm':mm.toFixed(2)+'mm';
   for(const [q,el] of allEls){
-    if(sizes[q]==null){el.textContent='—';continue;}
+    if(sizes[q]==null||!isFinite(sizes[q])){el.textContent='—';continue;}
     // Find the nearest coarser tier with the same size (within 0.5%)
     const idx=order.indexOf(q);
     let coarserSame=null;

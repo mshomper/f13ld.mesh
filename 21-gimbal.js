@@ -31,9 +31,9 @@ MeshRaymarcher.prototype._updateGimbal=function(){
   var R=this.rotMat;if(!R) return;
   var L=28; // line length in SVG units
   var axes=[
-    {id:'X', cx:R[0], cy:R[3], cz:R[6], color:'#ff5252', lineId:'gimX', tipId:'gimXT', labelId:'gimXL'},
-    {id:'Y', cx:R[1], cy:R[4], cz:R[7], color:'#4caf50', lineId:'gimY', tipId:'gimYT', labelId:'gimYL'},
-    {id:'Z', cx:R[2], cy:R[5], cz:R[8], color:'#42a5f5', lineId:'gimZ', tipId:'gimZT', labelId:'gimZL'},
+    {id:'X', cx:R[0], cy:R[3], cz:R[6], color:'#f87171', lineId:'gimX', tipId:'gimXT', labelId:'gimXL'},
+    {id:'Y', cx:R[1], cy:R[4], cz:R[7], color:'#4ade80', lineId:'gimY', tipId:'gimYT', labelId:'gimYL'},
+    {id:'Z', cx:R[2], cy:R[5], cz:R[8], color:'#60a5fa', lineId:'gimZ', tipId:'gimZT', labelId:'gimZL'},
   ];
   // Sort back-to-front: smaller cz = behind (drawn first); larger cz = in
   // front (drawn last, on top). Sort ascending by cz.
@@ -47,6 +47,7 @@ MeshRaymarcher.prototype._updateGimbal=function(){
     var label=document.getElementById(a.labelId);
     if(!line||!tip||!label) continue;
     var sx=a.cx*L, sy=-a.cy*L; // SVG y-down → flip
+    line.setAttribute('stroke',a.color); tip.setAttribute('stroke',a.color);
     line.setAttribute('x2',sx.toFixed(2));
     line.setAttribute('y2',sy.toFixed(2));
     tip.setAttribute('cx',sx.toFixed(2));
@@ -61,7 +62,7 @@ MeshRaymarcher.prototype._updateGimbal=function(){
       tip.setAttribute('fill',a.color);
       label.setAttribute('fill','#06080f');
     } else {
-      tip.setAttribute('fill','rgba(6,8,15,0.9)');
+      tip.setAttribute('fill','rgba(10,12,19,0.92)');
       label.setAttribute('fill',a.color);
     }
     // Re-append in sorted order; last-appended renders on top in SVG.

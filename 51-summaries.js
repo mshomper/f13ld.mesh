@@ -1,37 +1,22 @@
 /* ============================================================
    F13LD.mesh · 51-summaries.js
    Per-family recipe summary cards.
+   v0.12.0: exportPanel() no longer renders anything — the export and part
+   prep controls live in the dock drawer, the estimate / measured /
+   homogenization blocks in the right inspector (56-dock.js). The summary
+   keeps the recipe title and settings grid (read by the left rail) and the
+   homogenization block, which sidebarEnhance() (54-sidebar.js) moves into the
+   Homogenization card.
    ============================================================ */
 'use strict';
 
 // ── Summary renderers ─────────────────────────────────────────────────────
 function card(l,v,u){if(v==null)return'';return`<div class="mc"><div class="mc-lbl">${esc(l)}</div><div class="mc-val">${esc(v)}${u?`<span class="mc-unit">${esc(u)}</span>`:''}</div></div>`;}
-function hchip(l,v,u){if(v==null)return'';return`<div class="hchip">${esc(l)} <b>${esc(v)}</b>${u?`<small> ${esc(u)}</small>`:''}</div>`;}
-function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${esc(h.method||'MIL-HS')}&middot;${esc(h.grid||'?')}³</div><div class="homo-row">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
+function hchip(l,v,u){if(v==null)return'';return`<div class="ic-stat"><div class="l">${esc(l)}</div><div class="v">${esc(v)}${u?`<small>${esc(u)}</small>`:''}</div></div>`;}
+function homoSection(h){if(!h)return'';return`<hr class="div"><div class="sec-lbl">homogenization &middot;${esc(h.method||'MIL-HS')}&middot;${esc(h.grid||'?')}³</div><div class="homo-row ic-stats">${hchip('VF',h.volume_fraction!=null?h.volume_fraction.toFixed(1):null,'%')}${hchip('Ex',h.Ex_GPa!=null?h.Ex_GPa.toFixed(2):null,'GPa')}${hchip('Ey',h.Ey_GPa!=null?h.Ey_GPa.toFixed(2):null,'GPa')}${hchip('Ez',h.Ez_GPa!=null?h.Ez_GPa.toFixed(2):null,'GPa')}${hchip('Gxy',h.Gxy_GPa!=null?h.Gxy_GPa.toFixed(2):null,'GPa')}${hchip('A',h.anisotropy!=null?h.anisotropy.toFixed(2):null,'')}${hchip('νeff',h.nu_eff!=null?h.nu_eff.toFixed(3):null,'')}</div>`;}
 // v0.8.3: remembered across panel re-renders (was reset to 10 mm every time).
 let exportDomainMm=10;
-function exportPanel(){
-  const q=currentExportQual||'low';
-  // v0.10.0: part prep (53-part-prep.js) sits above the export controls.
-  return`${typeof partPrepPanel==='function'?partPrepPanel():''}<hr class="div">
-<div class="sec-lbl">export 3mf</div>
-<div class="exp-row">
-  <span class="exp-label">domain size</span>
-  <input type="number" id="expDomainMm" class="exp-num" value="${exportDomainMm}" min="1" max="100" step="1" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()">
-  <span class="exp-unit">mm</span>
-</div>
-<div class="qual-strip" style="margin-bottom:8px">
-    <button class="qual-btn${q==='draft'?' active':''}" id="qDraft" onclick="setQual('draft')"><span class="qlbl">Draft</span><span class="ql" id="qlDraft">—</span></button>
-    <button class="qual-btn${q==='low'?' active':''}" id="qLow" onclick="setQual('low')"><span class="qlbl">Low</span><span class="ql" id="qlLow">—</span></button>
-    <button class="qual-btn${q==='med'?' active':''}" id="qMed" onclick="setQual('med')"><span class="qlbl">Med</span><span class="ql" id="qlMed">—</span></button>
-    <button class="qual-btn${q==='high'?' active':''}" id="qHigh" onclick="setQual('high')"><span class="qlbl">High</span><span class="ql" id="qlHigh">—</span></button>
-    <button class="qual-btn${q==='ultra'?' active':''}" id="qUltra" onclick="setQual('ultra')"><span class="qlbl">Ultra</span><span class="ql" id="qlUltra">—</span></button>
-  </div>
-<button id="expBtn" onclick="triggerExport()">Export 3MF</button>
-<div id="expEstimate"></div>
-
-<div id="expElapsed"></div>
-<div id="expReport"></div>`;}
+function exportPanel(){ return ''; }
 function buildNoiseSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const hs=s.scale_x!=null&&(s.scale_x!==1||s.scale_y!==1||s.scale_z!==1);return`<div class="sec-lbl">noise scaffold</div><div class="meta-grid">${card('noise type',(s.noise_type||'simplex').toUpperCase())}${card('frequency',s.frequency)}${card('topology',g.mode)}${card('wall thickness',g.wall_thickness)}${card('cell scale',g.cell_scale)}${card('center',s.center)}${card('half-width',s.half_width)}${hs?card('axis scale',`${s.scale_x}·${s.scale_y}·${s.scale_z}`):''}${s.octaves!=null?card('octaves',s.octaves):''}${s.lacunarity!=null?card('lacunarity',s.lacunarity):''}${s.distance_metric?card('distance metric',s.distance_metric):''}${s.jitter!=null?card('jitter',s.jitter):''}${s.vein_turbulence!=null?card('vein turb',s.vein_turbulence):''}${s.vein_frequency!=null?card('vein freq',s.vein_frequency):''}${s.seed?card('seed',s.seed):''}${card('noise revision',s.noise_rev==null?'1 (legacy)':s.noise_rev)}</div>${exportPanel()}`;}
 function buildTPMSSummary(r){const s=r.json.surface,g=r.json.geometry||{},h=r.json.homogenization;const nOn=Array.isArray(s.terms)?s.terms.filter(t=>t.on).length:'?';const ps=g.phase_shift;
   // Anisotropic-tiling spec v1.0: show per-axis cell scale when the recipe
@@ -112,7 +97,7 @@ function buildBeamSummary(r){
     ? card('node ball',g.node_ball_radius.toFixed(4),'mm') : '';
   const homoBlock=(ec.Ex!=null||an.zener_A!=null)?
     `<hr class="div"><div class="sec-lbl">homogenization &middot; DSM-PBC frame</div>
-     <div class="homo-row">${hchip('VF',m.relative_density_pct!=null?m.relative_density_pct.toFixed(1):null,'%')}${hchip('Ex',toGPa(ec.Ex),'GPa')}${hchip('Ey',toGPa(ec.Ey),'GPa')}${hchip('Ez',toGPa(ec.Ez),'GPa')}${hchip('Gxy',toGPa(ec.Gxy),'GPa')}${hchip('A',an.zener_A!=null?an.zener_A.toFixed(2):null,'')}${hchip('νxy',nu.nuxy!=null?nu.nuxy.toFixed(3):null,'')}</div>`
+     <div class="homo-row ic-stats">${hchip('VF',m.relative_density_pct!=null?m.relative_density_pct.toFixed(1):null,'%')}${hchip('Ex',toGPa(ec.Ex),'GPa')}${hchip('Ey',toGPa(ec.Ey),'GPa')}${hchip('Ez',toGPa(ec.Ez),'GPa')}${hchip('Gxy',toGPa(ec.Gxy),'GPa')}${hchip('A',an.zener_A!=null?an.zener_A.toFixed(2):null,'')}${hchip('νxy',nu.nuxy!=null?nu.nuxy.toFixed(3):null,'')}</div>`
     :'';
   return`<div class="sec-lbl">beam scaffold &middot; ${isCustom?'custom':'preset'}</div>
     <div class="meta-grid">

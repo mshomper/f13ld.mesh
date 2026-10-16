@@ -17,6 +17,10 @@
 <!-- Styles and code live in separate files (v0.8.0). Serve over http(s);
      see README → Project structure. -->
 <link rel="stylesheet" href="mesh.css">
+<link rel="stylesheet" href="ui12.css">
+<link rel="stylesheet" href="viewstrip.css">
+<link rel="stylesheet" href="rail.css">
+<link rel="stylesheet" href="dock.css">
 </head>
 <body>
 <div id="container">
@@ -40,11 +44,13 @@
         <div class="fh-wordmark"><span style="color:#1D9E75">F</span><span style="color:#c8f542">1</span><span style="color:#c8f542">3</span><span style="color:#1D9E75">LD</span></div>
       </a>
       <div class="fh-divider"></div>
-      <div class="fh-tool-name" style="color:#6B0A4C">MESH</div>
+      <div class="fh-tool-name">MESH</div>
     </div>
     <div class="fh-right">
-      <div class="mpill"><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
-      <span class="fh-version">v0.11.0</span>
+      <button class="fh-act" id="hdrOpenRecipe" type="button" title="Open a recipe JSON file"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v13H6z"/><path d="M13 3v5h5"/></svg><span class="lbl">Open recipe</span></button>
+      <button class="fh-act" id="hdrAddPart" type="button" title="Add a part: STL, OBJ, 3MF, STEP or IGES"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg><span class="lbl">Add part</span></button>
+      <div class="mpill" id="statusPill"><svg class="st-mark" width="15" height="15" viewBox="0 0 100 100"><path d="M50,5 C91,5 95,9 95,50 C95,91 91,95 50,95 C9,95 5,91 5,50 C5,9 9,5 50,5Z" fill="#111e13" stroke="#1D9E75" stroke-width="7"/><path class="st-wave" d="M8,50 Q29,40 50,50 Q71,60 92,50" fill="none" stroke="#c8f542" stroke-width="8"/></svg><div class="mdot ready" id="mdot"></div><span id="mLabel">ready</span></div>
+      <span class="fh-version">v0.12.0</span>
       <div class="fh-icon" style="background:#FCEAF5">
         <svg width="18" height="18" viewBox="0 0 40 40">
           <line x1="10" y1="8" x2="22" y2="4" stroke="#6B0A4C" stroke-width="1.5" stroke-linecap="round"/>
@@ -78,15 +84,48 @@
   </div>
   <div id="errorBox"></div>
   <div id="dropzone">
-    <div class="dz-icon">⬡</div>
+    <div class="dz-icon"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg></div>
     <div class="dz-main">Drop a JSON recipe here</div>
-    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; wave &nbsp;·&nbsp; grain &nbsp;·&nbsp; beam &nbsp;·&nbsp; spinodoid</div>
+    <div class="dz-sub">noise &nbsp;·&nbsp; tpms &nbsp;·&nbsp; wave &nbsp;·&nbsp; grain &nbsp;·&nbsp; beam &nbsp;·&nbsp; bundle &nbsp;·&nbsp; foam</div>
     <div class="dz-pick" id="pickBtn">or pick a file</div>
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
   <div id="recipeView">
-    <div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;gap:0">
-    <div id="previewArea" style="flex:1;min-height:0">
+    <!-- ── View strip (v0.12.0): tabs, preview quality, view menu — viewstrip.css ── -->
+    <div id="vstrip">
+      <span class="vs-label">VIEW</span>
+      <div class="vs-tabs" id="vsTabs"></div>
+      <div class="vs-right" id="vsRight">
+        <span class="vs-mini">PREVIEW</span>
+        <div id="resStrip">
+          <button class="res-btn active" id="btnDraft">Draft</button>
+          <button class="res-btn"       id="btnLow">Low</button>
+          <button class="res-btn"       id="btnMed">Med</button>
+          <button class="res-btn"       id="btnHigh">High</button>
+          <button class="res-btn"       id="btnUltra">Ultra</button>
+        </div>
+      <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
+        <div id="viewOpts">
+          <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options">◐ view</button>
+          <div id="viewOptsPanel" hidden>
+            <label><input type="checkbox" data-vo="shadows">Shadows</label>
+            <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
+            <label><input type="checkbox" data-vo="warmCool">Warm / cool light</label>
+            <label><input type="checkbox" data-vo="cutFaces">Shade cut faces</label>
+            <label><input type="checkbox" data-vo="limeEdges">Lime edges</label>
+            <button type="button" id="viewOptsReset">reset</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ── Work area: left rail | viewport | inspector (v0.12.0) ── -->
+    <div id="workArea">
+      <aside id="rail">
+        <div id="railRecipes"></div>
+        <div id="railParts"></div>
+        <div id="railEditor"></div>
+      </aside>
+      <div id="previewArea">
       <canvas id="rmCanvas"></canvas>
       <div id="computeOverlay">
   <canvas id="orbSpinner" width="64" height="64"></canvas>
@@ -95,26 +134,6 @@
         <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer">✕ cancel</button>
       </div>
       <div id="typeBadge"></div>
-      <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
-      <div id="viewOpts">
-        <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options">◐ view</button>
-        <div id="viewOptsPanel" hidden>
-          <label><input type="checkbox" data-vo="shadows">Shadows</label>
-          <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
-          <label><input type="checkbox" data-vo="warmCool">Warm / cool light</label>
-          <label><input type="checkbox" data-vo="cutFaces">Shade cut faces</label>
-          <label><input type="checkbox" data-vo="limeEdges">Lime edges</label>
-          <button type="button" id="viewOptsReset">reset</button>
-        </div>
-      </div>
-      <button id="reloadBtn">↩ load different</button>
-      <div id="resStrip">
-        <button class="res-btn active" id="btnDraft">Draft</button>
-        <button class="res-btn"       id="btnLow">Low</button>
-        <button class="res-btn"       id="btnMed">Med</button>
-        <button class="res-btn"       id="btnHigh">High</button>
-        <button class="res-btn"       id="btnUltra">Ultra</button>
-      </div>
       <div id="triPill"></div>
       <div id="seamPill"></div>
       <!-- ── XYZ orientation gimbal (v0.5.0) ─────────────────────────────── -->
@@ -141,6 +160,25 @@
         <span class="tp-sep">·</span>
         <span class="tp-label">total</span><span class="tp-val" id="tpTotal">—</span>
       </div>
+      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview((typeof rm!=='undefined'&&rm&&rm._quality)||'low')">↻ Update Preview</button></div>
+      </div>
+      <aside id="inspector">
+        <div id="inspEst"></div>
+        <div id="inspMeas"></div>
+        <div id="inspHomo"></div>
+      </aside>
+    </div>
+    <!-- ── Export progress strip + dock with Configure drawer — dock.css ── -->
+    <div id="progRow"></div>
+    <div id="dockWrap">
+      <div id="drawer"></div>
+      <div id="dock"></div>
+    </div>
+    <!-- Legacy holders: older modules still render into these until they move;
+         hidden in the new layout (ui12.css). -->
+    <div id="legacyHold">
+      <button id="reloadBtn" type="button">load different</button>
+      <div id="legacyStruct">
       <div id="cellOverlay"><label>cell size</label><input type="number" id="shapeCellSizeMm" min="0.1" max="200" step="0.1" value="3" oninput="window.onCellSizeInput&&window.onCellSizeInput()"><span id="cellSizeUnit">mm / cell</span><span id="trimNodesWrap" style="display:none"><span class="co-sep">·</span><label class="co-toggle" title="When on, beams whose endpoints fall outside the shape (with auto-clamped inset) are dropped entirely instead of clipped — eliminates dangling capsule end-caps at the boundary."><input type="checkbox" id="trimToNodes" checked onchange="window.onTrimToNodesChange&&window.onTrimToNodesChange()"><span>trim to nodes</span></label><span id="trimInsetWrap" class="co-inset"><span class="co-inset-lbl">inset ×</span><input type="number" id="trimInsetMult" min="1.0" max="2.0" step="0.1" value="1.0" oninput="window.onTrimInsetMultChange&&window.onTrimInsetMultChange()" title="Inset multiplier — scales the auto-clamped inset to max(beam_radius, voxel_size × this). 1.0 = minimum safe (just above shape-SDF discretization error). 2.0 = aggressive trim with extra buffer for high-curvature surfaces."></span></span></div>
       <!-- ── Structure SDF transform (v0.5.0 Phase B) ───────────────────────
            Sits above cell overlay, same chip aesthetic, shown only with shape -->
@@ -163,8 +201,7 @@
           <button class="sxr-reset" onclick="window.onStructXformReset&&window.onStructXformReset()">reset</button>
         </div>
       </div>
-      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview((typeof rm!=='undefined'&&rm&&rm._quality)||'low')">↻ Update Preview</button></div>
-    </div>
+      </div>
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
     <div id="shapeStrip" style="display:none">
       <div id="shapeDZ">
@@ -185,10 +222,12 @@
       <div id="shapeCardRow"></div>
       <div id="recipeLibraryRow"></div>
     </div>
-    </div><!-- end previewArea+shapeStrip column -->
-    <div id="panel"><div id="summaryContent"></div></div>
+      <div id="panel"><div id="summaryContent"></div></div>
+    </div>
     <div id="capToast"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
   </div>
+
 </div>
 <script type="module" src="00-libs.js"></script>
 <script defer src="01-config.js"></script>
@@ -212,6 +251,7 @@
 <script defer src="20-raymarcher.js"></script>
 <script defer src="21-gimbal.js"></script>
 <script defer src="22-view-opts.js"></script>
+<script defer src="23-view-strip.js"></script>
 <script defer src="30-shape-import.js"></script>
 <script defer src="31-body-cards.js"></script>
 <script defer src="40-mesh-worker-host.js"></script>
@@ -225,6 +265,8 @@
 <script defer src="52-materials.js"></script>
 <script defer src="53-part-prep.js"></script>
 <script defer src="54-sidebar.js"></script>
+<script defer src="55-rail.js"></script>
+<script defer src="56-dock.js"></script>
 <script defer src="60-export-ui.js"></script>
 <script defer src="61-export.js"></script>
 <script defer src="62-threemf.js"></script>

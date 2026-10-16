@@ -14,7 +14,7 @@
 :root{
   --ground:#06080c; --panel:#0d1117; --panel-2:#121821; --line:rgba(255,255,255,0.08); --line-2:rgba(255,255,255,0.14);
   --ink:#e8ecf1; --ink-2:#a3adba; --ink-3:#6c7684;
-  --mesh:#22d3ee; --mesh-deep:#0e5f6e; --mesh-soft:rgba(34,211,238,0.12); --mesh-ring:rgba(34,211,238,0.45);
+  --mesh:#E46BB0; --mesh-deep:#6B0A4C; --mesh-soft:rgba(107,10,76,0.34); --mesh-ring:rgba(228,107,176,0.45);
   --ok:#1D9E75; --lime:#c8f542; --warn:#E0A84A; --bad:#f87171;
   --mono:'IBM Plex Mono', ui-monospace, monospace;
 }
@@ -37,13 +37,13 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wra
 .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;flex-wrap:wrap}
 .seg button{background:transparent;border:0;color:var(--ink-2);font:500 12px var(--mono);padding:6px 10px;cursor:pointer}
 .seg button+button{border-left:1px solid var(--line-2)}
-.seg button.on{background:var(--mesh-deep);color:#e6fbff}
+.seg button.on{background:var(--mesh-deep);color:#FCEAF5}
 .seg button:hover:not(.on){color:var(--mesh)}
 input[type=text],input[type=number]{background:var(--panel-2);color:var(--ink);border:1px solid var(--line-2);border-radius:8px;padding:6px 8px;font:500 12px var(--mono);min-width:0}
 input[type=text]{flex:1 1 220px}
 input[type=number]{width:80px}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer}
-.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;border:1px solid var(--mesh-ring);background:var(--mesh-deep);color:#e6fbff;font:600 13px 'Exo 2',sans-serif;letter-spacing:.06em;padding:8px 14px;cursor:pointer}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;border:1px solid var(--mesh-ring);background:var(--mesh-deep);color:#FCEAF5;font:600 13px 'Exo 2',sans-serif;letter-spacing:.06em;padding:8px 14px;cursor:pointer}
 .btn:disabled{opacity:.45;cursor:default}
 .btn.ghost{background:transparent;color:var(--ink-2);border-color:var(--line-2)}
 .btn.ghost:hover:not(:disabled){color:var(--mesh);border-color:var(--mesh)}
@@ -80,7 +80,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
 <body>
 <div class="wrap">
   <header>
-    <div class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2.8 20.5 7.6v8.8L12 21.2 3.5 16.4V7.6z"/><path d="M3.5 7.6 12 12.4l8.5-4.8M12 12.4v8.8"/></svg></div>
+    <div class="tile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E46BB0" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2.8 20.5 7.6v8.8L12 21.2 3.5 16.4V7.6z"/><path d="M3.5 7.6 12 12.4l8.5-4.8M12 12.4v8.8"/></svg></div>
     <div><div class="brand">F13LD<b>.mesh</b> bench</div><div class="sub">Regression and speed check, run on your own cores</div></div>
     <div class="ver" id="verLbl">loading…</div>
   </header>
@@ -114,7 +114,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
     </div>
     <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Ready.</span></div>
     <div class="summary" id="summary"></div>
-    <p class="note">Bar under each case: <span style="color:#E0A84A">field</span> · <span style="color:#22d3ee">level set</span> · <span style="color:#7c6ff7">simplify</span>, as parts of this build's export time.</p>
+    <p class="note">Bar under each case: <span style="color:#E0A84A">field</span> · <span style="color:#E46BB0">level set</span> · <span style="color:#7c6ff7">simplify</span>, as parts of this build's export time.</p>
   </div>
 
   <div class="results" id="results"></div>
@@ -308,7 +308,7 @@ function setCard(el, r){
   const bar=el.querySelector('.bar');
   if(r.test&&r.test.bd&&r.test.bd.total){
     const b=r.test.bd, tot=Math.max(1,r.test.ms), f=(b.field||0)/tot, l=(b.levelSet||0)/tot, s=(b.simplify||0)/tot;
-    bar.innerHTML='<i style="width:'+(f*100)+'%;background:#E0A84A" title="field"></i><i style="width:'+(l*100)+'%;background:#22d3ee" title="level set"></i><i style="width:'+(s*100)+'%;background:#7c6ff7" title="simplify"></i>';
+    bar.innerHTML='<i style="width:'+(f*100)+'%;background:#E0A84A" title="field"></i><i style="width:'+(l*100)+'%;background:#E46BB0" title="level set"></i><i style="width:'+(s*100)+'%;background:#7c6ff7" title="simplify"></i>';
   } else bar.innerHTML='';
   el.querySelector('.stage').textContent=r.stage||'';
 }

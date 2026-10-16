@@ -48,6 +48,19 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 // ── Status indicator (kept; reused by other init paths if needed) ────────
 const mdot = document.getElementById('mdot'), mLabel = document.getElementById('mLabel');
 function setMS(s,t){if(mdot)mdot.className='mdot '+s;if(mLabel)mLabel.textContent=t;}
+// v0.12.0: the F13LD mark in the status pill ripples while the tool works
+// (setMS state 'loading'); header actions open the recipe / part pickers.
+(function(){
+  const pill=document.getElementById('statusPill');
+  const _set=setMS;
+  setMS=function(s,t){ _set(s,t); if(pill) pill.classList.toggle('busy', s==='loading'); };
+  const or=document.getElementById('hdrOpenRecipe'), ap=document.getElementById('hdrAddPart');
+  if(or) or.addEventListener('click',()=>{ const f=document.getElementById('fileInput'); if(f) f.click(); });
+  if(ap) ap.addEventListener('click',()=>{ const f=document.getElementById('shapeInput'); if(f) f.click(); });
+})();
+// v0.12.0: short status message above the dock (welds joined / dissolved …).
+let _toastT=0;
+function meshToast(msg){ const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.classList.add('on'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('on'),2600); }
 // Manifold no longer loaded on main thread (v0.5.0-rc7) — used only inside
 // the mesh worker for marching cubes (Manifold.levelSet). All shape/mesh
 // downstream operations go through Float32Array buffers and SDF grids.

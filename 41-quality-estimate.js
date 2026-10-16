@@ -183,7 +183,7 @@ function updateQualButtonVoxelSizes(){
   // a quality clamps to the same size as a coarser tier.
   const order=['draft','low','med','high','ultra'];
   const labels={draft:'Draft',low:'Low',med:'Med',high:'High',ultra:'Ultra'};
-  const fmt=mm=>mm<0.1?(mm*1000).toFixed(0)+'µm':mm.toFixed(2)+'mm';
+  const fmt=mm=>mm.toFixed(3).replace(/0$/,'')+'mm';
   for(const [q,el] of allEls){
     if(sizes[q]==null||!isFinite(sizes[q])){el.textContent='—';continue;}
     // Find the nearest coarser tier with the same size (within 0.5%)

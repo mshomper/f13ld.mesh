@@ -1,1 +1,176 @@
-/* F13LD.mesh · rail.css — v0.12.0 */
+/* F13LD.mesh · rail.css — v0.12.0
+   Left rail: recipe cards, parts list with weld cards, part / weld editor.
+   Colours come from the ui12.css tokens (--mesh, --mesh-deep, --mesh-tile,
+   --mesh-ring, --mesh-soft, --s1..--s3, --t1..--t3, --hair, --hair2, --mono,
+   --sec, --neon). Everything is drawn SVG; nothing here scrolls sideways. */
+#rail{min-width:0;overflow-x:hidden}
+#rail > :empty{display:none}
+#railRecipes,#railParts,#railEditor{min-width:0}
+.rl-ic{flex:none;display:block}
+
+/* cards */
+.rl-card{background:#0b0d15;border:1px solid var(--hair);border-radius:12px;min-width:0}
+.rl-ch{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--hair);min-width:0}
+.rl-lbl{font:600 10px var(--mono);letter-spacing:.16em;color:var(--sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rl-cnt{font:500 10px var(--mono);color:var(--t3)}
+.rl-mini{font:600 9px var(--mono);color:var(--t3);letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.rl-r{margin-left:auto;display:flex;gap:6px;align-items:center;flex:none}
+.rl-cb{padding:10px 12px;min-width:0}
+.rl-card.collapsed .rl-cb{display:none}
+.rl-card.collapsed .rl-ch{border-bottom-color:transparent}
+.rl-card.collapsed > .rl-ch .rl-fold .rl-ic{transform:rotate(-90deg)}
+.rl-ibtn{width:24px;height:24px;border-radius:7px;border:1px solid var(--hair2);background:transparent;color:var(--t2);display:grid;place-items:center;cursor:pointer;padding:0;flex:none}
+.rl-ibtn:hover{color:var(--mesh);border-color:var(--mesh-ring)}
+.rl-ibtn.rl-muted{opacity:.5}
+.rl-ibtn:focus-visible,.rl-sbtn:focus-visible,.rl-add:focus-visible,.rl-sw:focus-visible,.rl-cs:focus-visible,.rl-seg button:focus-visible,.rl-fold:focus-visible{outline:2px solid var(--mesh);outline-offset:1px}
+.rl-card .rl-fold .rl-ic{transition:transform .15s}
+.rl-note{font-size:11px;color:var(--t3);line-height:1.5;margin:8px 0 0}
+.rl-hint{font-size:10.5px;color:var(--t3);line-height:1.45}
+
+/* add tiles */
+.rl-add{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;border-radius:9px;border:1px dashed var(--hair2);background:transparent;color:var(--t3);font:500 11.5px 'Exo 2',sans-serif;cursor:pointer;min-width:0}
+.rl-add:hover:not(.disabled){color:var(--mesh);border-color:var(--mesh-ring)}
+.rl-add.disabled{opacity:.55;cursor:default}
+.rl-add.rl-dropfile{border-color:var(--neon);color:var(--neon)}
+.rl-dz{margin-top:2px}
+
+/* recipe cards */
+.rl-rc{position:relative;display:flex;gap:10px;align-items:center;padding:8px 8px 8px 10px;border-radius:9px;background:var(--s1);border:1px solid var(--hair);cursor:pointer;margin-bottom:6px;min-width:0;-webkit-user-select:none;user-select:none}
+.rl-rc:hover,.rl-rc.open{border-color:var(--hair2)}
+.rl-rc.on{border-color:var(--mesh-ring);box-shadow:inset 2px 0 0 var(--mesh)}
+.rl-rc:focus-visible{outline:2px solid var(--mesh);outline-offset:1px}
+.rl-rsw{width:10px;height:28px;border-radius:4px;flex:none;background:var(--fc)}
+.rl-rm{min-width:0;flex:1}
+.rl-tt{font:600 12px 'Exo 2',sans-serif;color:var(--fc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-st{font:500 10px var(--mono);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-use{font:600 9.5px var(--mono);color:var(--t2);padding:1px 6px;border-radius:5px;border:1px solid var(--hair2);flex:none}
+.rl-rx{width:20px;height:20px;border-radius:6px;opacity:0}
+.rl-rc:hover .rl-rx,.rl-rc:focus-within .rl-rx{opacity:1}
+@media (hover:none){.rl-rx{opacity:.7}}
+.rl-rc.rl-dragging{opacity:.5}
+
+/* recipe details popover (fixed; the rail clips overflow) */
+#rlPop{position:fixed;z-index:70;background:#141725;border:1px solid var(--hair2);border-radius:10px;padding:10px 12px;box-shadow:0 14px 40px rgba(0,0,0,.6);max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-y:auto;box-sizing:border-box}
+#rlPop[hidden]{display:none}
+.rl-pop-t{font:600 9.5px var(--mono);letter-spacing:.14em;margin-bottom:8px;overflow-wrap:anywhere}
+.rl-kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:11.5px}
+.rl-kv span:nth-child(odd){color:var(--t2);overflow-wrap:anywhere}
+.rl-kv span:nth-child(even){font-family:var(--mono);color:var(--t1);text-align:right;overflow-wrap:anywhere}
+.rl-pop-use{width:100%;justify-content:center;margin-top:10px}
+
+/* parts: rows */
+.rl-part{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-radius:9px;background:var(--s1);border:1px solid var(--hair);margin-bottom:6px;cursor:pointer;min-width:0;position:relative;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.rl-part:hover{border-color:var(--hair2)}
+.rl-part:focus-visible,.rl-whead:focus-visible{outline:2px solid var(--mesh);outline-offset:1px}
+.rl-part.on{border-color:var(--mesh-ring);box-shadow:inset 2px 0 0 var(--mesh)}
+.rl-part.rl-dragging{opacity:.5}
+.rl-fsw{width:8px;height:22px;border-radius:3px;display:block}
+.rl-pm{min-width:0}
+.rl-nm{font:600 12px 'Exo 2',sans-serif;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-as{font:500 10px var(--mono);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-prb{display:flex;gap:4px}
+.rl-ck{display:none;width:16px;height:16px;border-radius:4px;border:1px solid var(--hair2);place-items:center;cursor:pointer;background:transparent;padding:0;color:#0b0d15}
+.rl-ck.on{background:var(--neon);border-color:var(--neon)}
+.rl-card.ticking .rl-ck{display:grid}
+.rl-card.ticking .rl-part{grid-template-columns:16px 8px minmax(0,1fr) auto}
+.rl-part.tk,.rl-wgrp.tk{border-color:rgba(200,245,66,.5)}
+
+/* parts: weld cards */
+.rl-wgrp{border:1px solid var(--hair2);border-radius:10px;background:rgba(107,10,76,.10);margin-bottom:8px;overflow:hidden;min-width:0}
+.rl-wgrp.on{border-color:var(--mesh);box-shadow:0 0 0 1px var(--mesh-ring)}
+.rl-whead{display:grid;grid-template-columns:20px 26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 8px 8px 6px;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.rl-card:not(.ticking) .rl-whead{grid-template-columns:20px 26px minmax(0,1fr)}
+.rl-whead:hover{background:rgba(255,255,255,.03)}
+.rl-wgrp.on .rl-whead{background:var(--mesh-soft)}
+.rl-wtile{position:relative;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--mesh-deep);color:var(--mesh-tile)}
+.rl-wtile i{position:absolute;right:-2px;bottom:-2px;width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 2px #0b0d15}
+.rl-wm{min-width:0}
+.rl-wname{font:700 12px 'Exo 2',sans-serif;color:var(--t1)}
+.rl-wsub{font:500 10px var(--mono);color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-fold{border:0;background:transparent;color:var(--t2);padding:0;cursor:pointer;display:grid;place-items:center;width:20px;height:24px}
+.rl-fold:hover{color:var(--mesh)}
+.rl-wbody{padding:0 8px 2px 18px;position:relative}
+.rl-wbody::before{content:'';position:absolute;left:15px;top:0;bottom:14px;width:1px;background:var(--mesh-ring)}
+.rl-wgrp.folded .rl-wbody{display:none}
+.rl-wgrp.folded .rl-whead .rl-fold .rl-ic{transform:rotate(-90deg)}
+.rl-whead .rl-fold .rl-ic{transition:transform .15s}
+
+/* parts: selection bar, drop hints, take-out strip, pending import */
+.rl-selbar{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:9px;background:rgba(200,245,66,.08);border:1px solid rgba(200,245,66,.35);margin-bottom:8px;font:500 11px var(--mono);color:var(--t1);min-width:0}
+.rl-selbar .rl-sp{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-outzone{display:none;align-items:center;justify-content:center;gap:8px;padding:10px;border:1px dashed var(--mesh-ring);border-radius:9px;color:var(--mesh-ink);font-size:11.5px;margin-bottom:8px;text-align:center;position:relative}
+.rl-card.rl-dragmember .rl-outzone{display:flex}
+.rl-part.rl-drop,.rl-wgrp.rl-drop,.rl-outzone.rl-drop{border-color:var(--neon);box-shadow:0 0 0 1px rgba(200,245,66,.45)}
+.rl-outzone.rl-drop{color:var(--neon)}
+.rl-drop[data-hint]::after{content:attr(data-hint);position:absolute;right:8px;top:-9px;font:600 9.5px var(--mono);background:var(--neon);color:#0b0d15;padding:1px 6px;border-radius:5px;letter-spacing:.04em;pointer-events:none;z-index:2;max-width:calc(100% - 16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-wgrp.rl-drop{overflow:visible}
+.rl-pending{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-radius:9px;background:var(--s1);border:1px dashed var(--hair2);margin-bottom:6px}
+.rl-pending.err{border-color:rgba(251,113,133,.5)}
+.rl-pending.err .rl-as{color:var(--bad);white-space:normal}
+.rl-spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--hair2);border-top-color:var(--mesh);animation:rlSpin .8s linear infinite}
+.rl-pending.err .rl-spin{animation:none;border-color:var(--bad)}
+@keyframes rlSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.rl-spin{animation:none}}
+
+/* buttons shared by the selection bar and the editor */
+.rl-sbtn{height:26px;padding:0 10px;border-radius:7px;border:1px solid var(--hair2);background:var(--s2);color:var(--t1);font:600 11.5px 'Exo 2',sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;white-space:nowrap}
+.rl-sbtn:hover:not(:disabled){border-color:var(--mesh-ring)}
+.rl-sbtn.prim{background:var(--mesh-deep);border-color:var(--mesh-ring);color:var(--mesh-tile)}
+.rl-sbtn.warn{color:var(--bad);border-color:rgba(251,113,133,.4);background:transparent}
+.rl-sbtn:disabled{opacity:.4;cursor:default}
+.rl-sbtn.rl-wide{width:100%}
+.rl-reset{margin-top:2px;align-self:flex-start;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+
+/* editor */
+.rl-ed{background:#0b0d15;border:1px solid var(--mesh-ring);border-radius:12px;min-width:0;box-shadow:0 0 0 1px rgba(228,107,176,.08)}
+.rl-ed .rl-lbl{color:var(--mesh)}
+.rl-eb{display:flex;flex-direction:column;gap:12px}
+.rl-erow{display:flex;flex-direction:column;gap:6px;min-width:0}
+.rl-erow>label{font:600 9.5px var(--mono);color:var(--sec);letter-spacing:.14em;text-transform:uppercase;display:flex;gap:8px}
+.rl-erow>label em{font-style:normal;color:var(--t3);letter-spacing:0;text-transform:none;font-weight:500}
+.rl-erow select{height:28px;background:var(--s1);border:1px solid var(--hair);border-radius:7px;color:var(--t1);font:500 12px 'Exo 2',sans-serif;padding:0 8px;min-width:0;max-width:100%;width:100%}
+.rl-erow select:hover{border-color:var(--hair2)}
+.rl-pair{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.rl-in{font:600 12px 'Exo 2',sans-serif;color:var(--mesh-ink)}
+.rl-seg{display:inline-flex;border:1px solid var(--hair2);border-radius:8px;overflow:hidden;min-width:0}
+.rl-seg.full{display:flex}
+.rl-seg button{flex:1;min-width:0;background:transparent;border:0;color:var(--t2);font:500 11px var(--mono);padding:5px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-seg button+button{border-left:1px solid var(--hair2)}
+.rl-seg button.on{background:var(--mesh-deep);color:var(--mesh-tile)}
+.rl-seg button:hover:not(.on):not(:disabled){color:var(--mesh)}
+.rl-seg button:disabled{opacity:.4;cursor:default}
+.rl-sl{display:grid;grid-template-columns:14px minmax(0,1fr) 58px;gap:8px;align-items:center;font:500 10.5px var(--mono);color:var(--t3)}
+.rl-sl.one{grid-template-columns:minmax(0,1fr) 58px}
+.rl-sl input[type=range]{width:100%;min-width:0;accent-color:var(--mesh);margin:0}
+.rl-num{width:58px;height:24px;background:var(--s1);border:1px solid var(--hair);border-radius:6px;color:var(--t1);font:500 11px var(--mono);padding:0 5px;min-width:0;text-align:right}
+.rl-num:hover{border-color:var(--hair2)}
+.rl-pair .rl-num{width:54px}
+.rl-sw{width:30px;height:17px;border-radius:9px;background:#272a3a;border:0;padding:0;position:relative;cursor:pointer;flex-shrink:0}
+.rl-sw::after{content:'';position:absolute;top:2.5px;left:3px;width:12px;height:12px;border-radius:50%;background:#7d829c;transition:left .15s}
+.rl-sw.on{background:var(--mesh-deep);box-shadow:inset 0 0 0 1px var(--mesh-ring)}
+.rl-sw.on::after{left:15px;background:var(--mesh-tile)}
+.rl-mlist{display:flex;flex-direction:column;gap:5px}
+.rl-mrow{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 8px;border-radius:7px;background:var(--s1);border:1px solid var(--hair);font:500 11.5px 'Exo 2',sans-serif;min-width:0}
+.rl-mname{flex:1;min-width:0;text-align:left;background:transparent;border:0;color:var(--t1);font:inherit;cursor:pointer;padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl-mname:hover{color:var(--mesh)}
+.rl-mrow small{font:500 10px var(--mono);color:var(--t3)}
+.rl-cols{display:flex;flex-wrap:wrap;gap:6px}
+.rl-cs{width:18px;height:18px;border-radius:50%;border:1px solid var(--hair2);padding:0;cursor:pointer;display:grid;place-items:center;color:var(--t2);background:transparent}
+.rl-cs.on{box-shadow:0 0 0 2px #0b0d15,0 0 0 3px var(--mesh)}
+.rl-cs0:hover{color:var(--mesh)}
+
+/* phone: one column; the rail simply flows under the viewport */
+@media (max-width:860px){
+  #rail{overflow:visible}
+  .rl-rx{opacity:.7}
+  .rl-ibtn{width:30px;height:30px}
+  .rl-rx{width:26px;height:26px}
+  .rl-num{height:30px}
+  .rl-sbtn{height:32px}
+  .rl-part{padding:9px 8px}
+  .rl-ck{width:20px;height:20px}
+  .rl-card.ticking .rl-part{grid-template-columns:20px 8px minmax(0,1fr) auto}
+  .rl-sl{grid-template-columns:14px minmax(0,1fr) 62px}
+  .rl-sl.one{grid-template-columns:minmax(0,1fr) 62px}
+  .rl-num{width:62px}
+}

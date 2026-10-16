@@ -757,7 +757,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  }',
     // v0.12.0: show-joins tint (assembly mode) and the Mesh-coloured cut face.
     '  if(uJoinCount>1.5&&!onClip&&joinZone(pos)>0.5) baseCol=mix(baseCol,vec3(0.894,0.42,0.69),0.8);',
-    '  if(onClip) baseCol=mix(baseCol,vec3(0.894,0.42,0.69),0.72);',
+    '  if(onClip) baseCol=mix(baseCol,vec3(0.80,0.27,0.56),0.82);',
     '  float sEps=uNrmStep;',
     '  if(uHasShape>0.5&&uShapeEps>0.0&&(uSolidMode>0.5||sampleShape(pos)>=sampleScaffoldSDF(pos))) sEps=max(uNrmStep,uShapeEps);',
     '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,sEps,1.6*uViewH);',

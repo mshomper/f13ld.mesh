@@ -476,7 +476,7 @@ async function _triggerExportImpl(){
       return;
     }
     coMain.textContent='exporting...';
-    coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
+    coSub.textContent='~'+(estTris>=1e6?(estTris/1e6).toFixed(1)+'M':Math.round(estTris/1e3)+'k')+' tris estimated · ~'+estSec+'s';
     showCancelBtn(true);
     scale=1.0;
     domainLabel=importedShape.meta.bbox;
@@ -555,7 +555,7 @@ async function _triggerExportImpl(){
     const {estTris,estSec,est:_est}=estimateMeshStats(currentRecipe,edgeWorld,null);
     exportEst=_est;
     coMain.textContent='exporting...';
-    coSub.textContent='~'+(estTris/1e6).toFixed(1)+'M tris estimated · ~'+estSec+'s';
+    coSub.textContent='~'+(estTris>=1e6?(estTris/1e6).toFixed(1)+'M':Math.round(estTris/1e3)+'k')+' tris estimated · ~'+estSec+'s';
     showCancelBtn(true);
     scale=domainMm/10;
     domainLabel=domainMm+'mm';

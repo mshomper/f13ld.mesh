@@ -215,7 +215,7 @@ function dockRefresh(){
   const meta=_dkEl('dockMeta');
   if(meta){
     const e=lastExportEstimate;
-    meta.innerHTML=e?('~<b>'+_dkTris(e.tris)+'</b> tris <i></i> ~<b>'+e.sec+' s</b> <i></i> <span>'+e.cores+' core'+(e.cores===1?'':'s')+'</span>'):'';
+    meta.innerHTML=e?('<span>~<b>'+_dkTris(e.tris)+'</b> tris</span><i></i><span>~<b>'+e.sec+' s</b></span><i></i><span>'+e.cores+' core'+(e.cores===1?'':'s')+'</span>'):'';
     meta.title=e?e.text:'';
   }
 }

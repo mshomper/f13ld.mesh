@@ -10,7 +10,7 @@
 .pg-fill{height:100%;width:0;background:linear-gradient(90deg,var(--brand-green),var(--neon));transition:width .3s}
 .pg-st{flex:1;min-width:0;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pg-st b{color:var(--mesh);font-weight:600}
-.pg-eta,#expElapsed{color:var(--t3);white-space:nowrap;flex:none}
+.pg-eta,#progRow #expElapsed{color:var(--t3);white-space:nowrap;flex:none;margin:0;font:500 11px var(--mono)}
 .pg-cancel{flex:none;border:1px solid var(--hair2);background:transparent;color:var(--t2);border-radius:7px;font:600 11px 'Exo 2',sans-serif;padding:3px 10px;cursor:pointer}
 .pg-cancel:hover{color:var(--bad);border-color:var(--bad)}
 
@@ -34,16 +34,18 @@
 .dk-meta{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:6px;font:500 11px var(--mono);color:var(--t2);white-space:nowrap;overflow:hidden}
 .dk-meta b{color:var(--t1);font-weight:600}
 .dk-meta i{display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--t3)}
-.dk-run{flex:none;height:32px;padding:0 18px;border-radius:8px;border:0;background:var(--mesh-deep);color:var(--mesh-tile);box-shadow:inset 0 0 0 1px var(--mesh-ring);font:700 12px 'Exo 2',sans-serif;letter-spacing:.06em;cursor:pointer;min-width:130px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+/* #dock #expBtn beats the legacy #expBtn rules in mesh.css */
+#dock #expBtn.dk-run{flex:none;width:auto;height:32px;margin:0;padding:0 18px;border-radius:8px;border:0;background:var(--mesh-deep);color:var(--mesh-tile);box-shadow:inset 0 0 0 1px var(--mesh-ring);font:700 12px 'Exo 2',sans-serif;letter-spacing:.06em;cursor:pointer;min-width:130px;display:inline-flex;align-items:center;justify-content:center;gap:8px;overflow:hidden;transition:background .15s}
+#dock #expBtn.dk-run::after{display:none}
 /* drawn icon on the Export button; a mask so the label can be rewritten with textContent */
-.dk-run::before{content:"";width:15px;height:15px;flex:none;background:currentColor;
+#dock #expBtn.dk-run::before{content:"";width:15px;height:15px;flex:none;background:currentColor;
   -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12M7 10l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat;
   mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12M7 10l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat}
-.dk-run:hover{background:#82105e}
-.dk-run:disabled{opacity:.55;cursor:default}
-.dk-run.sweeping{animation:dkPulse 1.4s ease-in-out infinite}
+#dock #expBtn.dk-run:hover:not(:disabled){background:#82105e}
+#dock #expBtn.dk-run:disabled{opacity:.55;cursor:default;background:var(--mesh-deep);border-color:transparent;color:var(--mesh-tile)}
+#dock #expBtn.dk-run.sweeping{animation:dkPulse 1.4s ease-in-out infinite}
 @keyframes dkPulse{50%{opacity:.7}}
-@media (prefers-reduced-motion:reduce){.dk-run.sweeping{animation:none}}
+@media (prefers-reduced-motion:reduce){#dock #expBtn.dk-run.sweeping{animation:none}}
 
 /* ── Configure drawer ──────────────────────────────────────────────── */
 #drawer{display:none;position:absolute;left:0;right:0;bottom:100%;background:var(--s2);border-top:1px solid var(--hair2);box-shadow:0 -18px 40px rgba(0,0,0,.5);z-index:20;max-height:62vh;overflow-y:auto;overflow-x:hidden;min-width:0}
@@ -64,11 +66,12 @@
 .dr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px 24px}
 .dr-f{display:flex;flex-direction:column;gap:6px;min-width:0}
 .dr-f.dr-wide{grid-column:1/-1}
+@media (min-width:861px){.dr-f.dr-span2{grid-column:span 2}}
 .dr-f.dr-off{opacity:.6}
 .dr-f>label{font:600 9.5px var(--mono);color:var(--sec);text-transform:uppercase;letter-spacing:.14em}
 .dr-hint{font-size:10.5px;color:var(--t3);line-height:1.45;overflow-wrap:anywhere}
 .dr-file{font:500 11px var(--mono);color:var(--t1);overflow-wrap:anywhere;line-height:1.5}
-.dr-est{font:500 11px var(--mono);color:var(--t2);line-height:1.5;overflow-wrap:anywhere}
+#drawer #expEstimate.dr-est{font:500 11px var(--mono);color:var(--t2);margin:0;min-height:0;letter-spacing:0;line-height:1.5;overflow-wrap:anywhere}
 .dr-sel,.dr-num{height:28px;background:var(--s1);border:1px solid var(--hair);border-radius:7px;color:var(--t1);font:500 12px 'Exo 2',sans-serif;padding:0 8px;min-width:0;max-width:100%}
 .dr-sel:hover,.dr-num:hover{border-color:var(--hair2)}
 .dr-sel:focus-visible,.dr-num:focus-visible{outline:2px solid var(--mesh-ring);outline-offset:1px}

@@ -106,7 +106,7 @@
         </div>
       <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
         <div id="viewOpts">
-          <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options">◐ view</button>
+          <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> view</button>
           <div id="viewOptsPanel" hidden>
             <label><input type="checkbox" data-vo="shadows">Shadows</label>
             <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
@@ -131,7 +131,7 @@
   <canvas id="orbSpinner" width="64" height="64"></canvas>
       <div class="co-main" id="coMain">awaiting recipe…</div>
         <div class="co-sub"  id="coSub"></div>
-        <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer">✕ cancel</button>
+        <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg> cancel</button>
       </div>
       <div id="typeBadge"></div>
       <div id="triPill"></div>
@@ -160,7 +160,7 @@
         <span class="tp-sep">·</span>
         <span class="tp-label">total</span><span class="tp-val" id="tpTotal">—</span>
       </div>
-      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview((typeof rm!=='undefined'&&rm&&rm._quality)||'low')">↻ Update Preview</button></div>
+      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview((typeof rm!=='undefined'&&rm&&rm._quality)||'low')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg> Update Preview</button></div>
       </div>
       <aside id="inspector">
         <div id="inspEst"></div>
@@ -205,7 +205,7 @@
     <!-- ── Bounding Shape import strip ─────────────────────────────────── -->
     <div id="shapeStrip" style="display:none">
       <div id="shapeDZ">
-        <span class="sdz-icon">⬡</span>
+        <span class="sdz-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/></svg></span>
         <span class="sdz-label">Bounding Shape</span>
         <span class="sdz-sep"></span>
         <span class="sdz-pills">

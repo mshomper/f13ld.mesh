@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-function showError(m){errorBox.style.display='block';errorBox.textContent='⚠ '+m;}
+function showError(m){errorBox.style.display='block';errorBox.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:6px"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg>'; errorBox.appendChild(document.createTextNode(m));}
 function clearError(){errorBox.style.display='none';}
 function showComputing(m,s){overlay.classList.remove('hidden');coMain.textContent=m;coSub.textContent=s||'';triPill.style.display='none';if(seamPill)seamPill.style.display='none';if(window._orbStart)_orbStart();}
 function hideComputing(){overlay.classList.add('hidden');if(window._orbStop)_orbStop();}

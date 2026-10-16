@@ -176,3 +176,7 @@
 }
 .rl-seg button[data-v=skin]{flex:1.8}
 .rl-seg button[data-v=solid]{flex:.9}
+
+/* v0.12.0 remove part */
+.rl-rm{margin-top:4px;align-self:flex-start}
+.rl-rm.confirm{background:rgba(251,113,133,.12);border-color:var(--bad);color:var(--bad)}

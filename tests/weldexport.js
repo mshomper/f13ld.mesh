@@ -14,6 +14,8 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const { chromium } = require('playwright');
 const { unzipSync, strFromU8 } = require('fflate');
 const NM = path.join(__dirname, 'node_modules');
+const _H = fs.readFileSync(path.join(__dirname, 'harness.js'), 'utf8');
+eval(_H.slice(_H.indexOf('// UI-ADAPTERS-BEGIN'), _H.indexOf('// UI-ADAPTERS-END')));   // uiAssignRecipe, uiSetCell, … (rail UI or old strip UI)
 const [OLD, NEW, QUALS = 'low', CASE = 'foam2-open-lloyd'] = process.argv.slice(2);
 const CORES = +(process.env.CORES || 8), CELL = +(process.env.CELL || 10);
 const MIME = { js: 'application/javascript', mjs: 'application/javascript', html: 'text/html', css: 'text/css', wasm: 'application/wasm', json: 'application/json' };
@@ -81,18 +83,18 @@ async function run(site, root, qual) {
   await page.goto(`http://${site}/index.html?r=` + encodeURIComponent(JSON.stringify(RECIPE)));
   await page.waitForTimeout(1500);
   const idle = () => page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 300000 }).catch(() => {});
-  const nCards = () => page.evaluate(() => document.querySelectorAll('.shapeCard[data-body-id]').length);
+  const nCards = () => uiBodyCount(page);
   for (const k of ['A', 'B', 'C']) {
     const n = await nCards();
     await page.setInputFiles('#shapeInput', STL[k]);
-    await page.waitForFunction(n => document.querySelectorAll('.shapeCard[data-body-id]').length > n, n, { timeout: 180000 });
+    await page.waitForFunction(([n, S]) => document.querySelectorAll(S).length > n, [n, UI_BODY], { timeout: 180000 });
     await idle(); await page.waitForTimeout(600);
   }
   // make B active, give it the lattice and its cell size (locked once welded)
   const ids = await page.evaluate(() => window.F13LD_weld.bodyIds());
-  await page.click(`.shapeCard[data-body-id="${ids[1]}"] .sc-name`); await page.waitForTimeout(800); await idle();
-  await page.click('.libraryChip'); await page.waitForTimeout(800); await idle();
-  await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); i.value = v; window.onCellSizeInput && window.onCellSizeInput(); }, CELL);
+  await uiSelectBody(page, ids[1]); await page.waitForTimeout(800); await idle();
+  await uiAssignRecipe(page); await page.waitForTimeout(800); await idle();
+  await uiSetCell(page, CELL);
   await page.waitForTimeout(800); await idle();
   await page.evaluate(() => window.F13LD_weld.all(0.4)); await page.waitForTimeout(1500); await idle();
   await page.evaluate(q => window.setQual && window.setQual(q), qual); await page.waitForTimeout(300);

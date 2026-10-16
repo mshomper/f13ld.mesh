@@ -7,6 +7,8 @@
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const NM = path.join(__dirname, 'node_modules');
+const _H = fs.readFileSync(path.join(__dirname, 'harness.js'), 'utf8');
+eval(_H.slice(_H.indexOf('// UI-ADAPTERS-BEGIN'), _H.indexOf('// UI-ADAPTERS-END')));   // uiAssignRecipe, uiSetCell, … (rail UI or old strip UI)
 const [BUILD, OUT, CASES, QUAL] = process.argv.slice(2);
 const MIME = { js: 'application/javascript', mjs: 'application/javascript', html: 'text/html',
   css: 'text/css', wasm: 'application/wasm', json: 'application/json', stl: 'model/stl' };
@@ -53,9 +55,9 @@ function cdn(url) {
     const idle = () => page.waitForFunction(() => { const o = document.getElementById('computeOverlay'); return !o || o.classList.contains('hidden'); }, null, { timeout: 180000 }).catch(() => {});
     if (spec.shape) {
       await page.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', spec.shape));
-      await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 120000 }); await idle();
-      await page.waitForTimeout(800); await page.click('.libraryChip'); await page.waitForTimeout(800);
-      if (spec.cellMm != null) await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); if (i) { i.value = v; window.onCellSizeInput && window.onCellSizeInput(); } }, spec.cellMm);
+      await page.waitForSelector(UI_BODY, { timeout: 120000 }); await idle();
+      await page.waitForTimeout(800); await uiAssignRecipe(page); await page.waitForTimeout(800);
+      if (spec.cellMm != null) await uiSetCell(page, spec.cellMm);
     }
     await idle();
     if (QUAL) { await page.evaluate(q => window.triggerPreview && window.triggerPreview(q), QUAL); await page.waitForTimeout(500); await idle(); }

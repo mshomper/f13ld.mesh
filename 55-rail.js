@@ -29,7 +29,8 @@ const RL_ICONS={
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
   split:'<path d="M12 3v18"/><path d="M8 7 4 12l4 5M16 7l4 5-4 5"/>',
   reset:'<circle cx="12" cy="12" r="8"/><path d="M6.3 6.3l11.4 11.4"/>',
-  undo:'<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4h4"/>'
+  undo:'<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4h4"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>'
 };
 function rlIc(n, sz, cls){
   sz=sz||14;
@@ -376,6 +377,8 @@ function rlEdPart(id){
     return hex ? '<button type="button" class="rl-cs'+(cur?' on':'')+'" data-act="color" data-hex="'+hex+'" style="background:'+hex+'" title="'+hex+'" aria-label="Colour '+hex+'"></button>'
                : '<button type="button" class="rl-cs rl-cs0'+(cur?' on':'')+'" data-act="color" data-hex="" title="Reset to the default colour" aria-label="Reset colour">'+rlIc('reset',12)+'</button>';
   }).join('')+'</div></div>';
+  // v0.12.0: remove the part (two taps: the first asks, the second removes)
+  h+='<button type="button" class="rl-sbtn warn rl-rm" data-act="rmPart">'+rlIc('trash')+'Remove part</button>';
   return {key, html:h+'</div></div>'};
 }
 
@@ -679,6 +682,10 @@ function rlInit(){
       case 'color': setBodyColor(s.id, b.dataset.hex||null); break;
       case 'goWeld': { const g=bodyGroup.get(s.id); if(g) railSelectWeld(g); break; }
       case 'leaveMe': rlLeave(s.id); break;
+      case 'rmPart': {
+        if(!b.classList.contains('confirm')){ b.classList.add('confirm'); b.lastChild.textContent='Tap again to remove '+rlName(s.id); setTimeout(()=>{ if(b.isConnected){ b.classList.remove('confirm'); b.lastChild.textContent='Remove part'; } },3000); break; }
+        const nm=rlName(s.id); window.clearImportedShape&&window.clearImportedShape(s.id); renderRail(); meshToast(nm+' removed'); break;
+      }
       case 'out': { const row=b.closest('.rl-mrow'); if(row) rlLeave(row.dataset.bodyId); break; }
       case 'pickPart': { const row=b.closest('.rl-mrow'); if(row) railSelectPart(row.dataset.bodyId); break; }
       case 'sepAll': { const letter=weldGroupLetter(s.id); const n=weldSeparateAll(s.id); railSelWeld=null; renderRail(); meshToast('Weld '+letter+' separated into '+n+' parts'); break; }

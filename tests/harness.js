@@ -36,6 +36,67 @@ function cdn(url) {
   return null;
 }
 
+// UI-ADAPTERS-BEGIN
+// The v0.12.0 UI (left rail, dock, Configure drawer) and the older bottom-strip
+// UI (v0.11.x and before) are both driven through these helpers, so one test
+// run can open either build. The page decides: #railParts exists => rail UI.
+// The other test files eval this block (or the whole top of this file) too.
+var UI_BODY = '.rl-part[data-body-id], .shapeCard[data-body-id]';   // one row / card per body
+var UI_RECIPE = '.rl-rc[data-recipe-id], .libraryChip';              // one card / chip per recipe
+var UI_ERR = '.rl-pending.err, .sc-status.err';                      // a failed import
+async function uiIsRail(page) { return page.evaluate(() => !!document.getElementById('railParts')); }
+async function uiBodyCount(page) { return page.evaluate(s => document.querySelectorAll(s).length, UI_BODY); }
+// Give the first recipe to the active body (old UI: click the first library chip;
+// rail UI: a recipe card only opens a popover, so use the function behind its
+// "Use on <part>" button).
+async function uiAssignRecipe(page) {
+  if (await uiIsRail(page)) await page.evaluate(() => assignRecipeToBody(activeBodyId, recipeOrder[0]));
+  else await page.click('.libraryChip');
+}
+// Remove the first recipe (old: chip x; rail: card x).
+async function uiRemoveRecipe(page) {
+  await page.click((await uiIsRail(page)) ? '.rl-rc .rl-rx' : '.libraryChip .lc-x');
+}
+// Make a body the active one by clicking its card / part row.
+async function uiSelectBody(page, id) {
+  await page.click((await uiIsRail(page)) ? `.rl-part[data-body-id="${id}"] .rl-nm` : `.shapeCard[data-body-id="${id}"] .sc-name`);
+}
+// Remove the first body. The rail has no remove button on a part row, so the
+// rail branch calls the function the old card's x button called.
+async function uiRemoveBody(page) {
+  if (await uiIsRail(page)) await page.evaluate(() => window.clearImportedShape(activeBodyId));
+  else await page.click('.shapeCard[data-body-id] .sc-x');
+}
+// Open the Configure drawer on a tab ('prep' | 'exp'); no-op on the old UI,
+// where the same controls were always on screen.
+async function uiOpenDrawer(page, tab) {
+  if (!(await uiIsRail(page))) return;
+  if (!(await page.evaluate(() => document.getElementById('drawer').classList.contains('open')))) await page.click('#cfgBtn');
+  if (tab) await page.click(`#drawer .dr-tab[data-p="${tab}"]`);
+}
+// Cell size of the active body. Rail: type in the editor's number box (the same
+// path as the slider); falls back to the hidden legacy input when the editor has
+// no cell box (solid body).
+async function uiSetCell(page, mm) {
+  if (await uiIsRail(page)) {
+    const sel = '#railEditor .rl-num[data-k="cell"]';
+    if (await page.$(sel)) { await page.fill(sel, String(mm)); await page.waitForTimeout(500); return; }
+  }
+  await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); if (i) { i.value = v; window.onCellSizeInput && window.onCellSizeInput(); } }, mm);
+}
+// Structure rotation / shift / wall offset of the active body, key as in
+// structureTransform ('rotXDeg', 'rotYDeg', 'rotZDeg', 'spatialOffsetMmX' …, 'isoOffsetMm').
+// Same fallback as uiSetCell. Both paths end in onStructXformInput.
+var UI_XFORM_INPUT = { rotXDeg: 'sxRotX', rotYDeg: 'sxRotY', rotZDeg: 'sxRotZ', spatialOffsetMmX: 'sxOffX', spatialOffsetMmY: 'sxOffY', spatialOffsetMmZ: 'sxOffZ', isoOffsetMm: 'sxIso' };
+async function uiSetXform(page, key, v) {
+  if (await uiIsRail(page)) {
+    const sel = `#railEditor .rl-num[data-k="${key}"]`;
+    if (await page.$(sel)) { await page.fill(sel, String(v)); await page.waitForTimeout(300); return; }
+  }
+  await page.evaluate(([id, val]) => { document.getElementById(id).value = val; window.onStructXformInput(); }, [UI_XFORM_INPUT[key], v]);
+}
+// UI-ADAPTERS-END
+
 async function run(site, root, recipe, opts) {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ acceptDownloads: true });
@@ -65,14 +126,14 @@ async function run(site, root, recipe, opts) {
   const result = { errors, misses, logs };
   if (opts.shape) {
     await page.setInputFiles('#shapeInput', opts.shape);
-    await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 120000 });
+    await page.waitForSelector(UI_BODY, { timeout: 120000 });
     await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 120000 }).catch(() => {});
     await page.waitForTimeout(800);
-    await page.click('.libraryChip');           // assign recipe to the (solid-by-default) body
+    await uiAssignRecipe(page);                // assign recipe to the (solid-by-default) body
     await page.waitForTimeout(800);
     result.assigned = await page.evaluate(() => { const m = window.__f13ld_modeA; return m ? [...m.assignments.values()].join(',') : '?'; });
   }
-  if (opts.cellMm != null) await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); if (i) { i.value = v; window.onCellSizeInput && window.onCellSizeInput(); } }, opts.cellMm);
+  if (opts.cellMm != null) await uiSetCell(page, opts.cellMm);
   // let the preview settle
   await page.waitForFunction(() => document.getElementById('computeOverlay') ? document.getElementById('computeOverlay').classList.contains('hidden') : true, null, { timeout: 120000 }).catch(() => {});
   await page.waitForTimeout(1000);

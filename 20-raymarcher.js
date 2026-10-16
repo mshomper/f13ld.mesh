@@ -503,6 +503,9 @@ MeshRaymarcher.prototype._buildShader=function(){
     'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;uniform float uPlateAlpha;uniform float uLifted;',
     // ── v0.12.0 · Section plane + weld join tint ──────────────────────────
     'uniform float uClipOn;uniform vec3 uClipN;uniform float uClipD;',
+    // v0.12.0: "lattice + skin" on the active body (world units; 0 = off). Same field as the export
+    // (m32): skin = max(S, min(C, -skin - S)) in negative-inside form.
+    'uniform float uSkinW;',
     'uniform highp sampler3D uJoinSDF0;uniform highp sampler3D uJoinSDF1;uniform highp sampler3D uJoinSDF2;uniform highp sampler3D uJoinSDF3;',
     'uniform vec3 uJoinBboxMin[4];uniform vec3 uJoinBboxSize[4];uniform float uJoinCount;uniform float uJoinBand;',
     // ── rc3 · Ghost envelope uniforms ─────────────────────────────────────
@@ -535,7 +538,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     // shape SDF directly so the raymarch hits the body surface as if it were
     // a filled solid. uHasShape must still be 1.0 for solid mode to render —
     // a solid body without geometry isn't meaningful.
-    'float implicit0(vec3 p){if(uSolidMode>0.5){return uHasShape>0.5?sampleShape(p):1.0;}float sc=sampleScaffoldSDF(p);if(uHasShape>0.5)return max(sc,sampleShape(p));return sc;}',
+    'float implicit0(vec3 p){if(uSolidMode>0.5){return uHasShape>0.5?sampleShape(p):1.0;}float sc=sampleScaffoldSDF(p);if(uHasShape>0.5){float sh=sampleShape(p);if(uSkinW>0.0)return max(sh,min(sc,-uSkinW-sh));return max(sc,sh);}return sc;}',
     // v0.12.0: section plane. Positive on the cut-away side; one more max() on the implicit.
     'float clipD(vec3 p){return uClipOn>0.5?dot(p,uClipN)-uClipD:-1e4;}',
     'float implicit(vec3 p){return max(implicit0(p),clipD(p));}',
@@ -581,7 +584,8 @@ MeshRaymarcher.prototype._buildShader=function(){
     // must come from the shape SDF. Without this branch the lighting normal
     // could come from the scaffold field gradient and "paint" lattice texture
     // onto an otherwise-correct solid surface.
-    'vec3 nrmField(vec3 p){if(uSolidMode>0.5)return nrmShape(p);if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
+    'vec3 nrmSkin(vec3 p){float e=uNrmStep;return normalize(vec3(implicit0(p+vec3(e,0,0))-implicit0(p-vec3(e,0,0)),implicit0(p+vec3(0,e,0))-implicit0(p-vec3(0,e,0)),implicit0(p+vec3(0,0,e))-implicit0(p-vec3(0,0,e))));}',
+    'vec3 nrmField(vec3 p){if(uSolidMode>0.5)return nrmShape(p);if(uSkinW>0.0&&uHasShape>0.5)return nrmSkin(p);if(uHasShape>0.5){float sc=sampleScaffoldSDF(p);float sh=sampleShape(p);if(sh>sc)return nrmShape(p);}return nrmScaffold(p);}',
     // ── Lighting (shared F13LD-SHADE block) ───────────────────────────────
     // f13Map: implicit in world units, clipped to the view box so occlusion
     // and shadow rays don't "see" periodic lattice outside the domain.
@@ -738,7 +742,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  bool isCut=false;',
     '  if(uSolidMode<0.5){',
     '    if(nearCap||!hit) isCut=true;',
-    '    else if(uHasShape>0.5&&sampleShape(pos)>sampleScaffoldSDF(pos)) isCut=true;',
+    '    else if(uHasShape>0.5&&uSkinW<=0.0&&sampleShape(pos)>sampleScaffoldSDF(pos)) isCut=true;',
     '  }',
     '  if(onClip) isCut=true;',
     '  vec3 baseCol;',
@@ -759,7 +763,7 @@ MeshRaymarcher.prototype._buildShader=function(){
     '  if(uJoinCount>1.5&&!onClip&&joinZone(pos)>0.5) baseCol=mix(baseCol,vec3(0.894,0.42,0.69),0.8);',
     '  if(onClip) baseCol=mix(baseCol,vec3(0.80,0.27,0.56),0.82);',
     '  float sEps=uNrmStep;',
-    '  if(uHasShape>0.5&&uShapeEps>0.0&&(uSolidMode>0.5||sampleShape(pos)>=sampleScaffoldSDF(pos))) sEps=max(uNrmStep,uShapeEps);',
+    '  if(uHasShape>0.5&&uShapeEps>0.0&&(uSolidMode>0.5||(uSkinW>0.0?abs(sampleShape(pos))<uSkinW*1.2:sampleShape(pos)>=sampleScaffoldSDF(pos)))) sEps=max(uNrmStep,uShapeEps);',
     '  vec3 col=f13Shade(baseCol,pos,n,rd,rot,isCut,uAOCell,sEps,1.6*uViewH);',
     '  col=mix(bgCol,col,exp(-max(t-tEn,0.0)*(0.06/uViewH)));',
     // rc3: After scaffold rendered, accumulate ghost tint for the portion of
@@ -853,6 +857,7 @@ MeshRaymarcher.prototype._activateUniforms=function(){
   this._uPlateAlpha = gl.getUniformLocation(p, 'uPlateAlpha');
   this._uLifted = gl.getUniformLocation(p, 'uLifted');
   // v0.12.0 · section plane + weld joins
+  this._uSkinW = gl.getUniformLocation(p, 'uSkinW');
   this._uClipOn = gl.getUniformLocation(p, 'uClipOn');
   this._uClipN = gl.getUniformLocation(p, 'uClipN');
   this._uClipD = gl.getUniformLocation(p, 'uClipD');
@@ -1043,6 +1048,19 @@ MeshRaymarcher.prototype.render=function(){
   if(this._uGhostColor)    gl.uniform3fv(this._uGhostColor,    colorFlat);
   if(this._uGhostKind)     gl.uniform1fv(this._uGhostKind,     kindFlat);
   if(this._uGhostCount)    gl.uniform1f(this._uGhostCount, ghostCount);
+  // ── v0.12.0 · skin on the active body (single-body shape preview only; weld
+  // previews bake skin and graded walls into the union field via the specs) ──
+  if(this._uSkinW){
+    var skW=0.0;
+    try{
+      if(!this._assemblyMode&&this.hasShape&&this.shapeData&&typeof activeBodyId!=='undefined'&&activeBodyId!=null
+         &&typeof bodyFill==='function'&&bodyFill(activeBodyId)==='skin'){
+        var sb=bodies.get(activeBodyId), smm=(sb&&sb.skinMm>0)?sb.skinMm:0.4;
+        skW=smm*(10.0/this.shapeData.cellSizeMm);
+      }
+    }catch(e){ skW=0.0; }
+    gl.uniform1f(this._uSkinW,skW);
+  }
   // ── v0.12.0 · section plane ────────────────────────────────────────────
   var cpl=this._clip?this.clipPlane():null;
   if(this._uClipOn){

@@ -97,14 +97,30 @@ The **part prep** section above the export controls gives the numbers you need t
 - **Estimate.** Volume filled, porosity, part volume, mass and build size update live from the preview. Volume filled is measured against the export cube, or against the bounding shape's own volume for shape-clipped parts.
 - **Measured.** After each export the exported mesh is measured exactly: volume, mass, volume filled, surface area, area ÷ volume, build size, separate pieces, the area of downward surfaces in 15° bands, the area needing support, its footprint on the plate, and the plate contact area. **Download print report** saves all of it as Markdown.
 
-### Sidebar
+### Layout (v0.12.0)
 
-The recipe shows as one small card in its family colour with a one-line summary; hover it (or tap on a phone) for every setting. Each sidebar group folds with its header; the tool remembers which groups you keep open. Homogenization and Measured start folded, and a folded Measured group still shows the part volume and mass.
+Same pattern as F13LD.lab and F13LD.sweep:
+
+- **Header:** Open recipe, Add part, and a status mark that ripples while the tool works.
+- **View strip:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only). Preview quality and the view menu sit at the right.
+- **Left rail:** recipes (family-coloured cards, details on hover or tap; drag one onto a part to fill it), parts (welds shown as cards with their members inside), and the editor for whatever is selected, right under the list so the view stays clear.
+- **Inspector (right):** Estimate from the preview, Measured after an export (with the field · mesh · simplify split and the print report), Homogenization.
+- **Dock:** Configure opens a drawer with Part prep and Export; the dock tags summarise them (click one to jump to its tab); Export 3MF with its estimate. While an export runs, a strip above the dock shows the stage, elapsed time and Cancel.
+- **Phone:** one column, viewport first, the dock stays at the bottom and the drawer opens as a sheet.
+
+### Parts and fill
+
+Each part has its own fill: **Solid** (exported exactly as imported), **Lattice**, or **Lattice + skin** (a solid wall of set thickness along the part surface around the lattice). Lattice parts keep their own recipe, cell size, wall offset, rotation, shift and trim to nodes, so one recipe can fill several parts differently. Sliders update the preview live.
 
 ### Weld groups
 
-When the active body is in a weld group, Export writes the whole group as one part. Since v0.9.3:
+A weld joins parts into one exported part. Welds are cards in the parts list: click the header to select the weld, click a member to select that part.
 
+- **Join:** drag a part onto another part (new weld) or onto a weld card (join it); or press and hold a row to tick parts or welds, then press Weld in the selection bar (the phone way). Merging two welds keeps the target weld's settings.
+- **Separate:** the unlink button on a member, dragging a member onto the "take it out" strip, or Separate all in the weld editor. A weld left with one part is dissolved ("Weld dissolved").
+- **Weld editor:** members (take out, add a part or weld), fillet radius, join rule, Show joins (tints where members meet), Separate all.
+- **Join rules (v0.12.0):** **Union** — smooth union with the fillet. **Graded** — lattice walls thicken toward the solid members over the set distance, so stiffness steps up gradually. **Anchor** — the lattice continues into the solid by the set depth; it only changes the part where trim to nodes would otherwise drop struts at the joint.
+- **Each member keeps its own structure settings on export** (rotation, shift, wall offset, trim, skin) since v0.12.0; before, welds used identity settings. Cell size is no longer locked while welded.
 - **Solids with a closed mesh are exported exactly as imported.** Only the space around lattice bodies is meshed at the export resolution. Where a lattice meets such a solid, the fillet is about one voxel smaller.
 - **Contacts between two solids are a plain union.** This applies when the group also holds a lattice. An all-solid group keeps its fillets.
 - **The lattice field is computed on several cores** before meshing. The report shows how many were used.
@@ -141,6 +157,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | File | What it holds |
 |---|---|
 | `index.html` | Page markup, import map, script tags |
+| `ui12.css` · `viewstrip.css` · `rail.css` · `dock.css` | v0.12.0 layout and component styles (on top of `mesh.css`) |
 | `mesh.css` | All styles |
 | `00-libs.js` · `01-config.js` · `02-html.js` | Library loader · version + worker URL helper · HTML escaping |
 | `03-registry.js` | Family and loader registries (`registerFamily`, `registerLoader`), family labels/colours, type badge |
@@ -149,12 +166,12 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `05-ui-chrome.js` | Spinner orb, status indicator |
 | `10-state.js` · `11-structure-state.js` | Bodies, recipes, weld groups, ghosts · structure transform state |
 | `12-shape-sdf-bake.js` · `13-hu-bake.js` · `14-weld-bake.js` | Shape SDF, hyperuniform and weld-field bake worker pools; weld export plan and estimate |
-| `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` | Shared F13LD shading block · WebGL2 preview · orientation gimbal · viewer shading menu |
-| `30-shape-import.js` · `31-body-cards.js` | Body file intake · body cards, weld drag/drop, recipe library |
+| `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` · `23-view-strip.js` | Shared F13LD shading block · WebGL2 preview (section plane, show joins) · orientation gimbal · viewer shading menu · view strip tabs |
+| `30-shape-import.js` · `31-body-cards.js` | Body file intake · body / weld / fill state functions (assign, fill, skin, weld together, separate, join rule) |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
 | `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline |
 | `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
-| `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · compact recipe card and collapsible groups |
+| `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` · `55-rail.js` · `56-dock.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · homogenization card · left rail (recipes, parts, welds, editor) · dock, Configure drawer, progress strip, inspector |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
 | `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
 

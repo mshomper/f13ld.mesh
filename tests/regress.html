@@ -199,9 +199,13 @@ async function captureJob(spec, onStage){
     const file=new File([buf], spec.shape, {type:'model/stl'});
     if(typeof win.handleShapeFile==='function') win.handleShapeFile(file);
     else { const inp=win.document.getElementById('shapeInput'); const dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true})); }
-    if(!await waitFor(()=>win.document.querySelector('.shapeCard[data-body-id]'), 120000)) throw new Error('shape did not import');
+    // v0.12.0 rail rows (.rl-part) or the older bottom-strip cards (.shapeCard)
+    if(!await waitFor(()=>win.document.querySelector('.rl-part[data-body-id], .shapeCard[data-body-id]'), 120000)) throw new Error('shape did not import');
     await appIdle(win); await sleep(800);
-    const chip=win.document.querySelector('.libraryChip'); if(chip) chip.click();
+    if(win.document.querySelector('.rl-part[data-body-id]')){
+      // new UI: recipe cards open a popover, so assign through the state function
+      win.eval("(function(){ const rid=(typeof activeRecipeId!=='undefined'&&activeRecipeId)||[...recipes.keys()][0]; assignRecipeToBody(activeBodyId, rid); })()");
+    } else { const chip=win.document.querySelector('.libraryChip'); if(chip) chip.click(); }
     await sleep(800);
   }
   if(spec.cellMm!=null){ const i=win.document.getElementById('shapeCellSizeMm'); if(i){ i.value=spec.cellMm; win.onCellSizeInput&&win.onCellSizeInput(); } }

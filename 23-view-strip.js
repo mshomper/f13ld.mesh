@@ -182,7 +182,21 @@
   // Called by triggerPreview (44-preview-trigger.js) after each bake, and by
   // the rail after it flips showJoins. Cheap and idempotent.
   window.viewStripSync=function(){ syncJoins(); readout(); };
-  setInterval(function(){ if(joinSig()!==lastJoinSig) syncJoins(); },500);
+  // Skin thickness / fill are drawn live by the shader (no re-bake for a single
+  // body): redraw as soon as the rail changes them. Weld rule / grade / anchor
+  // re-bake through the rail's own triggerPreview.
+  var lastFillSig='';
+  function fillSig(){
+    try{
+      if(typeof activeBodyId==='undefined'||activeBodyId==null) return '';
+      var b=bodies.get(activeBodyId);
+      return bodyFill(activeBodyId)+'|'+(b?b.skinMm:'')+'|'+(rm.shapeData?rm.shapeData.cellSizeMm:'');
+    }catch(e){ return ''; }
+  }
+  setInterval(function(){
+    if(joinSig()!==lastJoinSig) syncJoins();
+    var fs=fillSig(); if(fs!==lastFillSig){ lastFillSig=fs; rm._dirty=true; }
+  },250);
 
   // initial state: print view may already be on (persisted part-prep setting)
   document.addEventListener('DOMContentLoaded',function(){

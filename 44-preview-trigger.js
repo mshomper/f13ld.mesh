@@ -214,10 +214,8 @@ window.F13LD_weld={
 // preview, which is already running, handles the post-clear cube view.
 window.onCellSizeInput=function(){
   if(!importedShape)return;
-  // Neutralized in weld mode: cell size scales the per-body lattice, but the
-  // welded preview bakes one fixed union — live rescaling there blows up the
-  // whole group. Un-weld the body to adjust its cell size, then re-weld.
-  if(typeof activeGroupId==='function' && activeGroupId() && groupMembers(activeGroupId()).length>=2) return;
+  // v0.12.0: no longer locked while welded — the left rail edits cell size
+  // per part (railSetCellMm) and the weld preview re-bakes for the change.
   var cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
   if(rm)rm.setCellSize(cellSizeMm);
   // Only mark stale for aperiodic recipes — those genuinely need a field re-bake

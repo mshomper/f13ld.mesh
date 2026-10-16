@@ -121,7 +121,7 @@ async function run(site, root, recipe, opts) {
   const errors = [], logs = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { const t = m.text(); if (m.type() === 'error') errors.push('console: ' + t); else logs.push(t); });
-  page.on('worker', w => w.on('console', m => { if (m.type() === 'error') errors.push('worker: ' + m.text()); }));
+  page.on('worker', w => w.on('console', m => { if (m.type() === 'error') errors.push('worker: ' + m.text()); else logs.push('worker: ' + m.text()); }));
   const q = recipe ? '?r=' + encodeURIComponent(JSON.stringify(recipe)) : '';
   await page.goto(`http://${site}/index.html${q}`);
   await page.waitForTimeout(1500);
@@ -198,6 +198,7 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
       mesher: process.env.MESHER, loose: process.env.LOOSE != null ? +process.env.LOOSE : undefined };
     const a = await run('orig.test', ORIG, spec.recipe, opts);
     const b = await run('new.test', NEW, spec.recipe, opts);
+    if (process.env.DUMP) { for (const [lbl, r] of [['orig', a], ['new', b]]) if (r.model) fs.writeFileSync(path.join(process.env.DUMP, name + '.' + lbl + '.model'), r.model); }
     const same = a.model !== undefined && a.model === b.model;
     let ok = same && !b.errors.length && !b.misses.length && a.errors.length === b.errors.length;
     let gline = '';
@@ -214,7 +215,7 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
       if (r.misses.length) console.log(`   ${lbl} unserved:`, r.misses.slice(0, 4));
       if (r.exportErr) console.log(`   ${lbl} export:`, r.exportErr, r.box);
       if (r.preview && r.preview.err) console.log(`   ${lbl} errorBox:`, r.preview.err);
-      if (process.env.VERBOSE) { console.log(`   ${lbl} report:`, r.report || ''); for (const l of r.logs) if (l.includes('[export][field]') || l.includes('[export][slab]')) console.log(`   ${lbl}`, l); }
+      if (process.env.VERBOSE) { console.log(`   ${lbl} report:`, r.report || ''); for (const l of r.logs) if (l.includes('[export][field]') || l.includes('[export][slab]') || l.includes('slab')) console.log(`   ${lbl}`, l); }
     }
   }
   console.log(fail ? `${fail} FAILED` : 'ALL PASS');

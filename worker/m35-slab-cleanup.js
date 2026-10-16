@@ -140,9 +140,28 @@ function ringLock(idx, nV, open, lock){
     if(hit){ lock[idx[t]]=1; lock[idx[t+1]]=1; lock[idx[t+2]]=1; }
   }
 }
+// Directed edges with both ends open, counted. A sub-mesh's open edges are
+// shared with its neighbour, so simplify must leave every one of them as it
+// was: same edges, same counts. Returns the vertices of edges that changed.
+function openEdgeCounts(idx, nV, open){
+  var m=new Map(), t, q, a, b, k;
+  for(t=0;t<idx.length;t+=3) for(q=0;q<3;q++){
+    a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+    if(!(open[a]&&open[b])) continue;
+    k=a*nV+b; m.set(k,(m.get(k)||0)+1);
+  }
+  return m;
+}
+function openEdgeChanges(before, idx, nV, open){
+  var after=openEdgeCounts(idx, nV, open), vs=[];
+  function add(k){ var a=Math.floor(k/nV); vs.push(a, k-a*nV); }
+  before.forEach(function(c,k){ if(after.get(k)!==c) add(k); });
+  after.forEach(function(c,k){ if(!before.has(k)) add(k); });
+  return vs;
+}
 function safeSimplify(pos, idx, tol, open, flags){
   var lock0=null;
-  if(open){ lock0=new Uint8Array(open.length); ringLock(idx, open.length, open, lock0); }
+  if(open){ lock0=new Uint8Array(open); ringLock(idx, open.length, open, lock0); }   // open vertices themselves stay put too
   var S=slabMeshopt();
   if(!S || !(tol>0) || idx.length<3) return {idx:idx, retries:0, locked:0, unsafe:false};
   var nV=pos.length/3, nT=idx.length/3;
@@ -150,12 +169,17 @@ function safeSimplify(pos, idx, tol, open, flags){
   var attr=new Float32Array(nV), fl=['ErrorAbsolute'].concat(flags||[]);
   if(meshClosedReport(pos, idx, false, open).ok===false) return {idx:idx, retries:0, locked:0, unsafe:true};
   var res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
-  var retries=0, locked=0;
+  var retries=0, locked=0, before=open?openEdgeCounts(idx, nV, open):null;
+  function problems(r){
+    var rep=meshClosedReport(pos, r, true, open), vs=rep.verts?Array.from(rep.verts):[];
+    if(before) vs=vs.concat(openEdgeChanges(before, r, nV, open));
+    return vs;
+  }
   for(; retries<4; retries++){
-    var rep=meshClosedReport(pos, res, true, open);
-    if(rep.ok) return {idx:res, retries:retries, locked:locked, unsafe:false};
+    var bad=problems(res);
+    if(!bad.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
     var hit=new Uint8Array(nV), t, k;
-    for(k=0;k<rep.verts.length;k++) hit[rep.verts[k]]=1;
+    for(k=0;k<bad.length;k++) hit[bad[k]]=1;
     // grow by retries+1 rings in the input mesh
     for(var ring=0; ring<=retries; ring++){
       var nxt=hit.slice();
@@ -166,7 +190,7 @@ function safeSimplify(pos, idx, tol, open, flags){
     for(k=0;k<nV;k++) if(hit[k]&&!lock[k]){ lock[k]=1; locked++; }
     res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
   }
-  if(meshClosedReport(pos, res, false, open).ok) return {idx:res, retries:retries, locked:locked, unsafe:false};
+  if(!problems(res).length) return {idx:res, retries:retries, locked:locked, unsafe:false};
   return {idx:idx, retries:retries, locked:locked, unsafe:false, gaveUp:true};
 }
 

@@ -45,6 +45,26 @@ self.onmessage=async function(e){
     let msLevelSet=0; // shared across branches for the timings pill
     let fieldBake=null; // v0.11.0: {workers, ms, f32, stats} when the single-body field was pre-baked
     let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
+    // v0.15.0 slab mesher (m34–m36): open-cube and shape-clipped parts mesh in
+    // z slabs on every core unless the export asks for the classic mesher.
+    // Any failure, or a result that isn't closed, meshes the classic way.
+    const useSlab=d.mesher!=='classic';
+    let slabOut=null, slabFallback=null;
+    const post=m=>self.postMessage(m);
+    async function trySlab(field, min, max, edge){
+      try{
+        const sm=await slabMeshExport(d, field, min, max, edge, d.simplifyTol||0, post);
+        if(!sm.idx.length) return sm;              // empty: the caller reports it
+        const cr=meshClosedReport(sm.pos, sm.idx);
+        if(!cr.ok) throw new Error('result not closed ('+cr.bad+' edges)');
+        return sm;
+      }catch(err){
+        slabFallback=(err&&err.message)||String(err);
+        self.postMessage({type:'progress',stage:'slab mesher skipped ('+slabFallback+') — classic mesher...'});
+        console.warn('[worker] slab mesher failed, using classic:', err);
+        return null;
+      }
+    }
     // (v0.5.0-rc7) Legacy mode:'shape' branch removed — was never invoked from
     // main thread. Boolean CSG via Manifold.intersection no longer needed; the
     // implicit max(scaffold,-shape) composition in mode:'export' replaced it.
@@ -197,6 +217,12 @@ self.onmessage=async function(e){
       shapeField.setEdge(relEdgeMm); // v0.5.0-rc19: short-circuit threshold tracks pass edge
       // v0.11.0: evaluate the fine grid on every core first (m33-field-pool.js).
       const fineMin=[eInner.mnx,eInner.mny,eInner.mnz], fineMax=[eInner.mxx,eInner.mxy,eInner.mxz];
+      if(useSlab){
+        lastStage='slab mesher ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
+        slabOut=await trySlab(wrappedSDF, fineMin, fineMax, relEdgeMm);
+        if(slabOut && !slabOut.idx.length) throw new Error('Empty mesh — check shape/scaffold overlap.');
+      }
+      if(!slabOut){
       let fineFn=wrappedSDF;
       const fpb=await prebakeExportField(d, wrappedSDF, fineMin, fineMax, relEdgeMm, m=>self.postMessage(m), {setupMs});
       if(fpb){ fineFn=fpb.fn; fieldBake=fpb; }
@@ -205,6 +231,7 @@ self.onmessage=async function(e){
       mfld=safeLevelSet(fineFn,{min:fineMin,max:fineMax},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
+      }
       // Shape-sdf export mode falls through to the unified extract+simplify+done
       // block below. msLevelSet captured here so timings-pill stays accurate.
       } else {
@@ -215,6 +242,12 @@ self.onmessage=async function(e){
         // renderer (which uses canonical negative-inside as designed).
         // v0.11.0: evaluate the grid on every core first (m33-field-pool.js).
         const cubeFn=p=>-sdfFn(p);
+        if(useSlab){
+          lastStage='slab mesher ('+d.edgeWorld.toFixed(3)+' world edge)';
+          slabOut=await trySlab(cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld);
+          if(slabOut && !slabOut.idx.length) throw new Error('Empty mesh — adjust recipe parameters.');
+        }
+        if(!slabOut){
         let lsFn=cubeFn;
         const cpb=await prebakeExportField(d, cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld, m=>self.postMessage(m), {setupMs});
         if(cpb){ lsFn=cpb.fn; fieldBake=cpb; }
@@ -224,6 +257,7 @@ self.onmessage=async function(e){
         mfld=safeLevelSet(lsFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
         msLevelSet=Math.round(performance.now()-tLevelSet);
+        }
       }
     } else {
       // Defensive — only mode='bake' (handled+returned earlier) and mode='export'
@@ -233,11 +267,20 @@ self.onmessage=async function(e){
     }
     // ── Unified extract + meshopt simplify + done ─────────────────────────────
     // All export paths (shape CSG, weld group, cube) funnel here with mfld set.
+    let vertProperties, triVerts, msSimplify=0, closedFix=null;
+    const simplifyTol=d.simplifyTol||0;
+    if(slabOut){
+      // Already simplified slab by slab, seams tidied and checked closed.
+      vertProperties=slabOut.pos; triVerts=slabOut.idx;
+      msLevelSet=slabOut.ms.mesh; msSimplify=slabOut.ms.seam;
+      self.postMessage({type:'diag',diag:{slab:{slabs:slabOut.slabs, workers:slabOut.workers, rawTris:slabOut.raw, tris:triVerts.length/3,
+        retries:slabOut.retries, locked:slabOut.locked, gaveUp:slabOut.gaveUp, evals:slabOut.evals, seam:slabOut.seam, ms:slabOut.ms}}});
+    } else {
     lastStage='extracting mesh';
     self.postMessage({type:'progress',stage:'extracting mesh...'});
     const extractedMesh=mfld.getMesh();
-    let vertProperties=new Float32Array(extractedMesh.vertProperties);
-    let triVerts=new Uint32Array(extractedMesh.triVerts);
+    vertProperties=new Float32Array(extractedMesh.vertProperties);
+    triVerts=new Uint32Array(extractedMesh.triVerts);
     mfld.delete();mfld=null;
     if(weldDustMm3>0){
       const r=dropTinyShells(vertProperties,triVerts,weldDustMm3);
@@ -247,8 +290,6 @@ self.onmessage=async function(e){
       }
     }
     const preTris=triVerts.length/3;
-    const simplifyTol=d.simplifyTol||0;
-    let msSimplify=0;
     if(simplifyTol>0){
       // Tolerance is in vertex units (mm for shape-clipped exports where
       // d.scale=1.0; world units for cube exports where d.scale=domainMm/10).
@@ -263,19 +304,46 @@ self.onmessage=async function(e){
       self.postMessage({type:'progress',stage:lastStage+'...'});
       const tSimp=performance.now();
       const r=meshoptSimplify(vertProperties,triVerts,simplifyTol);
-      msSimplify=Math.round(performance.now()-tSimp);
       if(r){
         vertProperties=r.positions;
         triVerts=r.indices;
-        self.postMessage({type:'progress',stage:'simplified '+(r.preTris/1e6).toFixed(2)+'M → '+(r.postTris/1e6).toFixed(2)+'M tris ('+msSimplify+'ms)'});
+        msSimplify=Math.round(performance.now()-tSimp);
+        self.postMessage({type:'progress',stage:'simplified '+(preTris/1e6).toFixed(2)+'M → '+(triVerts.length/3/1e6).toFixed(2)+'M tris ('+msSimplify+'ms)'});
       }else{
+        msSimplify=Math.round(performance.now()-tSimp);
         self.postMessage({type:'progress',stage:'simplify skipped — meshopt unavailable, keeping '+(preTris/1e6).toFixed(2)+'M tris'});
+      }
+    }
+    }
+    // v0.15.0: classic results are not repaired (kept as before), but their
+    // open edges are counted for the report — Manifold splits pinch points on
+    // walls about one voxel thick into duplicate vertices, and meshopt can
+    // open those up.
+    if(!slabOut){
+      const cr=meshClosedReport(vertProperties, triVerts);
+      if(!cr.ok) closedFix={openEdges:cr.bad};
+    }
+    // v0.15.0: loose-piece clean-up — split into connected pieces and drop
+    // those under d.looseFrac of the largest piece's volume (0 = off).
+    let loose=null;
+    const looseFrac=(d.looseFrac!=null)?+d.looseFrac:0.01;
+    if(looseFrac>0){
+      lastStage='removing loose pieces';
+      const r=removeLoosePieces(vertProperties, triVerts, looseFrac, 0);
+      if(r){
+        vertProperties=r.vertProperties; triVerts=r.triVerts;
+        const s3=Math.pow(d.scale||1,3);
+        loose={dropped:r.dropped, pieces:r.pieces, droppedMm3:r.droppedVol*s3};
+        self.postMessage({type:'progress',stage:'removed '+r.dropped+' loose piece'+(r.dropped===1?'':'s')+'...'});
       }
     }
     const triCount=triVerts.length/3;
     const ms=Math.round(performance.now()-t0);
     if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
-    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,cores:fieldBake?fieldBake.workers:1,msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
+    self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
+      cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
+      mesher:slabOut?'slab':'classic', slabFallback:slabFallback, loose:loose, closedFix:closedFix,
+      msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

@@ -205,8 +205,11 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
   const isHU=!!(hd&&typeof hd.hyperuniform==='function'&&hd.hyperuniform(recipe));
   const evalUs=isHU?WELD_EVAL_US_HU:((typeof WELD_EVAL_US!=='undefined'&&WELD_EVAL_US[recipe&&recipe.family])||10);
   const cores=(typeof exportFieldCores==='function')?Math.min(15,exportFieldCores()):1;
-  const rawMs=points*(EXPORT_MARCH_US+evalUs/Math.max(1,cores>=2?cores:1))/1000;
-  const key=((recipe&&recipe.family)||'?')+(isHU?'-hu':'')+':'+kind;
+  // v0.15.0: the slab mesher shares the meshing across the cores as well.
+  const slab=exportMesherPref()==='slab';
+  const K=Math.max(1,cores>=2?cores:1);
+  const rawMs=slab ? points*(EXPORT_SLAB_US+evalUs)/K/1000 : points*(EXPORT_MARCH_US+evalUs/K)/1000;
+  const key=((recipe&&recipe.family)||'?')+(isHU?'-hu':'')+':'+kind+(slab?':slab':'');
   const cal=exportCal(key);
   const rawTris=estTris;
   estTris=Math.max(1000,Math.round(rawTris*cal.n));
@@ -215,6 +218,14 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
 }
 // ── Learned export estimate (v0.11.0) ──────────────────────────────────
 const EXPORT_MARCH_US=2.0;                       // Manifold level set + simplify, per grid point, one core
+const EXPORT_SLAB_US=1.6;                        // slab mesher + per-slab simplify, per grid point, one core (v0.15.0)
+// ── Mesher and loose-piece settings (v0.15.0), remembered in this browser ──
+const EXPORT_MESHER_KEY='f13ld.mesh.mesher', EXPORT_LOOSE_KEY='f13ld.mesh.looseFrac';
+const EXPORT_LOOSE_CHOICES=[0, 0.001, 0.01, 0.05];
+function exportMesherPref(){ try{ return localStorage.getItem(EXPORT_MESHER_KEY)==='classic'?'classic':'slab'; }catch(_){ return 'slab'; } }
+function setExportMesher(v){ try{ localStorage.setItem(EXPORT_MESHER_KEY, v==='classic'?'classic':'slab'); }catch(_){} if(typeof updateExportEstimate==='function') updateExportEstimate(); }
+function exportLooseFrac(){ try{ const v=localStorage.getItem(EXPORT_LOOSE_KEY); if(v===null) return 0.01; const f=+v; return EXPORT_LOOSE_CHOICES.indexOf(f)>=0?f:0.01; }catch(_){ return 0.01; } }
+function setExportLoose(v){ const f=+v; try{ localStorage.setItem(EXPORT_LOOSE_KEY, String(EXPORT_LOOSE_CHOICES.indexOf(f)>=0?f:0.01)); }catch(_){} }
 const EXPORT_CAL_KEY='f13ld.mesh.exportCal.v1';  // {"<family>:<cube|shape>": {t, n}}
 function _exportCalAll(){ try{ const o=JSON.parse(localStorage.getItem(EXPORT_CAL_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; } }
 function exportCal(key){

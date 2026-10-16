@@ -66,11 +66,11 @@ input[type=number]{width:80px}
 .kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;font-size:12px}
 .kv span:nth-child(odd){color:var(--ink-2)}
 .kv span:nth-child(even){font-family:var(--mono);color:var(--ink);text-align:right;overflow-wrap:anywhere}
-.pill{font:500 10px var(--mono);padding:2px 7px;border-radius:6px;border:1px solid var(--line-2);color:var(--ink-2);white-space:nowrap}
+.pill{font:500 12px var(--mono);padding:2px 7px;border-radius:6px;border:1px solid var(--line-2);color:var(--ink-2);white-space:nowrap}
 .pill.ok{border-color:rgba(29,158,117,.6);color:#7fe0bd}
 .pill.bad{border-color:rgba(248,113,113,.6);color:var(--bad)}
 .pill.run{border-color:var(--mesh-ring);color:var(--mesh)}
-.stage{font:400 11px var(--mono);color:var(--ink-3);margin-top:8px;min-height:15px;overflow-wrap:anywhere}
+.stage{font:400 12px var(--mono);color:var(--ink-3);margin-top:8px;min-height:15px;overflow-wrap:anywhere}
 .bar{height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden;display:flex}
 .bar i{display:block;height:100%}
 #app{width:100%;height:360px;border:1px solid var(--line);border-radius:10px;background:#000;display:block}
@@ -93,8 +93,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">Cores</label><input type="number" id="cores" min="1" max="64" step="1"><span class="note" style="margin:0">field bake pool, both builds</span></div>
       <div class="row"><label class="k">Reference build</label><input type="text" id="refUrl" spellcheck="false"></div>
       <div class="row"><label class="k">Time limit</label><input type="number" id="limit" min="30" max="1800" step="10" value="300"><span class="note" style="margin:0">seconds per export</span></div>
+      <div class="row"><label class="k">This build mesher</label>
+        <div class="seg" id="mesherSeg"><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">reference always runs classic</span></div>
+      <div class="row"><label class="k">Loose pieces</label>
+        <div class="seg" id="looseSeg"><button data-f="0">Keep all</button><button data-f="0.001">0.1 %</button><button data-f="0.01">1 %</button><button data-f="0.05">5 %</button></div><span class="note" style="margin:0">drop pieces smaller than this share of the volume; reference keeps all</span></div>
       <div class="row"><label class="k">Extra run</label><label class="chk"><input type="checkbox" id="oneCore"> this build on one core as well</label></div>
-      <p class="note">This build is the page's own folder. The reference defaults to the live tool, so the check is "branch vs. what users have today". The app pane below builds each export job exactly as the tool would; the bench then meshes that job with each build and compares every vertex and triangle.</p>
+      <p class="note">This build is the page's own folder. The reference defaults to the live tool, so the check is "branch vs. what users have today". The app pane below builds each export job exactly as the tool would; the bench then meshes that job with each build and compares every vertex and triangle. When the meshes differ, the case passes if this build's mesh is closed and its volume is within 2 % of the reference.</p>
     </div>
     <div class="card">
       <h2>Cases</h2>
@@ -151,6 +155,17 @@ $('cores').onchange=()=>store('cores', +$('cores').value);
 $('refUrl').value=load('ref', DEFAULT_REF);
 $('refUrl').onchange=()=>{ store('ref', $('refUrl').value.trim()); refBlobUrl=null; };
 $('limit').value=load('limit',300); $('limit').onchange=()=>store('limit', +$('limit').value);
+let MESHER=load('mesher','slab'); if(MESHER!=='classic') MESHER='slab';
+let LOOSE=+load('loose',0); if(![0,0.001,0.01,0.05].includes(LOOSE)) LOOSE=0;
+function bindSeg(id,key,cur,set){
+  const bs=[...$(id).querySelectorAll('button')];
+  const paint=()=>bs.forEach(b=>b.classList.toggle('on', b.dataset[key]===String(cur())));
+  bs.forEach(b=>{ b.onclick=()=>{ set(b.dataset[key]); paint(); }; });
+  paint();
+}
+bindSeg('mesherSeg','m',()=>MESHER,v=>{ MESHER=v; store('mesher',v); });
+bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=+v; store('loose',LOOSE); });
+const looseLabel=()=>{ const b=$('looseSeg').querySelector('button.on'); return b?b.textContent:String(LOOSE); };
 $('oneCore').checked=load('oneCore',false); $('oneCore').onchange=()=>store('oneCore',$('oneCore').checked);
 
 async function init(){
@@ -251,7 +266,7 @@ async function getRefWorkerUrl(base){
 }
 
 // ── one mesh run ────────────────────────────────────────────────────────
-function runMesh(workerUrl, job, cores, onStage){
+function runMesh(workerUrl, job, cores, onStage, extra){
   return new Promise((res,rej)=>{
     let w;
     try{ w=new Worker(workerUrl); }catch(e){ rej(e); return; }
@@ -264,11 +279,12 @@ function runMesh(workerUrl, job, cores, onStage){
       const m=e.data;
       if(m.type==='progress') onStage(m.stage);
       else if(m.type==='diag'&&m.diag&&m.diag.fieldBake) field=m.diag.fieldBake;
-      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field}); }
+      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix}); }
       else if(m.type==='error'){ end(); rej(new Error(m.message)); }
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
     const msg=structuredClone(job); msg.cores=cores;
+    if(extra){ msg.mesher=extra.mesher; msg.looseFrac=extra.looseFrac; }
     const tr=[]; if(msg.shapeSdfData) tr.push(msg.shapeSdfData); if(msg.huGridData) tr.push(msg.huGridData);
     w.postMessage(msg,tr);
   });
@@ -281,11 +297,116 @@ function sameMesh(a,b){
   for(let i=0;i<a.tv.length;i++) if(a.tv[i]!==b.tv[i]) return false;
   return true;
 }
-function volume(r){
-  const p=r.vp, t=r.tv; let v=0;
-  for(let i=0;i<t.length;i+=3){ const a=3*t[i], b=3*t[i+1], c=3*t[i+2];
-    v+=p[a]*(p[b+1]*p[c+2]-p[b+2]*p[c+1])+p[a+1]*(p[b+2]*p[c]-p[b]*p[c+2])+p[a+2]*(p[b]*p[c+1]-p[b+1]*p[c]); }
-  return v/6*Math.pow(r.scale||1,3);
+// Volume, area, triangle count and open-edge count of one result mesh (raw mesh units).
+function meshStats(m){
+  const p=m.vp, t=m.tv, nT=t.length/3, nV=p.length/3;
+  let vol=0, area=0;
+  for(let i=0;i<t.length;i+=3){
+    const a=3*t[i], b=3*t[i+1], c=3*t[i+2];
+    vol+=p[a]*(p[b+1]*p[c+2]-p[b+2]*p[c+1])+p[a+1]*(p[b+2]*p[c]-p[b]*p[c+2])+p[a+2]*(p[b]*p[c+1]-p[b+1]*p[c]);
+    const ux=p[b]-p[a], uy=p[b+1]-p[a+1], uz=p[b+2]-p[a+2], vx=p[c]-p[a], vy=p[c+1]-p[a+1], vz=p[c+2]-p[a+2];
+    const cx=uy*vz-uz*vy, cy=uz*vx-ux*vz, cz=ux*vy-uy*vx;
+    area+=0.5*Math.sqrt(cx*cx+cy*cy+cz*cz);
+  }
+  // An edge is open unless a->b occurs exactly once and b->a occurs exactly once.
+  const n=3*nT; let F=new Float64Array(n), Rv=new Float64Array(n), k=0;
+  for(let i=0;i<t.length;i+=3){
+    const a=t[i], b=t[i+1], c=t[i+2];
+    F[k]=a*nV+b; Rv[k]=b*nV+a; k++;
+    F[k]=b*nV+c; Rv[k]=c*nV+b; k++;
+    F[k]=c*nV+a; Rv[k]=a*nV+c; k++;
+  }
+  F.sort(); Rv.sort();
+  let i=0, j=0, bad=0;
+  while(i<n||j<n){
+    const key=(j>=n||(i<n&&F[i]<=Rv[j]))?F[i]:Rv[j];
+    let cf=0, cr=0;
+    while(i<n&&F[i]===key){ i++; cf++; }
+    while(j<n&&Rv[j]===key){ j++; cr++; }
+    if(cf!==1||cr!==1) bad++;
+  }
+  F=null; Rv=null;
+  return {vol:vol/6, area, tris:nT, open:Math.round(bad/2)};
+}
+// Largest distance from a sample of up to 20000 of the test mesh's vertices to the nearest
+// reference VERTEX (uniform grid hash, cell = 2 x median reference edge length). Approximate.
+function maxVertexDistance(ref, test, scale){
+  const rp=ref.vp, rt=ref.tv, tp=test.vp, nR=rp.length/3, nTv=tp.length/3;
+  if(!nR||!nTv) return null;
+  const lo=[Infinity,Infinity,Infinity], hi=[-Infinity,-Infinity,-Infinity];
+  for(let v=0;v<nR;v++) for(let d=0;d<3;d++){ const x=rp[3*v+d]; if(x<lo[d]) lo[d]=x; if(x>hi[d]) hi[d]=x; }
+  const nTri=rt.length/3, ts=Math.max(1,Math.floor(nTri/20000)), el=[];
+  for(let q=0;q<nTri;q+=ts){
+    for(let e=0;e<3;e++){ const a=3*rt[3*q+e], b=3*rt[3*q+(e+1)%3];
+      el.push(Math.hypot(rp[a]-rp[b], rp[a+1]-rp[b+1], rp[a+2]-rp[b+2])); }
+  }
+  el.sort((a,b)=>a-b);
+  let cell=2*(el.length?el[el.length>>1]:0);
+  const diag=Math.hypot(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])||1;
+  if(!(cell>0)||!isFinite(cell)) cell=diag/100;
+  let nx,ny,nz;
+  for(;;){
+    nx=Math.floor((hi[0]-lo[0])/cell)+1; ny=Math.floor((hi[1]-lo[1])/cell)+1; nz=Math.floor((hi[2]-lo[2])/cell)+1;
+    if(nx*ny*nz<=4e6) break;
+    cell*=1.5;
+  }
+  const nc=nx*ny*nz, cellOf=new Int32Array(nR), start=new Int32Array(nc+1);
+  const cl=(x,d,nn)=>{ const c=Math.floor((x-lo[d])/cell); return c<0?0:c>=nn?nn-1:c; };
+  for(let v=0;v<nR;v++){
+    const c=(cl(rp[3*v+2],2,nz)*ny+cl(rp[3*v+1],1,ny))*nx+cl(rp[3*v],0,nx);
+    cellOf[v]=c; start[c+1]++;
+  }
+  for(let c=0;c<nc;c++) start[c+1]+=start[c];
+  const fill=start.slice(0,nc), items=new Int32Array(nR);
+  for(let v=0;v<nR;v++) items[fill[cellOf[v]]++]=v;
+  const step=Math.max(1,Math.floor(nTv/20000)), maxR=Math.max(nx,ny,nz);
+  let maxD2=0, count=0;
+  for(let v=0;v<nTv;v+=step){
+    const x=tp[3*v], y=tp[3*v+1], z=tp[3*v+2];
+    const cx=cl(x,0,nx), cy=cl(y,1,ny), cz=cl(z,2,nz);
+    let best=Infinity;
+    const scan=(ix,iy,iz)=>{
+      const c=(iz*ny+iy)*nx+ix;
+      for(let q=start[c];q<start[c+1];q++){ const u=3*items[q], dx=rp[u]-x, dy=rp[u+1]-y, dz=rp[u+2]-z, d2=dx*dx+dy*dy+dz*dz; if(d2<best) best=d2; }
+    };
+    for(let r=0;r<=maxR;r++){
+      for(let iz=cz-r;iz<=cz+r;iz++){
+        if(iz<0||iz>=nz) continue;
+        for(let iy=cy-r;iy<=cy+r;iy++){
+          if(iy<0||iy>=ny) continue;
+          if(Math.abs(iz-cz)===r||Math.abs(iy-cy)===r){
+            for(let ix=cx-r;ix<=cx+r;ix++) if(ix>=0&&ix<nx) scan(ix,iy,iz);
+          } else {
+            if(cx-r>=0) scan(cx-r,iy,iz);
+            if(cx+r<nx) scan(cx+r,iy,iz);
+          }
+        }
+      }
+      const reach=r*cell;
+      if(best<=reach*reach) break;
+    }
+    if(best>maxD2) maxD2=best;
+    count++;
+  }
+  return {mm:Math.sqrt(maxD2)*(scale||1), sampled:count};
+}
+function compareGeometry(ref, test, scale){
+  const a=meshStats(ref), b=meshStats(test);
+  const rel=(x,y)=>x?(y-x)/Math.abs(x):null;
+  const d=maxVertexDistance(ref, test, scale);
+  return {volDiff:rel(a.vol,b.vol), areaDiff:rel(a.area,b.area), triDiff:rel(a.tris,b.tris), openRef:a.open, openTest:b.open, maxDistMm:d?d.mm:null, sampled:d?d.sampled:0};
+}
+const pctTxt=x=>x==null?'—':(x>0?'+':'')+(x*100).toPrecision(3)+' %';
+const mmTxt=x=>x==null?'—':x.toPrecision(3)+' mm';
+const anyTxt=v=>v==null||v===false?'':(typeof v==='object'?JSON.stringify(v):String(v));
+function mesherTxt(t){
+  if(!t||!t.mesher) return '—';
+  const fb=anyTxt(t.slabFallback);
+  return t.mesher+(fb?' (slab fallback'+(fb!=='true'?': '+fb:'')+')':'');
+}
+function looseTxt(l){
+  if(!l) return '—';
+  return l.dropped+' of '+l.pieces+(l.droppedMm3!=null?' ('+Number(l.droppedMm3).toPrecision(3)+' mm³)':'');
 }
 
 // ── cards ──────────────────────────────────────────────────────────────
@@ -307,7 +428,21 @@ function setCard(el, r){
   if(r.ref&&r.test) kv.push(['speed-up', (r.ref.ms/r.test.ms).toFixed(2)+'×']);
   if(r.test) kv.push(['field / level set', fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0)]);
   if(r.test&&r.test.field) kv.push(['points from cache', r.test.field.cached.toLocaleString()+(r.test.field.direct?' (+'+r.test.field.direct+' direct)':'')]);
-  if(r.volDiff!=null) kv.push(['volume change', (r.volDiff*100).toExponential(2)+' %']);
+  if(r.test){
+    kv.push(['mesher (this build)', mesherTxt(r.test)]);
+    kv.push(['loose pieces removed', looseTxt(r.test.loose)]);
+    const cf=anyTxt(r.test.closedFix); if(cf) kv.push(['closed fix', cf]);
+  }
+  if(r.geo){
+    const g=r.geo;
+    kv.push(['triangles, this build', r.trisTest.toLocaleString()]);
+    kv.push(['volume change', pctTxt(g.volDiff)]);
+    kv.push(['area change', pctTxt(g.areaDiff)]);
+    kv.push(['triangle change', pctTxt(g.triDiff)]);
+    kv.push(['open edges, ref / this', g.openRef.toLocaleString()+' / '+g.openTest.toLocaleString()]);
+    kv.push(['max vertex distance (approx.)', mmTxt(g.maxDistMm)]);
+  }
+  if(r.reason) kv.push(['why it failed', r.reason]);
   el.querySelector('.kv').innerHTML=kv.map(([k,v])=>'<span>'+esc(k)+'</span><span>'+esc(v)+'</span>').join('');
   const bar=el.querySelector('.bar');
   if(r.test&&r.test.bd&&r.test.bd.total){
@@ -317,12 +452,13 @@ function setCard(el, r){
   el.querySelector('.stage').textContent=r.stage||'';
 }
 function summarize(rows){
-  const done=rows.filter(r=>r.test&&r.ref), same=done.filter(r=>r.same);
+  const done=rows.filter(r=>r.test&&r.ref), same=done.filter(r=>r.same&&r.oneSame!==false), passed=done.filter(r=>r.state==='ok');
   const tRef=done.reduce((a,r)=>a+r.ref.ms,0), tTest=done.reduce((a,r)=>a+r.test.ms,0);
   const failed=rows.filter(r=>r.state==='bad').length;
   $('summary').innerHTML=[
     ['identical', same.length+' / '+done.length],
-    ['problems', String(failed)],
+    ['pass', passed.length+' / '+done.length],
+    ['fail or error', String(failed)],
     ['reference total', fmtS(tRef)],
     ['this build total', fmtS(tTest)],
     ['overall speed-up', tTest?(tRef/tTest).toFixed(2)+'×':'—'],
@@ -339,7 +475,7 @@ async function run(){
   const cores=Math.max(1,Math.floor(+$('cores').value||1));
   const refBase=$('refUrl').value.trim()||DEFAULT_REF;
   const rows=[];
-  report={when:new Date(), quality:QUAL, cores, refBase, testBase:TEST_BASE, ver:$('verLbl').textContent, ua:navigator.userAgent, threads:navigator.hardwareConcurrency, rows};
+  report={when:new Date(), quality:QUAL, mesher:MESHER, loose:LOOSE, looseLabel:looseLabel(), cores, refBase, testBase:TEST_BASE, ver:$('verLbl').textContent, ua:navigator.userAgent, threads:navigator.hardwareConcurrency, rows};
   let refUrl;
   try{ refUrl=await getRefWorkerUrl(refBase); }
   catch(e){ setStatus('Reference build not reachable: '+e.message,'bad'); finish(); return; }
@@ -354,17 +490,37 @@ async function run(){
       const {job, testWorkerUrl}=await captureJob(spec, stage);
       if(!testWorkerUrl) throw new Error('could not find this build\'s mesh worker');
       r.label='reference'; stage('reference build…');
-      r.ref=await runMesh(refUrl, job, cores, t=>stage('reference: '+t)); r.ref.scale=job.scale||1;
+      r.scale=job.scale||1;
+      r.ref=await runMesh(refUrl, job, cores, t=>stage('reference: '+t), {mesher:'classic', looseFrac:0}); r.ref.scale=r.scale;
       r.tris=r.ref.tris; setCard(el,r);
       if($('oneCore').checked){
         r.label='1 core'; stage('this build, one core…');
-        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t)); r.one.scale=job.scale||1;
+        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t), {mesher:MESHER, looseFrac:LOOSE}); r.one.scale=r.scale;
       }
       r.label=cores+' cores'; stage('this build, '+cores+' cores…');
-      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t)); r.test.scale=job.scale||1;
-      r.same=sameMesh(r.ref, r.test) && (!r.one || sameMesh(r.ref, r.one));
-      if(!r.same){ const vr=volume(r.ref), vt=volume(r.test); r.volDiff=vr?(vt-vr)/vr:null; }
-      r.state=r.same?'ok':'bad'; r.label=r.same?'identical':'differs';
+      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseFrac:LOOSE}); r.test.scale=r.scale;
+      r.trisTest=r.test.tris!=null?r.test.tris:r.test.tv.length/3;
+      r.same=sameMesh(r.ref, r.test);
+      r.oneSame=r.one?sameMesh(r.test, r.one):null;
+      const why=[];
+      if(!r.same){
+        stage('comparing the meshes…'); await sleep(30);
+        r.geo=compareGeometry(r.ref, r.test, r.scale); r.volDiff=r.geo.volDiff;
+        if(r.geo.openTest!==0) why.push(r.geo.openTest.toLocaleString()+' open edges on this build');
+        if(r.geo.volDiff==null||Math.abs(r.geo.volDiff)>0.02) why.push('volume change '+pctTxt(r.geo.volDiff)+' is over 2 %');
+      }
+      if(r.oneSame===false){
+        // The slab mesher splits the part into a different number of slabs on
+        // one core, so its triangles legitimately differ: check the shape instead.
+        if(r.test.mesher==='slab' || r.one.mesher==='slab'){
+          const g1=compareGeometry(r.test, r.one, r.scale); r.oneGeo=g1;
+          if(g1.openTest!==0) why.push('the 1-core result has '+g1.openTest.toLocaleString()+' open edges');
+          if(g1.volDiff==null||Math.abs(g1.volDiff)>0.005) why.push('1-core vs multi-core volume differs by '+pctTxt(g1.volDiff));
+        } else why.push('the 1-core result differs from the multi-core result');
+      }
+      const ok=!why.length;
+      r.reason=why.join('; ');
+      r.state=ok?'ok':'bad'; r.label=!ok?'FAIL':(r.same?'PASS identical':'PASS');
       r.stage='';
       // keep only the numbers; drop the meshes
       for(const k of ['ref','one','test']) if(r[k]){ delete r[k].vp; delete r[k].tv; }
@@ -380,7 +536,8 @@ function finish(){
   $('runBtn').disabled=false; $('stopBtn').disabled=true; $('dlBtn').disabled=!report||!report.rows.length;
   if(report&&report.rows.length){
     const bad=report.rows.filter(r=>r.state==='bad').length;
-    setStatus(stopFlag?'Stopped.':(bad?bad+' case'+(bad>1?'s':'')+' need a look.':'All cases identical.'), bad||stopFlag?'bad':'ok');
+    const notSame=report.rows.filter(r=>r.state==='ok'&&!r.same).length;
+    setStatus(stopFlag?'Stopped.':(bad?bad+' case'+(bad>1?'s':'')+' FAIL or errored.':(notSame?'All cases pass ('+notSame+' not bit-identical).':'All cases identical.')), bad||stopFlag?'bad':'ok');
   }
 }
 $('runBtn').onclick=()=>{ if(!running) run(); };
@@ -400,21 +557,30 @@ $('dlBtn').onclick=()=>{
   L.push('- This build: '+R.testBase+' ('+R.ver+')');
   L.push('- Reference: '+R.refBase);
   L.push('- Quality: '+R.quality+' · cores: '+R.cores+' · browser threads: '+R.threads);
+  L.push('- This build mesher: '+R.mesher+' · loose pieces: '+R.looseLabel+' (looseFrac '+R.loose+') · reference: classic, looseFrac 0');
   L.push('- Browser: '+R.ua,'');
-  L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Result |');
-  L.push('|---|---|---|---|---|---|---|');
+  L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Result |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  const cell=v=>String(v).replace(/\|/g,'/');
   for(const r of R.rows){
-    const res=r.error?('error: '+r.error.replace(/\|/g,'/')):(r.same?'identical':'differs'+(r.volDiff!=null?' (volume '+(r.volDiff*100).toExponential(2)+' %)':''));
-    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString():'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' cores)':'—')+
-      ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0):'—')+' | '+res+' |');
+    const g=r.geo;
+    const res=r.error?('error: '+r.error):(r.state==='ok'?(r.same?'PASS (identical)':'PASS'):'FAIL'+(r.reason?': '+r.reason:''));
+    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString()+(g?' / '+r.trisTest.toLocaleString():''):'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' cores)':'—')+
+      ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0):'—')+
+      ' | '+cell(mesherTxt(r.test))+' | '+cell(r.test?looseTxt(r.test.loose):'—')+
+      ' | '+(g?pctTxt(g.volDiff):'—')+' | '+(g?pctTxt(g.areaDiff):'—')+' | '+(g?pctTxt(g.triDiff):'—')+' | '+(g?g.openRef+' / '+g.openTest:'—')+' | '+(g?mmTxt(g.maxDistMm):'—')+
+      ' | '+cell(res)+' |');
   }
+  L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');
+  const closedFixed=R.rows.filter(r=>r.test&&anyTxt(r.test.closedFix));
+  if(closedFixed.length){ L.push('','Closed fix reported by this build:',''); for(const r of closedFixed) L.push('- '+r.name+': '+anyTxt(r.test.closedFix)); }
   if(R.rows.some(r=>r.one)){
     L.push('','One-core runs of this build:','');
     for(const r of R.rows) if(r.one) L.push('- '+r.name+': '+fmtS(r.one.ms));
   }
   const done=R.rows.filter(r=>r.test&&r.ref);
   const tRef=done.reduce((a,r)=>a+r.ref.ms,0), tTest=done.reduce((a,r)=>a+r.test.ms,0);
-  L.push('','Identical: '+done.filter(r=>r.same).length+' / '+done.length+' · reference total '+fmtS(tRef)+' · this build total '+fmtS(tTest)+(tTest?' · overall '+(tRef/tTest).toFixed(2)+'×':''),'');
+  L.push('','Identical: '+done.filter(r=>r.same&&r.oneSame!==false).length+' / '+done.length+' · pass: '+done.filter(r=>r.state==='ok').length+' / '+done.length+' · reference total '+fmtS(tRef)+' · this build total '+fmtS(tTest)+(tTest?' · overall '+(tRef/tTest).toFixed(2)+'×':''),'');
   const blob=new Blob([L.join('\n')],{type:'text/markdown'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='f13ld-mesh-bench_'+R.quality+'_'+R.when.toISOString().slice(0,10)+'.md';

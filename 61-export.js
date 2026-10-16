@@ -116,7 +116,8 @@ async function _exportWeldGroup(gid){
       mode:'export', bodies:specs, blendK,
       bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
       relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0,
-      weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes}
+      weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes},
+      mesher:'classic', looseFrac:exportLooseFrac()   // v0.15.0: welds stay on the classic mesher
     };
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
@@ -166,6 +167,8 @@ async function _exportWeldGroup(gid){
       expChip('edge',relEdgeMm.toFixed(2)+'mm')+
       (plan.hybrid?expChip('exact solids',plan.solidOk.filter(Boolean).length):'')+
       expChip('cores',bakeWorkers||1)+
+      expLooseChip(result.loose)+
+      expOpenChip(result.closedFix)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
     '</div>';
@@ -503,6 +506,7 @@ async function _triggerExportImpl(){
     workerMsg={
       mode:'export',recipe:currentRecipe,
       cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
+      mesher:exportMesherPref(), looseFrac:exportLooseFrac(),   // v0.15.0
       shapeSdfData:shapeSdfBuffer,
       shapeN:importedShape.sdfGrid.N,
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
@@ -589,6 +593,7 @@ async function _triggerExportImpl(){
     workerMsg={
       mode:'export',recipe:currentRecipe,edgeWorld,
       cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
+      mesher:exportMesherPref(), looseFrac:exportLooseFrac(),   // v0.15.0
       simplifyTol:cubeSimplifyTol,
       simplifyCappedByFeature:cubeSimplifyCappedByFeature,
       featMm:cubeFeatMm,  // mm value, for timings-pill display
@@ -629,7 +634,8 @@ async function _triggerExportImpl(){
         if(d.type==='progress') coSub.textContent=d.stage;
         else if(d.type==='diag'){
           // v0.5.1-rc4.0b: calibration log for the export guards.
-          if(d.diag&&(d.diag.fieldBake||d.diag.fieldBakeSkip)) console.log((d.diag.fieldBake?'[export][field] ':'[export][field] one core: ')+JSON.stringify(d.diag.fieldBake||d.diag.fieldBakeSkip)); else console.log('[export][mem-guard]', d.diag);
+          if(d.diag&&d.diag.slab) console.log('[export][slab] '+JSON.stringify(d.diag.slab));
+          else if(d.diag&&(d.diag.fieldBake||d.diag.fieldBakeSkip)) console.log((d.diag.fieldBake?'[export][field] ':'[export][field] one core: ')+JSON.stringify(d.diag.fieldBake||d.diag.fieldBakeSkip)); else console.log('[export][mem-guard]', d.diag);
         }
         else if(d.type==='done'){ clearTimeout(exportTimer); resolve(d); }
         else if(d.type==='error'){ clearTimeout(exportTimer); reject(new Error(d.message)); }
@@ -698,6 +704,9 @@ async function _triggerExportImpl(){
       expChip('domain',domainLabel)+
       expChip('edge',edgeLabel)+
       expChip('cores',result.cores||1)+
+      expChip('mesher',result.mesher==='slab'?'slab':(result.slabFallback?'classic (slab skipped)':'classic'))+
+      expLooseChip(result.loose)+
+      expOpenChip(result.closedFix)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
       expChip('time',result.ms+'ms')+
       expTimeSplitChip(result.msBreakdown)+
@@ -754,6 +763,17 @@ function expTimeSplitChip(bd){
     '<div class="ic-sub">where the time went</div>'+
     '<div class="split">'+seg(fld,'var(--warn)')+seg(mesh,'var(--mesh)')+seg(simp,'#7c6ff7')+'</div>'+
     '<div class="splitkey">'+key(fld,'var(--warn)','field','in mesh')+key(mesh,'var(--mesh)','mesh','\u2014')+key(simp,'#7c6ff7','simplify','\u2014')+'</div></div>';
+}
+// v0.15.0: loose pieces removed by the clean-up (worker/m35 removeLoosePieces).
+function expLooseChip(l){
+  if(!l||!l.dropped) return '';
+  const v=l.droppedMm3, vs=v<0.01?v.toExponential(1):v.toFixed(v<1?3:1);
+  return expChip('loose pieces removed', l.dropped+' \u00b7 '+vs+' mm\u00b3');
+}
+// v0.15.0: a classic result that isn't closed (worker/m90 counts its open edges).
+function expOpenChip(c){
+  if(!c||!c.openEdges) return '';
+  return '<div class="exp-chip exp-chip-warn" title="Walls about one mesh edge thick can tear when the classic mesh is simplified. The slab mesher or a finer quality avoids it.">open edges <b>'+c.openEdges.toLocaleString()+'</b></div>';
 }
 function exportFieldCores(){ return Math.max(1,(navigator.hardwareConcurrency||2)-1); }
 function expChip(l,v){return`<div class="exp-chip">${esc(l)} <b>${esc(v)}</b></div>`;}

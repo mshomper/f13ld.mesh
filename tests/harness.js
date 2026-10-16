@@ -115,6 +115,8 @@ async function run(site, root, recipe, opts) {
     misses.push(url); return route.abort();
   });
   if (opts.cores) await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), opts.cores);
+  // v0.15.0: MESHER=slab|classic, LOOSE=<fraction> pick the Export settings (older builds ignore them)
+  if (opts.mesher || opts.loose != null) await ctx.addInitScript(([m, l]) => { try { if (m) localStorage.setItem('f13ld.mesh.mesher', m); if (l != null) localStorage.setItem('f13ld.mesh.looseFrac', String(l)); } catch (e) {} }, [opts.mesher || null, opts.loose != null ? opts.loose : null]);
   const page = await ctx.newPage();
   const errors = [], logs = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -167,24 +169,52 @@ async function run(site, root, recipe, opts) {
   return result;
 }
 
+// v0.15.0 geometry summary of a 3MF model: volume, area, closed (every
+// directed edge once with its reverse), triangle count.
+function geom(xml) {
+  const V = [], T = [];
+  for (const m of xml.matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/g)) V.push(+m[1], +m[2], +m[3]);
+  for (const m of xml.matchAll(/<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"/g)) T.push(+m[1], +m[2], +m[3]);
+  let vol = 0, area = 0;
+  const nV = V.length / 3, f = new Float64Array(T.length), r = new Float64Array(T.length);
+  for (let t = 0; t < T.length; t += 3) {
+    const a = 3 * T[t], b = 3 * T[t + 1], c = 3 * T[t + 2];
+    vol += (V[a] * (V[b + 1] * V[c + 2] - V[b + 2] * V[c + 1]) + V[a + 1] * (V[b + 2] * V[c] - V[b] * V[c + 2]) + V[a + 2] * (V[b] * V[c + 1] - V[b + 1] * V[c])) / 6;
+    const ux = V[b] - V[a], uy = V[b + 1] - V[a + 1], uz = V[b + 2] - V[a + 2], vx = V[c] - V[a], vy = V[c + 1] - V[a + 1], vz = V[c + 2] - V[a + 2];
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+    for (let q = 0; q < 3; q++) { const x = T[t + q], y = T[t + (q + 1) % 3]; f[t + q] = x * nV + y; r[t + q] = y * nV + x; }
+  }
+  f.sort(); r.sort(); let bad = 0;
+  for (let i = 0; i < f.length; i++) if (f[i] !== r[i] || (i && f[i] === f[i - 1])) bad++;
+  return { vol, area, tris: T.length / 3, open: bad };
+}
+const GEOM = !!process.env.GEOM, GEOM_TOL = +(process.env.GEOM_TOL || 2);   // % volume
 const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8'));
 (async () => {
   let fail = 0;
   for (const [name, spec] of Object.entries(R)) {
     if (FILTER && !name.includes(FILTER)) continue;
-    const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export };
+    const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export,
+      mesher: process.env.MESHER, loose: process.env.LOOSE != null ? +process.env.LOOSE : undefined };
     const a = await run('orig.test', ORIG, spec.recipe, opts);
     const b = await run('new.test', NEW, spec.recipe, opts);
     const same = a.model !== undefined && a.model === b.model;
-    const ok = same && !b.errors.length && !b.misses.length && a.errors.length === b.errors.length;
+    let ok = same && !b.errors.length && !b.misses.length && a.errors.length === b.errors.length;
+    let gline = '';
+    if (GEOM && a.model !== undefined && b.model !== undefined) {
+      // slab vs classic: same shape within GEOM_TOL % volume, new one closed
+      const ga = geom(a.model), gb = geom(b.model), dv = 100 * (gb.vol / ga.vol - 1), da = 100 * (gb.area / ga.area - 1);
+      ok = !b.errors.length && !b.misses.length && gb.open === 0 && Math.abs(dv) <= GEOM_TOL;
+      gline = `  vol ${dv >= 0 ? '+' : ''}${dv.toFixed(2)}%  area ${da >= 0 ? '+' : ''}${da.toFixed(2)}%  open edges ${ga.open}/${gb.open}`;
+    }
     if (!ok) fail++;
-    console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(22)} tris ${a.tris}/${b.tris}  verts ${a.verts}/${b.verts}  identical=${same}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(22)} tris ${a.tris}/${b.tris}  verts ${a.verts}/${b.verts}  identical=${same}${gline}`);
     for (const [lbl, r] of [['orig', a], ['new', b]]) {
       if (r.errors.length) console.log(`   ${lbl} errors:`, r.errors.slice(0, 4));
       if (r.misses.length) console.log(`   ${lbl} unserved:`, r.misses.slice(0, 4));
       if (r.exportErr) console.log(`   ${lbl} export:`, r.exportErr, r.box);
       if (r.preview && r.preview.err) console.log(`   ${lbl} errorBox:`, r.preview.err);
-      if (process.env.VERBOSE) { console.log(`   ${lbl} report:`, r.report || ''); for (const l of r.logs) if (l.includes('[export][field]')) console.log(`   ${lbl}`, l); }
+      if (process.env.VERBOSE) { console.log(`   ${lbl} report:`, r.report || ''); for (const l of r.logs) if (l.includes('[export][field]') || l.includes('[export][slab]')) console.log(`   ${lbl}`, l); }
     }
   }
   console.log(fail ? `${fail} FAILED` : 'ALL PASS');

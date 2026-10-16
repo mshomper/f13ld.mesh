@@ -209,6 +209,9 @@ Nothing else should need to change; if it does, the registry is missing a field.
 | `m31-weld-grid.js` | Manifold `levelSet` grid points, weld field bake and cache lookup |
 | `m32-export-field.js` | Single-body export field (shape clip, structure transform, trim-to-nodes, cube sign flip), shared by the mesh worker and the field bake workers |
 | `m33-field-pool.js` | Multi-core field pre-bake for single-body exports: starts `field-bake-worker.js` workers from inside the mesh worker |
+| `m34-slab-mesher.js` | v0.15.0 slab mesher: marching tetrahedra on Manifold's body-centred grid, one z slab at a time, seams keyed so slabs join exactly |
+| `m35-slab-cleanup.js` | Per-slab simplify with seams locked, tear-safe simplify, seam-band pass, closed-mesh check, loose-piece clean-up (every export) |
+| `m36-slab-pool.js` | Runs the slab mesher on every core through `field-bake-worker.js` (or in the mesh worker as one slab) and joins the slabs |
 | `m40-preview-bake.js` | Preview field bake (whole grid or z-slab), shared by the mesh worker and `preview-bake-worker.js` |
 | `m90-onmessage.js` | Export message handler (preview bakes go to `m40`) |
 | `shape-sdf-worker.js` · `hu-bake-worker.js` · `weld-bake-worker.js` · `field-bake-worker.js` | Shape SDF, hyperuniform, weld-field and single-body field slab bakes |

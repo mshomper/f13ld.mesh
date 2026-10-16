@@ -139,7 +139,7 @@ Each phase ships on its own and is click-tested before the next.
 
 ---
 
-## Appendix · parallel slab mesher (for the same follow-up session)
+## Appendix · parallel slab mesher (built in v0.15.0 — see `SESSION_RECAP_2026-10-16c.md`)
 
 Findings from the 2026-10-15 Node prototypes (scratch only, not in the repo):
 

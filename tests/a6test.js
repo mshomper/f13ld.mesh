@@ -20,10 +20,10 @@ const REC={family:'beam',beams:[[-1,-1,-1,1,1,1,1],[-1,-1,1,1,1,-1,1],[-1,1,-1,1
   await page.goto(`http://${site}/index.html?r=`+encodeURIComponent(JSON.stringify(REC)));
   await page.waitForTimeout(1500);
   await page.setInputFiles('#shapeInput',path.join(__dirname,'fixtures','body.stl'));
-  await page.waitForSelector('.shapeCard[data-body-id]',{timeout:120000});
+  await page.waitForSelector(UI_BODY,{timeout:120000});
   await page.waitForFunction(()=>document.getElementById('computeOverlay').classList.contains('hidden'),null,{timeout:120000}).catch(()=>{});
-  await page.click('.libraryChip'); await page.waitForTimeout(800);
-  await page.evaluate(()=>{const i=document.getElementById('shapeCellSizeMm');i.value=6;window.onCellSizeInput();});
+  await uiAssignRecipe(page); await page.waitForTimeout(800);
+  await uiSetCell(page,6);
   await page.waitForTimeout(1500);
   await page.evaluate(()=>window.setQual('draft'));
   const sub=[]; const iv=setInterval(async()=>{try{const t=await page.evaluate(()=>document.getElementById('coSub').textContent); if(t&&!sub.includes(t))sub.push(t);}catch(e){}},700);

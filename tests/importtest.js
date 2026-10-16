@@ -26,7 +26,7 @@ async function run(file) {
   await page.goto(`http://${site}/index.html?r=` + encodeURIComponent(JSON.stringify(REC)));
   await page.waitForTimeout(1500);
   await page.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', file));
-  await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 120000 });
+  await page.waitForSelector(UI_BODY, { timeout: 120000 });
   await page.waitForTimeout(1500);
   const dl = page.waitForEvent('download', { timeout: 120000 });
   page.evaluate(() => window.triggerExport()).catch(() => {});

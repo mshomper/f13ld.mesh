@@ -41,10 +41,10 @@ async function one(body, cad, qual, cellMm) {
   await page.goto(`http://${site}/index.html?r=` + encodeURIComponent(JSON.stringify(FULL)));
   await page.waitForTimeout(1500);
   await page.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', body));
-  await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 180000 });
+  await page.waitForSelector(UI_BODY, { timeout: 180000 });
   await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 180000 }).catch(() => {});
-  await page.click('.libraryChip'); await page.waitForTimeout(800);
-  await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); i.value = v; window.onCellSizeInput(); }, cellMm);
+  await uiAssignRecipe(page); await page.waitForTimeout(800);
+  await uiSetCell(page, cellMm);
   await page.waitForTimeout(1500);
   await page.evaluate(q => window.setQual(q), qual);
   const dl = page.waitForEvent('download', { timeout: 600000 });

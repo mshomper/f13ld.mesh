@@ -35,9 +35,9 @@ async function idle(page, ms = 120000) {
   await page.waitForTimeout(400);
 }
 async function addBody(page, file) {
-  const n = await page.evaluate(() => document.querySelectorAll('.shapeCard[data-body-id]').length);
+  const n = await uiBodyCount(page);
   await page.setInputFiles('#shapeInput', file);
-  await page.waitForFunction(n => document.querySelectorAll('.shapeCard[data-body-id]').length > n, n, { timeout: 180000 });
+  await page.waitForFunction(([n, S]) => document.querySelectorAll(S).length > n, [n, UI_BODY], { timeout: 180000 });
   await idle(page, 180000);
 }
 async function both(fn) { const out = {}; for (const [lbl, root] of [['old', OLD], ['new', NEW]]) out[lbl] = await fn(root); return out; }
@@ -64,6 +64,7 @@ T['B7 out-of-order preview keeps the right field range'] = async () => {
 T['B8 open-cube export respects voxel cap'] = async () => {
   const out = await both(async root => {
     const p = await open(root, q(R['noise-simplex-sheet'].recipe)); await idle(p);
+    await uiOpenDrawer(p, 'exp');
     await p.evaluate(() => { const el = document.getElementById('expDomainMm'); el.value = 100; el.dispatchEvent(new Event('input')); window.setQual('low');
       window.__msgs = []; const op = Worker.prototype.postMessage; Worker.prototype.postMessage = function (m, t) { if (m && m.mode === 'export') window.__msgs.push(m.edgeWorld); return op.call(this, m, t); }; });
     const est = await p.evaluate(() => document.getElementById('expEstimate').textContent);
@@ -78,8 +79,8 @@ T['D1 removing a solid active body restores the cube preview'] = async () => {
   const out = await both(async root => {
     const p = await open(root, q(R['tpms-gyroid-sheet'].recipe)); await idle(p);
     await addBody(p, F('body.stl'));
-    await p.click('.shapeCard[data-body-id] .sc-x'); await p.waitForTimeout(800); await idle(p);
-    const r = await p.evaluate(() => ({ solid: rm._solidMode, bodies: document.querySelectorAll('.shapeCard[data-body-id]').length }));
+    await uiRemoveBody(p); await p.waitForTimeout(800); await idle(p);
+    const r = await p.evaluate(S => ({ solid: rm._solidMode, bodies: document.querySelectorAll(S).length }), UI_BODY);
     await p.close2(); return r;
   });
   return { pass: out.new.solid === 0 && out.new.bodies === 0, detail: out };
@@ -100,10 +101,10 @@ T['D3 a new body starts with its own structure settings'] = async () => {
   const out = await both(async root => {
     const p = await open(root, q(R['tpms-gyroid-sheet'].recipe)); await idle(p);
     await addBody(p, F('body.stl'));
-    await p.evaluate(() => { document.getElementById('sxRotX').value = 30; window.onStructXformInput(); }); await p.waitForTimeout(500);
+    await uiSetXform(p, 'rotXDeg', 30); await p.waitForTimeout(500);
     await addBody(p, F('box50n.stl'));
     const ids = await p.evaluate(() => [...window.__f13ld_modeA.bodies.keys()]);
-    await p.click(`.shapeCard[data-body-id="${ids[1]}"] .sc-name`); await p.waitForTimeout(800); await idle(p);
+    await uiSelectBody(p, ids[1]); await p.waitForTimeout(800); await idle(p);
     const r = await p.evaluate(() => ({ active2: window.__f13ld_modeA.activeBodyId, rotX: structureTransform.rotXDeg, input: document.getElementById('sxRotX').value }));
     await p.close2(); return { rotX: r.rotX, input: r.input };
   });
@@ -116,9 +117,9 @@ T['D5 two body files dropped back-to-back both import'] = async () => {
     await p.waitForTimeout(150);
     await p.setInputFiles('#shapeInput', F('box50n.stl'));
     await p.waitForTimeout(3000);
-    await p.waitForFunction(() => document.querySelectorAll('.shapeCard[data-body-id]').length >= 2, null, { timeout: 60000 }).catch(() => {});
+    await p.waitForFunction(S => document.querySelectorAll(S).length >= 2, UI_BODY, { timeout: 60000 }).catch(() => {});
     await idle(p);
-    const r = await p.evaluate(() => ({ bodies: window.__f13ld_modeA.bodies.size, cards: document.querySelectorAll('.shapeCard[data-body-id]').length, pendingErr: !!document.querySelector('.sc-status.err') }));
+    const r = await p.evaluate(([B, E]) => ({ bodies: window.__f13ld_modeA.bodies.size, cards: document.querySelectorAll(B).length, pendingErr: !!document.querySelector(E) }), [UI_BODY, UI_ERR]);
     r.errors = p.errors.slice(0, 2); await p.close2(); return r;
   });
   return { pass: out.new.bodies === 2 && out.new.cards === 2 && !out.new.errors.length, detail: out };
@@ -127,9 +128,9 @@ T['D6 structure edit keeps the selected preview quality'] = async () => {
   const out = await both(async root => {
     const p = await open(root, q(R['noise-ridged-half'].recipe)); await idle(p);
     await addBody(p, F('body.stl'));
-    await p.click('.libraryChip'); await idle(p);
+    await uiAssignRecipe(p); await idle(p);
     await p.click('#btnMed'); await idle(p);
-    await p.evaluate(() => { document.getElementById('sxRotZ').value = 20; window.onStructXformInput(); });
+    await uiSetXform(p, 'rotZDeg', 20);
     await p.waitForTimeout(800); await idle(p);
     const r = await p.evaluate(() => rm._quality); await p.close2(); return { quality: String(r) };
   });
@@ -138,6 +139,7 @@ T['D6 structure edit keeps the selected preview quality'] = async () => {
 T['QW domain size survives a panel re-render'] = async () => {
   const out = await both(async root => {
     const p = await open(root, q(R['tpms-gyroid-sheet'].recipe)); await idle(p);
+    await uiOpenDrawer(p, 'exp');
     await p.fill('#expDomainMm', '25'); await p.dispatchEvent('#expDomainMm', 'input');
     await p.evaluate(() => reloadActiveRecipeIntoPreview()); await idle(p);
     const v = await p.evaluate(() => document.getElementById('expDomainMm').value); await p.close2(); return { domain: v };

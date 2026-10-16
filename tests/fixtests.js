@@ -30,18 +30,19 @@ async function open(root, query, cores = 8) {
   return page;
 }
 const q = r => '?r=' + encodeURIComponent(JSON.stringify(r));
-const state = page => page.evaluate(() => ({
+const state = page => page.evaluate(([UI_BODY, UI_RECIPE]) => ({
   err: (document.getElementById('errorBox').style.display !== 'none') ? document.getElementById('errorBox').textContent : '',
   overlay: !document.getElementById('computeOverlay').classList.contains('hidden'),
   co: document.getElementById('coMain').textContent + ' / ' + document.getElementById('coSub').textContent,
   badge: (document.getElementById('typeBadge') || {}).textContent,
   tri: (document.getElementById('triPill') || {}).textContent,
   report: ((document.getElementById('expReport') || {}).textContent || '').trim(),
-  bodies: document.querySelectorAll('.shapeCard[data-body-id]').length,
-  chips: document.querySelectorAll('.libraryChip').length,
-  libRow: (document.getElementById('recipeLibraryRow') || {}).style?.display,
+  bodies: document.querySelectorAll(UI_BODY).length,
+  chips: document.querySelectorAll(UI_RECIPE).length,
+  // old UI: the library row's display; rail UI: the 'add recipe' tile is showing ('flex' = shown)
+  libRow: document.getElementById('railRecipes') ? (document.querySelector('#railRecipes [data-act="addRecipe"]') ? 'flex' : 'none') : (document.getElementById('recipeLibraryRow') || {}).style?.display,
   summary: ((document.getElementById('summaryContent') || {}).innerText || '').slice(0, 120),
-}));
+}), [UI_BODY, UI_RECIPE]);
 async function waitIdle(page, ms = 120000) {
   await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: ms }).catch(() => {});
   await page.waitForTimeout(500);
@@ -55,10 +56,10 @@ async function exportOnce(page, qual = 'draft', timeout = 300000) {
 }
 async function addBody(page, file, cellMm) {
   await page.setInputFiles('#shapeInput', file);
-  await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 180000 });
+  await page.waitForSelector(UI_BODY, { timeout: 180000 });
   await waitIdle(page, 180000);
-  await page.click('.libraryChip'); await page.waitForTimeout(800);
-  if (cellMm) await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); i.value = v; window.onCellSizeInput(); }, cellMm);
+  await uiAssignRecipe(page); await page.waitForTimeout(800);
+  if (cellMm) await uiSetCell(page, cellMm);
   await waitIdle(page);
 }
 
@@ -116,9 +117,9 @@ T['B3 large OBJ body imports'] = async () => {
   for (const [lbl, root] of [['old', OLD], ['new', NEW]]) {
     const p = await open(root, q(R['tpms-gyroid-sheet'].recipe));
     await p.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', 'bigsphere.obj'));
-    await p.waitForSelector('.shapeCard[data-body-id], .sc-status.err', { timeout: 240000 }).catch(() => {});
+    await p.waitForSelector(UI_BODY + ', ' + UI_ERR, { timeout: 240000 }).catch(() => {});
     await waitIdle(p, 240000);
-    out[lbl] = await p.evaluate(() => ({ body: document.querySelectorAll('.shapeCard[data-body-id]').length, err: (document.querySelector('.sc-status.err') || {}).textContent || '' }));
+    out[lbl] = await p.evaluate(([B, E]) => ({ body: document.querySelectorAll(B).length, err: (document.querySelector(E) || {}).textContent || '' }), [UI_BODY, UI_ERR]);
     await p.close2();
   }
   return { pass: out.new.body === 1 && !out.new.err, detail: out };
@@ -151,7 +152,7 @@ T['B6 cancel then export again'] = async () => {
 T['D4 removing last recipe keeps bodies'] = async () => {
   const p = await open(NEW, q(R['shape-tpms'].recipe));
   await addBody(p, path.join(__dirname, 'fixtures', 'body.stl'), 3);
-  await p.click('.libraryChip .lc-x'); await p.waitForTimeout(1500);
+  await uiRemoveRecipe(p); await p.waitForTimeout(1500);
   const s = await state(p);
   const solid = await exportOnce(p, 'draft');
   await p.close2();

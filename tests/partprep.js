@@ -1,5 +1,8 @@
 // v0.10.0 part prep checks (dev only).
 // Usage: node partprep.js <build> [outDir]
+// v0.12.0 UI: the panel is the Configure drawer (Part prep tab, #ppBox), the live
+// estimate #inspEst and the measured numbers #inspMeas in the inspector; body and
+// recipe steps go through the ui* helpers shared with harness.js.
 //  1. Open-cube gyroid sheet: live estimate vs measured volume filled; the
 //     panel's measured volume/area vs an independent read of the 3MF.
 //  2. Solid fill clipped to the 50 × 14 × 6 mm box: volume, area, plate
@@ -58,10 +61,10 @@ async function open(recipe, shape, cellMm, tall) {
   await page.waitForTimeout(1500);
   if (shape) {
     await page.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', shape));
-    await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 180000 });
+    await page.waitForSelector(UI_BODY, { timeout: 180000 });
     await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 180000 }).catch(() => {});
-    await page.click('.libraryChip'); await page.waitForTimeout(800);
-    if (cellMm) await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); i.value = v; window.onCellSizeInput(); }, cellMm);
+    await uiAssignRecipe(page); await page.waitForTimeout(800);
+    if (cellMm) await uiSetCell(page, cellMm);
   }
   await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 180000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -106,33 +109,39 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     await browser.close(); return;
   }
   if (process.env.SIDEBAR) {
+    // v0.12.0 version of the old sidebar check: no sideways overflow in the rail,
+    // inspector and drawer; recipe details popover opens on hover and stays inside
+    // the window; an inspector card folds; the Measured card shows numbers after export.
     const S = process.env.SIDEBAR;
     for (const name of ['foam2-plateau-lloyd8-stretch', 'tpms-gyroid-sheet', 'beam-bcc']) {
       const { browser, page, errors } = await open(R[name].recipe);
       await page.waitForTimeout(1000);
+      await uiOpenDrawer(page, 'prep');
       const info = await page.evaluate(() => {
-        const p = document.getElementById('panel');
-        return { overflowX: p.scrollWidth - p.clientWidth, card: (document.querySelector('.sb-card') || {}).innerText,
-          groups: [...document.querySelectorAll('.sb-group')].map(g => g.dataset.key + (g.classList.contains('collapsed') ? ' (collapsed)' : '')) };
+        const ov = id => { const e = document.getElementById(id); return e ? e.scrollWidth - e.clientWidth : 0; };
+        return { overflowX: Math.max(ov('rail'), ov('inspector'), ov('drawer'), ov('dock')), card: (document.querySelector('.rl-rc') || {}).innerText,
+          groups: [...document.querySelectorAll('#inspector .ic')].map(g => g.id + (g.classList.contains('collapsed') ? ' (collapsed)' : '')) };
       });
       console.log(name, JSON.stringify(info));
       check(name + ': no sideways overflow', info.overflowX <= 0, info.overflowX);
+      await page.click('#cfgBtn');   // close the drawer again
       await page.screenshot({ path: S + '/sb-' + name + '.png' });
-      await page.hover('.sb-card'); await page.waitForTimeout(300);
-      const pop = await page.evaluate(() => { const p = document.getElementById('sbDetails'); const r = p.getBoundingClientRect(); return { shown: !p.hidden, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth }; });
+      await page.hover('.rl-rc'); await page.waitForTimeout(400);
+      const pop = await page.evaluate(() => { const p = document.getElementById('rlPop'); const r = p.getBoundingClientRect(); return { shown: !p.hidden, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth }; });
       check(name + ': details on hover, inside the window', pop.shown && pop.left >= 0 && pop.right <= pop.vw, JSON.stringify(pop));
       await page.screenshot({ path: S + '/sb-' + name + '-hover.png' });
       if (name === 'tpms-gyroid-sheet') {
         await page.mouse.move(5, 5);
-        await page.click('.sb-group[data-key="part-prep"] .sb-gh');
-        const c = await page.evaluate(() => document.querySelector('.sb-group[data-key="part-prep"]').classList.contains('collapsed'));
-        check('part prep collapses', c);
-        await page.click('.sb-group[data-key="part-prep"] .sb-gh');
+        const before = await page.evaluate(() => document.getElementById('inspEst').classList.contains('collapsed'));
+        await page.click('#inspEst [data-fold]');
+        const c = await page.evaluate(() => document.getElementById('inspEst').classList.contains('collapsed'));
+        check('estimate card collapses', c !== before);
+        await page.click('#inspEst [data-fold]');
         await page.evaluate(() => { ppTogglePrintView(); ppSetPlateOpacity(35); });
         await page.waitForTimeout(2500);
         const r = await exportNow(page, 'draft');
-        const peek = await page.evaluate(() => document.getElementById('sbPeek-measured').textContent);
-        check('measured peek after export', /mm³/.test(peek), peek);
+        const peek = await page.evaluate(() => document.getElementById('ppExact').textContent);
+        check('measured numbers after export', /mm³/.test(peek), peek.slice(0, 60));
         await page.screenshot({ path: S + '/sb-printview-op35.png' });
         void r;
       }
@@ -204,7 +213,7 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
   {
     const { browser, page, errors } = await open(FULL, null);
     await page.setInputFiles('#shapeInput', path.join(__dirname, 'fixtures', 'box50.stl'));
-    await page.waitForSelector('.shapeCard[data-body-id]', { timeout: 180000 });
+    await page.waitForSelector(UI_BODY, { timeout: 180000 });
     await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 180000 }).catch(() => {});
     await page.waitForTimeout(1500);
     await page.evaluate(() => { ppSetProc('polypbf'); ppSetUp('-Y'); });
@@ -217,8 +226,7 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
     check('solid: powder bed needs no supports', s.critDeg == null && s.supportArea === 0);
     check('solid: PA12 density', Math.abs(s.rho - 0.93) < 1e-9 && Math.abs(s.massG - 4200 * 0.93 / 1000) < 1e-6, s.massG);
     const dl = page.waitForEvent('download', { timeout: 30000 });
-    await page.click('.sb-group[data-key="measured"] .sb-gh');   // starts collapsed
-    await page.click('#ppExact .pp-btn');
+    await page.click('#ppExact .ic-btn');   // Download print report (Measured card unfolds after an export)
     const d = await dl; const md = fs.readFileSync(await d.path(), 'utf8');
     check('report: downloaded .md', /_print-report\.md$/.test(d.suggestedFilename()) && md.includes('| Part volume | 4,200 mm³ |'), d.suggestedFilename());
     if (OUT) fs.writeFileSync(path.join(OUT, d.suggestedFilename()), md);

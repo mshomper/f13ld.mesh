@@ -1,6 +1,6 @@
 # F13LD.mesh — session recap, 2026-10-16 · v0.13.0 preview rebuild P1
 
-**Branch:** `preview-rebuild` (not merged; Matt click-tests first). Spec: `docs/PREVIEW_REBUILD_SPEC.md`, phase P1 (caches and no distortion).
+**Main:** v0.13.0, merged from `preview-rebuild` on 2026-10-16 after Matt's click-tests (weld visibility and single-part view fixes below). Spec: `docs/PREVIEW_REBUILD_SPEC.md`, phase P1 (caches and no distortion).
 
 ## Matt's decisions
 - Slider response: as instant as possible; some delay is acceptable for noise / grain.

@@ -86,7 +86,13 @@ function railSelectWeld(gid){
 let _rlPrevT=0;
 function railPreviewSoon(){
   clearTimeout(_rlPrevT);
-  _rlPrevT=setTimeout(()=>{ if(typeof triggerPreview==='function' && currentRecipe) triggerPreview(rm&&rm._quality||'low'); },250);
+  // v0.13.0: hold the last frame until the re-bake lands; welds re-bake even
+  // when their selected member is solid.
+  const ag=(typeof activeGroupId==='function')?activeGroupId():null;
+  const welded=!!(ag && groupMembers(ag).length>=2);
+  if(!welded && !currentRecipe) return;
+  if(rm && rm.holdView) rm.holdView();
+  _rlPrevT=setTimeout(()=>{ if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low'); },250);
 }
 
 // ── Recipes card ──────────────────────────────────────────────────────────

@@ -60,5 +60,10 @@ shapeDZ.addEventListener('dragover',e=>{e.stopPropagation();e.preventDefault();s
 shapeDZ.addEventListener('dragleave',e=>{shapeDZ.classList.remove('dragover');});
 shapeDZ.addEventListener('drop',e=>{e.stopPropagation();e.preventDefault();shapeDZ.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f&&isShapeFile(f))handleShapeFile(f);});
 
-// ── Cell size stale detection (event delegation — input is dynamically rendered) ──
-document.addEventListener('input',e=>{if(e.target&&e.target.id==='shapeCellSizeMm'&&importedShape&&!recipeIsPeriodic(currentRecipe)){setStale();}});
+// ── Cell size stale detection ────────────────────────────────────────────
+// v0.13.0: removed — an aperiodic part re-bakes by itself after a cell size
+// change (railSetCellMm), so the "outdated" banner no longer applies.
+
+// v0.13.0: start a few preview bake workers once the page is idle, so the
+// first preview doesn't wait for worker start-up.
+setTimeout(()=>{ try{ if(typeof previewPoolWarm==='function') previewPoolWarm(3); }catch(e){} }, 1200);

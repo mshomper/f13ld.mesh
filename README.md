@@ -169,7 +169,7 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `19-f13-shade.js` · `20-raymarcher.js` · `21-gimbal.js` · `22-view-opts.js` · `23-view-strip.js` | Shared F13LD shading block · WebGL2 preview (section plane, show joins) · orientation gimbal · viewer shading menu · view strip tabs |
 | `30-shape-import.js` · `31-body-cards.js` | Body file intake · body / weld / fill state functions (assign, fill, skin, weld together, separate, join rule) |
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
-| `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline |
+| `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline (v0.13.0: warm bake-worker pool, slab split, cancel, baked-field cache in `42`; held view and one-step commit in `44`) |
 | `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
 | `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` · `55-rail.js` · `56-dock.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · homogenization card · left rail (recipes, parts, welds, editor) · dock, Configure drawer, progress strip, inspector |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
@@ -197,8 +197,10 @@ Nothing else should need to change; if it does, the registry is missing a field.
 | `m31-weld-grid.js` | Manifold `levelSet` grid points, weld field bake and cache lookup |
 | `m32-export-field.js` | Single-body export field (shape clip, structure transform, trim-to-nodes, cube sign flip), shared by the mesh worker and the field bake workers |
 | `m33-field-pool.js` | Multi-core field pre-bake for single-body exports: starts `field-bake-worker.js` workers from inside the mesh worker |
-| `m90-onmessage.js` | Bake / preview / export message handler |
+| `m40-preview-bake.js` | Preview field bake (whole grid or z-slab), shared by the mesh worker and `preview-bake-worker.js` |
+| `m90-onmessage.js` | Export message handler (preview bakes go to `m40`) |
 | `shape-sdf-worker.js` · `hu-bake-worker.js` · `weld-bake-worker.js` · `field-bake-worker.js` | Shape SDF, hyperuniform, weld-field and single-body field slab bakes |
+| `preview-bake-worker.js` | Preview bakes (SDF families + `m40`, no Manifold), kept warm by the pool in `42-preview-bake.js` |
 
 Worker files are requested with `?v=<version>` so a deploy never mixes a fresh page with stale cached worker code. Bump `F13LD_MESH_VERSION` in `01-config.js` (and the header label in `index.html`) on each release.
 

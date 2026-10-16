@@ -43,6 +43,8 @@ Most scripts take two folders: an older build and a newer one. Each is a plain c
 | `importtest.js <build> <label>` | STL with real normals welds watertight; inch-unit, moved 3MF lands in mm at the right place. |
 | `a6test.js <build> <label>` | Thin-strut beam in shape mode exports (coarse pass fallback). |
 | `fieldbake.js <build> [case] [quality]` | v0.11.0 single-body field pre-bake: Cancel while the field is computed on several cores leaves no workers running, and the next export works and reports its cores. `CORES=n` (default 4). |
+| `slabbake.js <build> [N] [slabs]` | v0.13.0, Node, no browser: preview bakes split into z-slabs and stitched equal the one-worker bake bit for bit (field, range, Lipschitz) for every `recipes.json` case, SDF and raw, and a 3-member weld. |
+| `previewcache.js <build>` | v0.13.0 preview rebuild P1: switching lattice parts, selecting a solid part and switching inside a weld cause no bake; weld rotation / wall offset re-bake with the view held and the camera kept; a newer preview cancels the older bake; no console errors. `CORES=n` (default 6). |
 | `fieldtest.js <build> <label>` | Loads the worker SDF code in Node; checks preview-vs-export agreement for hyperuniform/RD, RD tile seam, weld hyperuniform tiling. |
 | `radtest.js <build>` | Trim-to-nodes strut radius vs measured radius. |
 | `loadorder.js <build>` | Static check that no load-time code uses something from a later-numbered file. |

@@ -30,6 +30,10 @@ function MeshRaymarcher(canvas){
   this._assemblyMode=false;
   this.worldMin=[-5,-5,-5]; this.worldMax=[5,5,5]; this.isPeriodic=true;
   this._quality='draft';
+  // v0.13.0: grid textures by grid object, keyed field textures (LRU), scratch
+  // field textures for setScaffoldField, held / last-frame scene snapshots.
+  this._gridTex=new Map(); this._fieldTexLRU=new Map(); this._fieldScratch=[];
+  this._held=null; this._heldAt=0; this._holdTimer=null; this._lastFrame=null;
   // v0.9.5: viewer shading options, persisted per browser.
   this.viewOpts=this._loadViewOpts(); this._interacting=false;
   this.quadBuf=gl.createBuffer();
@@ -53,55 +57,86 @@ MeshRaymarcher.prototype.setViewOption=function(key,on){
 // Interaction state: soft shadows pause while orbiting/panning/zooming.
 MeshRaymarcher.prototype._beginInteract=function(){this._interacting=true;};
 MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._dirty=true;}};
-MeshRaymarcher.prototype._uploadTexture3D=function(data,N,minV,maxV,slot){
-  var gl=this.gl;
-  if(slot==='shape'){
-    // Shape SDF: R16F stores raw mm distances directly. LINEAR filtering of
-    // R16F is core WebGL 2.0 — no extension dependency. Precision is ~0.01mm
-    // at SDF=10mm range (vs R8's 0.09mm), which eliminates the gradient step-
-    // wise noise responsible for specular speckle on cap surfaces. R16F range
-    // (±65504) comfortably exceeds any realistic shape bbox distance.
-    if(!this.shapeTex)this.shapeTex=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D,this.shapeTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,data);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_3D,null);
-  }else{
-    // Scaffold raw field: R8. (A v0.7.x R16F experiment regressed cube/periodic
-    // previews — a filterable half-float 3D texture with REPEAT wrap at NPOT grid
-    // sizes tiles inconsistently across drivers, whereas R8 UNORM is reliable.
-    // Reverted. Field varies smoothly and topology is applied in shader, so 8-bit
-    // is fine here.) Any future precision bump must be scoped to the non-tiled
-    // assembly field only and validated in isolation.
-    var range=Math.max(maxV-minV,1e-6);
-    var bytes=new Uint8Array(N*N*N);
-    for(var i=0;i<data.length;i++)bytes[i]=Math.round(Math.max(0,Math.min(1,(data[i]-minV)/range))*255);
-    if(!this.fieldTex)this.fieldTex=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D,this.fieldTex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    // REPEAT so hardware LINEAR filtering interpolates continuously across
-    // period boundaries. Periodic scaffolds pass raw uvw to the sampler (no
-    // fract()); non-periodic scaffolds clamp uvw to [0,1] in the shader so
-    // REPEAT here is a no-op for them. Using CLAMP_TO_EDGE would flatten the
-    // field in the half-voxel skin along each boundary plane and create a
-    // discontinuity the ray marcher can't traverse cleanly.
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.REPEAT);
-    gl.bindTexture(gl.TEXTURE_3D,null);
-  }
-  this._dirty=true;
+// v0.13.0: mm-distance grid {N, data} (shape / ghost / join SDF) as a texture,
+// cached by the grid OBJECT and uploaded on first use only. A grid's data must
+// not be rewritten in place (bodies replace sdfGrid / sdfGhost with new objects).
+// Shape SDF: R16F stores raw mm distances directly. LINEAR filtering of
+// R16F is core WebGL 2.0 — no extension dependency. Precision is ~0.01mm
+// at SDF=10mm range (vs R8's 0.09mm), which eliminates the gradient step-
+// wise noise responsible for specular speckle on cap surfaces. R16F range
+// (±65504) comfortably exceeds any realistic shape bbox distance.
+MeshRaymarcher.prototype._texForGrid=function(grid){
+  var gl=this.gl; if(!gl||!grid) return null;
+  if(!this._gridTex) this._gridTex=new Map();
+  var t=this._gridTex.get(grid); if(t) return t;
+  var N=grid.N; t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D,t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,N,N,N,0,gl.RED,gl.FLOAT,grid.data);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_3D,null);
+  this._gridTex.set(grid,t);
+  return t;
 };
-MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lipschitz,topology){
-  this._uploadTexture3D(data,N,fieldMin,fieldMax,'field');
+// v0.13.0: drop cached grid textures whose grid is no longer owned by a body
+// (liveGrids: Set of grid objects) and that nothing live or snapshotted draws.
+MeshRaymarcher.prototype.pruneGridTextures=function(liveGrids){
+  var gl=this.gl, m=this._gridTex; if(!gl||!m) return 0;
+  var used=new Set();
+  function addArr(a){ if(a) for(var i=0;i<a.length;i++) if(a[i]) used.add(a[i]); }
+  function addState(o){ if(!o) return; if(o.shapeTex) used.add(o.shapeTex); addArr(o._ghostTex); addArr(o._joinTex); }
+  addState(this); addState(this._held); addState(this._lastFrame);
+  var drop=[];
+  m.forEach(function(t,g){ if(!(liveGrids&&liveGrids.has(g))&&!used.has(t)) drop.push(g); });
+  for(var i=0;i<drop.length;i++){ gl.deleteTexture(m.get(drop[i])); m.delete(drop[i]); }
+  return drop.length;
+};
+// v0.13.0: scaffold raw field to R8 bytes (the one place for this conversion).
+// Scaffold raw field: R8. (A v0.7.x R16F experiment regressed cube/periodic
+// previews — a filterable half-float 3D texture with REPEAT wrap at NPOT grid
+// sizes tiles inconsistently across drivers, whereas R8 UNORM is reliable.
+// Reverted. Field varies smoothly and topology is applied in shader, so 8-bit
+// is fine here.) Any future precision bump must be scoped to the non-tiled
+// assembly field only and validated in isolation.
+MeshRaymarcher.prototype._fieldToR8=function(data,N,minV,maxV){
+  var range=Math.max(maxV-minV,1e-6);
+  var bytes=new Uint8Array(N*N*N);
+  for(var i=0;i<data.length;i++)bytes[i]=Math.round(Math.max(0,Math.min(1,(data[i]-minV)/range))*255);
+  return bytes;
+};
+// v0.13.0: upload a field into tex (created when null); returns the texture.
+MeshRaymarcher.prototype._uploadFieldTex=function(tex,data,N,minV,maxV){
+  var gl=this.gl;
+  var bytes=this._fieldToR8(data,N,minV,maxV);
+  if(!tex) tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D,tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,N,N,N,0,gl.RED,gl.UNSIGNED_BYTE,bytes);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  // REPEAT so hardware LINEAR filtering interpolates continuously across
+  // period boundaries. Periodic scaffolds pass raw uvw to the sampler (no
+  // fract()); non-periodic scaffolds clamp uvw to [0,1] in the shader so
+  // REPEAT here is a no-op for them. Using CLAMP_TO_EDGE would flatten the
+  // field in the half-voxel skin along each boundary plane and create a
+  // discontinuity the ray marcher can't traverse cleanly.
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.REPEAT);
+  gl.bindTexture(gl.TEXTURE_3D,null);
+  return tex;
+};
+// v0.13.0: true when the held or last-frame snapshot draws this field texture.
+MeshRaymarcher.prototype._snapHasField=function(t){
+  return !!t&&((this._held&&this._held.fieldTex===t)||(this._lastFrame&&this._lastFrame.fieldTex===t));
+};
+// v0.13.0: make tex the scaffold field and set everything that goes with it.
+MeshRaymarcher.prototype._applyField=function(tex,data,N,fieldMin,fieldMax,lipschitz,topology){
+  this.fieldTex=tex; this._dirty=true;
   // v0.10.0: kept for the part-prep live estimate (53-part-prep.js).
   this._fieldData=data;
   if(typeof ppScheduleEstimate==='function') ppScheduleEstimate();
@@ -109,9 +144,41 @@ MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lips
   this.lipschitz=lipschitz; this.bakeN=N;
   this.topology=topology||null;
 };
+MeshRaymarcher.prototype.setScaffoldField=function(data,N,fieldMin,fieldMax,lipschitz,topology){
+  // v0.13.0: alternate scratch textures, never one the live or a snapshot frame
+  // draws. If both are busy, the not-yet-drawn current one is rewritten in
+  // place; a third is made only when that one is snapshotted too.
+  var sc=this._fieldScratch||(this._fieldScratch=[]), tex=null, i;
+  for(i=0;i<sc.length&&!tex;i++){ if(sc[i]!==this.fieldTex&&!this._snapHasField(sc[i])) tex=sc[i]; }
+  if(!tex&&sc.length>=2){ for(i=0;i<sc.length&&!tex;i++){ if(sc[i]===this.fieldTex&&!this._snapHasField(sc[i])) tex=sc[i]; } }
+  if(tex) this._uploadFieldTex(tex,data,N,fieldMin,fieldMax);
+  else { tex=this._uploadFieldTex(null,data,N,fieldMin,fieldMax); sc.push(tex); }
+  this._applyField(tex,data,N,fieldMin,fieldMax,lipschitz,topology);
+};
+// v0.13.0: keyed field cache. r = {data,N,fieldMin,fieldMax,lipschitz,topology}.
+// A cached key binds without re-upload; LRU over FIELD_TEX_MAX textures.
+MeshRaymarcher.prototype.FIELD_TEX_MAX=12;
+MeshRaymarcher.prototype.useField=function(key,r){
+  if(!this.gl||!r) return;
+  var lru=this._fieldTexLRU||(this._fieldTexLRU=new Map());
+  key=String(key);
+  var tex=lru.get(key);
+  if(tex){ lru.delete(key); lru.set(key,tex); }
+  else { tex=this._uploadFieldTex(null,r.data,r.N,r.fieldMin,r.fieldMax); lru.set(key,tex); }
+  this._applyField(tex,r.data,r.N,r.fieldMin,r.fieldMax,r.lipschitz,r.topology);
+  this._evictFields();
+};
+// Oldest first; skips the live field and snapshot fields (cache may run over then).
+MeshRaymarcher.prototype._evictFields=function(){
+  var lru=this._fieldTexLRU, gl=this.gl; if(!lru||!gl) return;
+  var over=lru.size-this.FIELD_TEX_MAX; if(over<=0) return;
+  var self=this, drop=[];
+  lru.forEach(function(t,k){ if(drop.length<over&&t!==self.fieldTex&&!self._snapHasField(t)) drop.push(k); });
+  for(var i=0;i<drop.length;i++){ gl.deleteTexture(lru.get(drop[i])); lru.delete(drop[i]); }
+};
 MeshRaymarcher.prototype.setShapeSDF=function(sdfGrid,bbox,cellSizeMm,assemblyBbox,preserveCamera){
   var d=sdfGrid;
-  this._uploadTexture3D(d.data,d.N,d.sdfMin,d.sdfMax,'shape');
+  this.shapeTex=this._texForGrid(d); this._dirty=true;
   // rc3.5: viewH sizes from the assembly union bbox if provided, otherwise
   // from the single-body bbox (legacy single-body / single-active behavior).
   // The cube the raymarcher renders into must encompass every body in the
@@ -191,7 +258,8 @@ MeshRaymarcher.prototype.setCellSize=function(cellSizeMm){
   }
   this._dirty=true;
 };
-MeshRaymarcher.prototype.clearShape=function(){this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.panX=0;this.panY=0;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._periodicFitKey=null;this._dirty=true;};
+// v0.13.0: also releases any held view.
+MeshRaymarcher.prototype.clearShape=function(){this.releaseView();this.hasShape=false;this.viewH=5.0;this.camZoom=16;this.panX=0;this.panY=0;this.worldMin=[-5,-5,-5];this.worldMax=[5,5,5];this.isPeriodic=true;this._structXform=null;this._periodicFitKey=null;this._dirty=true;};
 
 // rc3.5: Set whether the active body renders as solid (no lattice). When
 // solid is true, color is a Float32Array(3) of [r,g,b] in 0..1. Defaults
@@ -228,9 +296,8 @@ MeshRaymarcher.prototype.setBaseColor=function(color){
 // Ghosts are translucent silhouettes of non-active bodies. Each ghost holds
 // its own 3D texture, world-mm bbox, and family color. Up to GHOST_MAX active
 // ghosts at once (one less than MAX_BODIES, since the active body uses the
-// regular shape SDF slot). Texture slots are reused — when the ghost set
-// changes (active body swap, body added/removed), we re-upload only the
-// slots that are now different.
+// regular shape SDF slot). v0.13.0: slot textures come from the grid cache
+// (_texForGrid), so a body's ghost grid is uploaded once, whatever its slot.
 MeshRaymarcher.prototype.GHOST_MAX = 7;
 MeshRaymarcher.prototype._initGhostState = function(){
   if(this._ghostTex) return; // already initialized
@@ -238,22 +305,6 @@ MeshRaymarcher.prototype._initGhostState = function(){
   this._ghostMeta = new Array(this.GHOST_MAX).fill(null);
   // _ghostMeta[i] = { bodyId, bboxMin:[3], bboxSize:[3], cellSizeMm, color:[3], N }
   this._ghostCount = 0;
-};
-
-// Upload a single ghost SDF into slot i. Mirrors _uploadTexture3D for 'shape'
-// (R16F format for mm-precision) but lives in our own slot array.
-MeshRaymarcher.prototype._uploadGhostTex = function(slot, sdfGrid){
-  var gl = this.gl;
-  if(!this._ghostTex[slot]) this._ghostTex[slot] = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_3D, this._ghostTex[slot]);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R16F, sdfGrid.N, sdfGrid.N, sdfGrid.N, 0, gl.RED, gl.FLOAT, sdfGrid.data);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-  gl.bindTexture(gl.TEXTURE_3D, null);
 };
 
 // Set the active ghost list. Called from main thread on any change to the
@@ -266,11 +317,7 @@ MeshRaymarcher.prototype.setGhosts = function(ghosts, cellSizeMm){
   var n = Math.min(ghosts.length, this.GHOST_MAX);
   for(var i = 0; i < n; i++){
     var g = ghosts[i];
-    var prev = this._ghostMeta[i];
-    // Only re-upload texture if the body changed in this slot.
-    if(!prev || prev.bodyId !== g.bodyId){
-      this._uploadGhostTex(i, g.sdfGhost);
-    }
+    this._ghostTex[i] = this._texForGrid(g.sdfGhost);
     this._ghostMeta[i] = {
       bodyId: g.bodyId,
       bboxMin: [g.bbox.mnx, g.bbox.mny, g.bbox.mnz],
@@ -284,7 +331,7 @@ MeshRaymarcher.prototype.setGhosts = function(ghosts, cellSizeMm){
   }
   // Clear unused slots.
   for(var j = n; j < this.GHOST_MAX; j++){
-    this._ghostMeta[j] = null;
+    this._ghostMeta[j] = null; this._ghostTex[j] = null; // v0.13.0: let prune free it
   }
   this._ghostCount = n;
   this._dirty = true;
@@ -294,7 +341,7 @@ MeshRaymarcher.prototype.setGhosts = function(ghosts, cellSizeMm){
 MeshRaymarcher.prototype.clearGhosts = function(){
   this._initGhostState();
   for(var i = 0; i < this.GHOST_MAX; i++){
-    this._ghostMeta[i] = null;
+    this._ghostMeta[i] = null; this._ghostTex[i] = null; // v0.13.0: let prune free it
   }
   this._ghostCount = 0;
   this._dirty = true;
@@ -425,23 +472,12 @@ MeshRaymarcher.prototype.setJoins=function(members,bandMm){
   var changed=members.length!==(this._joinCount||0)||bandMm!==this._joinBand;
   for(var i=0;i<members.length;i++){
     var m=members[i], prev=this._joinMeta[i];
-    if(!prev||prev.sdf!==m.sdf){
-      if(!this._joinTex[i]) this._joinTex[i]=gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_3D,this._joinTex[i]);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-      gl.texImage3D(gl.TEXTURE_3D,0,gl.R16F,m.sdf.N,m.sdf.N,m.sdf.N,0,gl.RED,gl.FLOAT,m.sdf.data);
-      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
-      gl.bindTexture(gl.TEXTURE_3D,null);
-      changed=true;
-    }
+    this._joinTex[i]=this._texForGrid(m.sdf);
+    if(!prev||prev.sdf!==m.sdf) changed=true;
     this._joinMeta[i]={sdf:m.sdf,bboxMin:[m.bbox.mnx,m.bbox.mny,m.bbox.mnz],
       bboxSize:[m.bbox.mxx-m.bbox.mnx,m.bbox.mxy-m.bbox.mny,m.bbox.mxz-m.bbox.mnz]};
   }
-  for(var j=members.length;j<this.JOIN_MAX;j++) this._joinMeta[j]=null;
+  for(var j=members.length;j<this.JOIN_MAX;j++){ this._joinMeta[j]=null; this._joinTex[j]=null; }
   this._joinCount=members.length>=2?members.length:0;
   this._joinBand=bandMm;
   if(changed) this._dirty=true;
@@ -897,6 +933,87 @@ MeshRaymarcher.prototype.render=function(){
   }
   if(!this.prog||!this.fieldTex||!this._dirty)return;
   this._dirty=false;
+  var held=this._held;
+  if(!held){
+    this._drawFrame(this._resolveBaseColor(),this._resolveSkinW());
+    this._lastFrame=this._captureState();
+    return;
+  }
+  // v0.13.0: held view. Draw the held scene with the live camera, rescaled to
+  // the held view box; everything is restored afterwards.
+  var keys=this.HOLD_KEYS, saved={}, i;
+  for(i=0;i<keys.length;i++) saved[keys[i]]=this[keys[i]];
+  var cz=this.camZoom, px=this.panX, py=this.panY;
+  var k=(this.viewH>0&&held.viewH>0)?held.viewH/this.viewH:1;
+  try{
+    for(i=0;i<keys.length;i++) this[keys[i]]=held[keys[i]];
+    this.camZoom=cz*k; this.panX=(px||0)*k; this.panY=(py||0)*k;
+    this._drawFrame(held.baseColorResolved,held.skinW);
+  }finally{
+    for(i=0;i<keys.length;i++) this[keys[i]]=saved[keys[i]];
+    this.camZoom=cz; this.panX=px; this.panY=py;
+  }
+};
+// v0.13.0: scene state a frame is drawn from (camera and view options excluded).
+MeshRaymarcher.prototype.HOLD_KEYS=['fieldTex','fieldMin','fieldMax','lipschitz','bakeN','topology',
+  'worldMin','worldMax','isPeriodic','viewH','hasShape','shapeTex','shapeData','_assemblyMode',
+  '_structXform','_solidMode','_solidColor','_ghostCount','_ghostMeta','_ghostTex','_joinTex',
+  '_joinMeta','_joinCount','_joinBand'];
+MeshRaymarcher.prototype._captureState=function(){
+  function arr(a){ return a?Array.prototype.slice.call(a):null; }
+  var s={};
+  for(var i=0;i<this.HOLD_KEYS.length;i++) s[this.HOLD_KEYS[i]]=this[this.HOLD_KEYS[i]];
+  s.worldMin=arr(this.worldMin); s.worldMax=arr(this.worldMax);
+  s.shapeData=this.shapeData?Object.assign({},this.shapeData):null;
+  s._ghostMeta=arr(this._ghostMeta); s._ghostTex=arr(this._ghostTex);
+  s._joinTex=arr(this._joinTex); s._joinMeta=arr(this._joinMeta);
+  var bc=this._resolveBaseColor();
+  s.baseColorResolved=[bc[0],bc[1],bc[2]];
+  s.skinW=this._resolveSkinW();
+  return s;
+};
+// v0.13.0: keep drawing the last correct frame until releaseView() (or 20 s).
+MeshRaymarcher.prototype.holdView=function(){
+  var self=this;
+  if(!this._held&&this._lastFrame){ this._held=this._lastFrame; this._heldAt=performance.now(); }
+  if(this._held){
+    if(this._holdTimer) clearTimeout(this._holdTimer);
+    this._holdTimer=setTimeout(function(){ self._holdTimer=null; self.releaseView(); },20000);
+  }
+  return !!this._held;
+};
+MeshRaymarcher.prototype.releaseView=function(){
+  if(this._holdTimer){ clearTimeout(this._holdTimer); this._holdTimer=null; }
+  this._held=null; this._dirty=true;
+};
+MeshRaymarcher.prototype.isHeld=function(){ return !!this._held; };
+// rc3.7: lattice base-color override.
+// v0.9.5: with no override, the lattice renders in its recipe's family
+// color (TPMS mint, Noise coral, Wave amber, …) instead of the old palette.
+MeshRaymarcher.prototype._resolveBaseColor=function(){
+  var bc = this._baseColor;
+  if(!bc || bc[0] < 0){
+    bc = (typeof currentRecipe!=='undefined' && currentRecipe && typeof familyColor==='function')
+      ? _hexToRGB(familyColor(currentRecipe.family)) : [-1.0, 0.0, 0.0];
+  }
+  return bc;
+};
+// v0.12.0: skin on the active body (single-body shape preview only; weld
+// previews bake skin and graded walls into the union field via the specs).
+MeshRaymarcher.prototype._resolveSkinW=function(){
+  var skW=0.0;
+  try{
+    if(!this._assemblyMode&&this.hasShape&&this.shapeData&&typeof activeBodyId!=='undefined'&&activeBodyId!=null
+       &&typeof bodyFill==='function'&&bodyFill(activeBodyId)==='skin'){
+      var sb=bodies.get(activeBodyId), smm=(sb&&sb.skinMm>0)?sb.skinMm:0.4;
+      skW=smm*(10.0/this.shapeData.cellSizeMm);
+    }
+  }catch(e){ skW=0.0; }
+  return skW;
+};
+// v0.13.0: the draw itself (was the body of render()); bc / skW are resolved.
+MeshRaymarcher.prototype._drawFrame=function(bc,skW){
+  var gl=this.gl;
   // Resize canvas
   var area=document.getElementById('previewArea');
   var dpr=Math.min(window.devicePixelRatio||1,1.5);
@@ -982,17 +1099,8 @@ MeshRaymarcher.prototype.render=function(){
     var sc = this._solidColor || [0.8, 0.8, 0.8];
     gl.uniform3f(this._uSolidColor, sc[0], sc[1], sc[2]);
   }
-  // rc3.7: lattice base-color override.
-  // v0.9.5: with no override, the lattice renders in its recipe's family
-  // color (TPMS mint, Noise coral, Wave amber, …) instead of the old palette.
-  if(this._uBaseColor){
-    var bc = this._baseColor;
-    if(!bc || bc[0] < 0){
-      bc = (typeof currentRecipe!=='undefined' && currentRecipe && typeof familyColor==='function')
-        ? _hexToRGB(familyColor(currentRecipe.family)) : [-1.0, 0.0, 0.0];
-    }
-    gl.uniform3f(this._uBaseColor, bc[0], bc[1], bc[2]);
-  }
+  // rc3.7 / v0.9.5: lattice base colour, resolved by _resolveBaseColor().
+  if(this._uBaseColor) gl.uniform3f(this._uBaseColor, bc[0], bc[1], bc[2]);
   var vo = this.viewOpts;
   if(this._uShadowOn) gl.uniform1f(this._uShadowOn, vo.shadows?1.0:0.0);
   if(this._uAOOn)     gl.uniform1f(this._uAOOn,     vo.occlusion?1.0:0.0);
@@ -1048,19 +1156,8 @@ MeshRaymarcher.prototype.render=function(){
   if(this._uGhostColor)    gl.uniform3fv(this._uGhostColor,    colorFlat);
   if(this._uGhostKind)     gl.uniform1fv(this._uGhostKind,     kindFlat);
   if(this._uGhostCount)    gl.uniform1f(this._uGhostCount, ghostCount);
-  // ── v0.12.0 · skin on the active body (single-body shape preview only; weld
-  // previews bake skin and graded walls into the union field via the specs) ──
-  if(this._uSkinW){
-    var skW=0.0;
-    try{
-      if(!this._assemblyMode&&this.hasShape&&this.shapeData&&typeof activeBodyId!=='undefined'&&activeBodyId!=null
-         &&typeof bodyFill==='function'&&bodyFill(activeBodyId)==='skin'){
-        var sb=bodies.get(activeBodyId), smm=(sb&&sb.skinMm>0)?sb.skinMm:0.4;
-        skW=smm*(10.0/this.shapeData.cellSizeMm);
-      }
-    }catch(e){ skW=0.0; }
-    gl.uniform1f(this._uSkinW,skW);
-  }
+  // ── v0.12.0 · skin on the active body (resolved by _resolveSkinW()) ──
+  if(this._uSkinW) gl.uniform1f(this._uSkinW,skW);
   // ── v0.12.0 · section plane ────────────────────────────────────────────
   var cpl=this._clip?this.clipPlane():null;
   if(this._uClipOn){

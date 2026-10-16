@@ -102,6 +102,9 @@ function canAddBody(){ return bodies.size < MAX_BODIES; }
 function switchActiveBody(newBodyId){
   if(newBodyId === activeBodyId) return;
   if(!bodies.has(newBodyId)) return;
+  // v0.13.0: hold the last frame until the new part's field is committed (a
+  // cached field commits in the same tick, so nothing is seen in between).
+  if(rm && rm.holdView) rm.holdView();
   // Snapshot outgoing body's DOM state.
   if(activeBodyId !== null) snapshotActiveBodyState();
   activeBodyId = newBodyId;
@@ -121,7 +124,8 @@ function switchActiveBody(newBodyId){
     const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     // rc3.5: pass assembly bbox so viewH spans all bodies, not just active.
     const asmBbox = computeAssemblyBbox();
-    rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox);
+    // v0.13.0: keep the camera (the part's texture is cached on the GPU).
+    rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);
     if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
     rm._dirty = true;
   }
@@ -130,10 +134,15 @@ function switchActiveBody(newBodyId){
   renderRecipeLibrary();
   // rc2.5: if recipe changed, do a full recipe re-init (re-bakes lattice
   // field for the new family). Otherwise just nudge preview.
+  // v0.13.0: a weld previews even when its selected member is solid; with no
+  // preview to run, settle the view (release the hold, cancel any old bake).
+  const _ag = activeGroupId();
   if(recipeChanged && currentRecipe){
     reloadActiveRecipeIntoPreview();
-  } else if(currentRecipe){
+  } else if(currentRecipe || (_ag && groupMembers(_ag).length >= 2)){
     triggerPreview(rm && rm._quality || 'low');
+  } else if(typeof previewSettle === 'function'){
+    previewSettle();
   }
   // rc3: refresh ghost list — the body that was active before is now a ghost,
   // and the new active body's ghost slot needs to be freed.
@@ -236,7 +245,7 @@ function clearActiveBody(bodyId){
         const cellMm = parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
         // rc3.5: pass assembly bbox so viewH spans remaining bodies.
         const asmBbox = computeAssemblyBbox();
-        rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox);
+        rm.setShapeSDF(b.sdfGrid, b.bbox, cellMm, asmBbox, /*preserveCamera=*/true);   // v0.13.0
         if(rm.setStructureTransform) rm.setStructureTransform(structureTransform);
         rm._dirty = true;
       }
@@ -375,6 +384,12 @@ function syncCurrentRecipeFromActiveBody(){
 // bodies are ghosts or what color they should be.
 function syncGhostsToRaymarcher(){
   if(!rm) return;
+  // v0.13.0: free GPU textures of shape grids no body owns any more.
+  if(rm.pruneGridTextures){
+    const live = new Set();
+    for(const b of bodies.values()){ if(b.sdfGrid) live.add(b.sdfGrid); if(b.sdfGhost) live.add(b.sdfGhost); }
+    rm.pruneGridTextures(live);
+  }
   if(!importedShape || !importedShape.shapeData && !(importedShape.sdfGrid)){
     // No active body — no scene to render ghosts against.
     rm.clearGhosts();
@@ -666,6 +681,7 @@ function _visibilityChanged(ids){
   const ag = (typeof activeGroupId === 'function') ? activeGroupId() : null;
   if(!ag || !ids.some(id => bodyGroup.get(id) === ag)) return;
   if(groupMembers(ag).length < 2 || !groupVisibleMembers(ag).length) return;
+  if(rm && rm.holdView) rm.holdView();   // v0.13.0: old union stays until the new one lands
   clearTimeout(_visPrevT);
   _visPrevT = setTimeout(() => { if(typeof triggerPreview === 'function') triggerPreview(rm && rm._quality || 'draft'); }, 200);
 }

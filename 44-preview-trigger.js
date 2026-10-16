@@ -10,11 +10,41 @@
 // result instead of overwriting the view, and the field range it measured is
 // written to the recipe it actually baked (never to whatever is current now —
 // that cached range feeds export normalization).
+// v0.13.0: a new preview cancels every bake still running (its workers are
+// terminated). The view is held on the last correct frame from the start of a
+// preview until its field lands, and the world box, assembly mode and field
+// change together in one commit, so no frame shows a field through the wrong
+// box. Baked fields are cached (42-preview-bake.js): a cache hit commits in the
+// same tick, with no overlay and no bake. opts.hold=false skips the hold (the
+// aperiodic rotation / shift re-bake keeps the live uniform preview instead).
 let _previewSeq=0;
-async function triggerPreview(quality){
+async function triggerPreview(quality, opts){
   const seq=++_previewSeq;
   const isCurrent=()=>seq===_previewSeq;
-  if(!rm)return;
+  if(typeof cancelPreviewBakes==='function') cancelPreviewBakes();
+  if(!rm) return;
+  if(!(opts&&opts.hold===false) && rm.holdView) rm.holdView();
+  try{ await _triggerPreviewRun(quality, isCurrent); }
+  finally{ if(isCurrent() && rm.releaseView) rm.releaseView(); }
+}
+// Stop whatever preview is running and show the current state as it is (used
+// when a change needs no bake, e.g. selecting a solid part).
+function previewSettle(){
+  ++_previewSeq;
+  if(typeof cancelPreviewBakes==='function') cancelPreviewBakes();
+  if(rm && rm.releaseView) rm.releaseView();
+  hideComputing(); setBtns(true);
+}
+window.previewSettle=previewSettle;
+// Cached result for these bake inputs, or null.
+function _previewHit(recipe, N, bakeOpts){
+  return (typeof previewBakeLookup==='function') ? previewBakeLookup(recipe, N, bakeOpts) : null;
+}
+function _previewPill(result){
+  triPill.style.display='block';
+  triPill.textContent=result.cached?'preview · cached':('preview · '+result.ms+'ms');
+}
+async function _triggerPreviewRun(quality, isCurrent){
   // -- Weld-group preview: bake the active group merged over its bbox ----------
   const _agid=activeGroupId();
   if(_agid && groupMembers(_agid).length>=2){
@@ -27,17 +57,25 @@ async function triggerPreview(quality){
       return;
     }
     currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
-    setBtns(false);showCancelBtn(false);
-    showComputing('building weld preview…','baking field…');
     rm.setQuality(quality);
-    rm.setAssemblyMode(true);   // render the baked union field directly (no active-body clip)
     try{
       const gbb=computeGroupBbox(_agid);
       const {specs}=await gatherGroupSpecs(_agid, 0, false);
+      if(!isCurrent()) return;
       const refCell=(bodies.get(activeBodyId)&&bodies.get(activeBodyId).cellSizeMm)||parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
       const s=10/refCell;
       const N=PREVIEW_BAKE_N[quality]||64;
       const wMin=[gbb.mnx*s,gbb.mny*s,gbb.mnz*s], wMax=[gbb.mxx*s,gbb.mxy*s,gbb.mxz*s];
+      const bakeOpts={isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)};
+      let result=_previewHit(currentRecipe, N, bakeOpts);
+      if(!result){
+        setBtns(false);showCancelBtn(false);
+        showComputing('building weld preview…','baking field…');
+        result=await bakeField(currentRecipe, N, bakeOpts);
+      }
+      if(!isCurrent()) return;   // superseded by a newer preview
+      // Commit: box, mode and field together.
+      rm.setAssemblyMode(true);   // render the baked union field directly (no active-body clip)
       rm.setWorldBounds(wMin,wMax,false);
       // Size the view cube to the WHOLE assembly (not just the group) so bodies
       // outside the weld still fit; the field itself only spans the group bbox.
@@ -45,28 +83,32 @@ async function triggerPreview(quality){
       const _rMin = _asm?[_asm.mnx*s,_asm.mny*s,_asm.mnz*s]:wMin;
       const _rMax = _asm?[_asm.mxx*s,_asm.mxy*s,_asm.mxz*s]:wMax;
       if(rm.fitReachBounds) rm.fitReachBounds(_rMin,_rMax);
-      const result=await bakeField(currentRecipe, N,
-        {isPeriodic:false,bakeRaw:false,worldMin:wMin,worldMax:wMax,mmScale:s,bodies:specs,blendK:groupFilletMm(_agid)});
-      if(!isCurrent()) return;   // superseded by a newer preview
-      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+      if(rm.useField) rm.useField(result.key,result);
+      else rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
       // Bodies outside the group render as ghosts (syncGhosts skips group members);
       // then set the lattice base color to the GROUP rail color so the welded mass
       // reads as one part (overriding the active body's own color from selection).
       syncGhostsToRaymarcher();
       if(rm.setBaseColor) rm.setBaseColor(_hexToRGB(weldGroupColor(_agid)));
-      clearStale(); triPill.style.display='block'; triPill.textContent='preview · '+result.ms+'ms';
+      clearStale(); _previewPill(result);
       if(window.viewStripSync) viewStripSync();   // v0.12.0: show-joins tint + section readout
     }catch(e){ if(!isCurrent()) return; console.error('weld preview',e); if(e.message!=='cancelled') showError('Weld preview: '+(e.message||e)); }
     hideComputing(); setBtns(true);
     return;
   }
+  // v0.13.0: a standalone solid part needs no lattice field — leave the last
+  // one bound (the solid shader ignores it) instead of baking a recipe it
+  // doesn't use. Only once some field exists, so the view can draw at all.
+  if(importedShape && activeBodyId!=null && rm.fieldTex
+     && typeof isSolidAssignment==='function' && isSolidAssignment(assignments.get(activeBodyId))){
+    rm.setAssemblyMode(false);
+    if(window.viewStripSync) viewStripSync();
+    hideComputing(); setBtns(true);
+    return;
+  }
   if(!currentRecipe)return;
   const bakedRecipe=currentRecipe;
-  rm.setAssemblyMode(false);   // single-body path: ensure the active-body clip is restored
-  if(window.viewStripSync) viewStripSync();   // joins are weld-only
   currentOversample=PREVIEW_OVERSAMPLE[quality]||2;
-  setBtns(false);showCancelBtn(false);
-  showComputing('building preview…','baking field…');
   rm.setQuality(quality);
   const periodic=recipeIsPeriodic(currentRecipe);
   let N=PREVIEW_BAKE_N[quality]||64;
@@ -78,7 +120,10 @@ async function triggerPreview(quality){
   const isStochastic=!!(famDesc && famDesc.stochastic);
   const needsRawBake=!periodic && isStochastic;
   let bakeOpts={isPeriodic:periodic,bakeRaw:needsRawBake};
+  // The box this field is baked over, committed together with it.
+  let box=null, fitCube=false, shapeMode=false;
   if(!periodic&&importedShape){
+    shapeMode=true;
     // Stochastic field + shape: bake strategy depends on field type.
     const cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
     const s=10/cellSizeMm;
@@ -91,7 +136,7 @@ async function triggerPreview(quality){
       // texture wrapping, no clamp artifacts possible.
       bakeOpts={isPeriodic:true,bakeRaw:true,
         shapeCtx:{cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}}};
-      rm.setWorldBounds([-5,-5,-5],[5,5,5],true);
+      box={min:[-5,-5,-5],max:[5,5,5],periodic:true};
     }else{
       // Other stochastic fields (spinodoid/GRF/noise): bake over the AABB of
       // the structure-transformed shape bbox in world coords. The shader
@@ -128,74 +173,61 @@ async function triggerPreview(quality){
       // accumulate up the shape exactly as in the export; no tiling, no mirror.
       bakeOpts={isPeriodic:false,bakeRaw:isStochastic,worldMin:wMin,worldMax:wMax};
       if(isStochastic) bakeOpts.shapeCtx={cellSizeMm,bbox:{mnx:b.mnx,mny:b.mny,mnz:b.mnz,mxx:b.mxx,mxy:b.mxy,mxz:b.mxz}};
-      rm.setWorldBounds(wMin,wMax,false);
+      box={min:wMin,max:wMax,periodic:false};
     }
-    await new Promise(r=>setTimeout(r,0));
-    // v0.8.1: errors here used to leave the overlay up and the quality
-    // buttons disabled; handled the same way as the periodic path below.
-    try{
-      const result=await bakeField(bakedRecipe, N, bakeOpts);
-      // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
-      // reuse the same normalization instead of doing a sparser 16³ pre-scan.
-      // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
-      // don't need normalization since their fields are in known unit systems.
-      // v0.8.3: written to the recipe that was baked, even if superseded.
-      if(bakeOpts.bakeRaw){
-        bakedRecipe._previewFieldMin=result.fieldMin;
-        bakedRecipe._previewFieldMax=result.fieldMax;
+  }else{
+    // Periodic or no shape: bake one cell with tiling
+    // For TPMS and beam: use integer-period bake bounds per axis when the
+    // cell is anisotropic. Eliminates GL_REPEAT seam artifacts that appear in
+    // shape-mode preview when bake span isn't an integer multiple of the cell
+    // period along an axis. Noise and grain don't have a periodic cell with a
+    // well-defined period, so they keep [-5,5]³.
+    let pMin=[-5,-5,-5], pMax=[5,5,5];
+    // v0.9.0: the family's bakeBounds gives the tile (integer cell periods per
+    // axis for anisotropic TPMS/beam, the bundle twist period, the wave
+    // supercell). A supercell (S > 1) scales the bake grid by S, capped at the
+    // ultra tier (192), so each sub-cell keeps its preview voxel density.
+    if(famDesc && typeof famDesc.bakeBounds==='function'){
+      const b=famDesc.bakeBounds(currentRecipe);
+      if(b){
+        pMin=b.wMin; pMax=b.wMax;
+        bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
+        if(b.S>1) N=Math.min(192, N*b.S);
       }
-      if(!isCurrent()) return;   // superseded by a newer preview
-      rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
-      clearStale();
-      triPill.style.display='block';
-      triPill.textContent='preview · '+result.ms+'ms';
-      seamPill.style.display='none';
-      if(window.viewStripSync) viewStripSync();
-      hideComputing();
-    }catch(e){
-      if(!isCurrent()) return;
-      hideComputing();
-      if(e.message!=='cancelled')showError('Preview: '+(e.message||e));
-    }finally{
-      if(isCurrent()) setBtns(true);
     }
-    return;
+    box={min:pMin,max:pMax,periodic};
+    fitCube=!importedShape;   // frame the full cell on import; preserves zoom on re-preview
   }
-  // Periodic or no shape: bake one cell with tiling
-  // For TPMS and beam: use integer-period bake bounds per axis when the
-  // cell is anisotropic. Eliminates GL_REPEAT seam artifacts that appear in
-  // shape-mode preview when bake span isn't an integer multiple of the cell
-  // period along an axis. Noise and grain don't have a periodic cell with a
-  // well-defined period, so they keep [-5,5]³.
-  let pMin=[-5,-5,-5], pMax=[5,5,5];
-  // v0.9.0: the family's bakeBounds gives the tile (integer cell periods per
-  // axis for anisotropic TPMS/beam, the bundle twist period, the wave
-  // supercell). A supercell (S > 1) scales the bake grid by S, capped at the
-  // ultra tier (192), so each sub-cell keeps its preview voxel density.
-  if(famDesc && typeof famDesc.bakeBounds==='function'){
-    const b=famDesc.bakeBounds(currentRecipe);
-    if(b){
-      pMin=b.wMin; pMax=b.wMax;
-      bakeOpts.worldMin=pMin; bakeOpts.worldMax=pMax;
-      if(b.S>1) N=Math.min(192, N*b.S);
-    }
-  }
-  rm.setWorldBounds(pMin,pMax,periodic);
-  if(!importedShape) rm.fitPeriodicBounds(pMin,pMax); // frame the full cell on import; preserves zoom on re-preview
+  // v0.8.1: errors here used to leave the overlay up and the quality
+  // buttons disabled; both paths handle them the same way.
   try{
-    const result=await bakeField(bakedRecipe, N, bakeOpts);
-    // v0.5.0-rc14: cache preview fieldMin/Max for export reuse (see shape path above).
+    let result=_previewHit(bakedRecipe, N, bakeOpts);
+    if(!result){
+      setBtns(false);showCancelBtn(false);
+      showComputing('building preview…','baking field…');
+      if(shapeMode) await new Promise(r=>setTimeout(r,0));
+      result=await bakeField(bakedRecipe, N, bakeOpts);
+    }
+    // v0.5.0-rc14: cache preview's true fieldMin/Max on recipe so export can
+    // reuse the same normalization instead of doing a sparser 16³ pre-scan.
+    // Only applies to raw-bake paths (noise + grain non-RD) — TPMS and RD
+    // don't need normalization since their fields are in known unit systems.
+    // v0.8.3: written to the recipe that was baked, even if superseded.
     if(bakeOpts.bakeRaw){
       bakedRecipe._previewFieldMin=result.fieldMin;
       bakedRecipe._previewFieldMax=result.fieldMax;
     }
     if(!isCurrent()) return;   // superseded by a newer preview
-    rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
+    // Commit: mode, box and field together.
+    rm.setAssemblyMode(false);   // single-body path: the active-body clip is restored
+    rm.setWorldBounds(box.min,box.max,box.periodic);
+    if(fitCube) rm.fitPeriodicBounds(box.min,box.max);
+    if(rm.useField) rm.useField(result.key,result);
+    else rm.setScaffoldField(result.data,result.N,result.fieldMin,result.fieldMax,result.lipschitz,result.topology);
     clearStale();
-    triPill.style.display='block';
-    triPill.textContent='preview · '+result.ms+'ms';
-    updateSeamPill(currentRecipe);
-    if(window.viewStripSync) viewStripSync();
+    _previewPill(result);
+    if(shapeMode) seamPill.style.display='none'; else updateSeamPill(currentRecipe);
+    if(window.viewStripSync) viewStripSync();   // joins are weld-only
     hideComputing();
   }catch(e){
     if(!isCurrent()) return;
@@ -225,10 +257,12 @@ window.onCellSizeInput=function(){
   // v0.12.0: no longer locked while welded — the left rail edits cell size
   // per part (railSetCellMm) and the weld preview re-bakes for the change.
   var cellSizeMm=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||3;
+  // v0.13.0: same as the rail's cell size (railSetCellMm): a weld or an
+  // aperiodic field re-bakes by itself a moment later, the view holding the
+  // last frame meanwhile. Periodic scaffolds still update live via setCellSize
+  // (hardware REPEAT wrap handles the retiling).
+  if(typeof railSetCellMm==='function'){ railSetCellMm(cellSizeMm); return; }
   if(rm)rm.setCellSize(cellSizeMm);
-  // Only mark stale for aperiodic recipes — those genuinely need a field re-bake
-  // over the cell-size-dependent world extent. Periodic scaffolds update live
-  // via setCellSize (hardware REPEAT wrap handles the retiling).
   if(!recipeIsPeriodic(currentRecipe))setStale();
   updateExportEstimate();
   // rc2: persist cell-size change to active body record.

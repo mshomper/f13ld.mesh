@@ -1,6 +1,6 @@
 # F13LD.mesh — preview rebuild spec
 
-**Status:** draft for Matt's review, 2026-10-16. To be built in its own session (before the parallel slab mesher).
+**Status:** P1 built 2026-10-16 (v0.13.0, branch `preview-rebuild`, recap `SESSION_RECAP_2026-10-16.md`); P2 next. Matt's answers: sliders as instant as possible, some delay acceptable for noise / grain; per-session cache only; keep P2 ready to move to WebGPU; lower-detail weld members only as a weak-GPU fallback.
 **Scope:** the on-screen preview only. Export keeps its exact, multi-core CPU field and must stay byte-identical.
 
 ---

@@ -28,14 +28,23 @@ function readStructureTransformFromUI(){
 // is periodic (bake region is fixed at one cell — rotation handled by
 // shader sampling, no rebake needed).
 let _structXformRebakeTimer=null;
+// v0.13.0: in a weld the union is baked with every member's own rotation,
+// shift and wall offset, so any of them re-bakes (the view holds the last
+// frame meanwhile). A standalone aperiodic part keeps its live uniform preview
+// while the re-bake runs (no hold).
+function _weldedActive(){
+  return (typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
+}
 function _scheduleStructXformRebake(){
   if(!importedShape) return;
-  if(!currentRecipe||recipeIsPeriodic(currentRecipe)) return;
+  const welded=_weldedActive();
+  if(!welded && (!currentRecipe||recipeIsPeriodic(currentRecipe))) return;
+  if(welded && rm && rm.holdView) rm.holdView();
   if(_structXformRebakeTimer) clearTimeout(_structXformRebakeTimer);
   _structXformRebakeTimer=setTimeout(()=>{
     _structXformRebakeTimer=null;
     // v0.8.3: keep the user's selected preview quality (was: no argument → fallback quality).
-    if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low');
+    if(typeof triggerPreview==='function') triggerPreview(rm&&rm._quality||'low', welded?undefined:{hold:false});
   },300);
 }
 
@@ -48,6 +57,7 @@ window.onStructXformInput=function(){
     rx:structureTransform.rotXDeg, ry:structureTransform.rotYDeg, rz:structureTransform.rotZDeg,
     ox:structureTransform.spatialOffsetMmX, oy:structureTransform.spatialOffsetMmY, oz:structureTransform.spatialOffsetMmZ
   };
+  const isoBefore=structureTransform.isoOffsetMm;
   readStructureTransformFromUI();
   // Push transform uniforms to raymarcher and trigger redraw.
   if(rm && rm.setStructureTransform){
@@ -64,9 +74,10 @@ window.onStructXformInput=function(){
     structureTransform.spatialOffsetMmX!==before.ox ||
     structureTransform.spatialOffsetMmY!==before.oy ||
     structureTransform.spatialOffsetMmZ!==before.oz;
-  if(xformChanged) _scheduleStructXformRebake();
   // rc2: persist transform state to active body record so it survives switches.
+  // v0.13.0: before the re-bake is scheduled (a weld re-bake reads the record).
   snapshotActiveBodyState();
+  if(xformChanged || (structureTransform.isoOffsetMm!==isoBefore && _weldedActive())) _scheduleStructXformRebake();
 };
 
 window.onStructXformReset=function(){
@@ -83,7 +94,8 @@ window.onStructXformReset=function(){
     rm._dirty=true;
   }
   updateExportEstimate();
-  if(wasNonIdentity) _scheduleStructXformRebake();
+  snapshotActiveBodyState();
+  if(wasNonIdentity || _weldedActive()) _scheduleStructXformRebake();
   // rc2: persist reset state to active body record.
   snapshotActiveBodyState();
   if(typeof renderRailEditor==='function') renderRailEditor();   // v0.12.0: sliders follow the reset
@@ -124,6 +136,10 @@ let _railCellTimer=null;
 function railSetCellMm(mm){
   if(!importedShape) return;
   mm=Math.max(0.05, +mm||3);
+  const welded0=(typeof activeGroupId==='function') && activeGroupId() && groupMembers(activeGroupId()).length>=2;
+  // v0.13.0: a weld or an aperiodic field is baked at the old scale — hold
+  // the last frame until the re-bake lands instead of showing it rescaled.
+  if((welded0 || (currentRecipe && !recipeIsPeriodic(currentRecipe))) && rm && rm.holdView) rm.holdView();
   const inp=document.getElementById('shapeCellSizeMm'); if(inp) inp.value=mm;
   if(rm && rm.setCellSize) rm.setCellSize(mm);
   snapshotActiveBodyState();                      // body.cellSizeMm

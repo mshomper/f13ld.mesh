@@ -22,5 +22,6 @@ importScripts(
   "m31-weld-grid.js"+self.location.search,
   "m32-export-field.js"+self.location.search,
   "m33-field-pool.js"+self.location.search,
+  "m40-preview-bake.js"+self.location.search,
   "m90-onmessage.js"+self.location.search
 );

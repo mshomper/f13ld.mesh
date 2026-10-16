@@ -39,6 +39,12 @@ Matt: selected parts didn't hide; changing quality didn't sharpen a part; bandin
 - **Step size**: the shape SDF is Lipschitz 1 in world units; the old 10 / cell bound (from before `sampleShape` was scaled) shortened steps 3–7×. Solid part: 1; lattice in a part: max(lattice, 1); weld: the union's. Lattices inside parts no longer look dark and pitted; occlusion no longer over-darkens solids.
 - `tests/shapeview.js` (new): rings, grid per quality with the export grid untouched, the selected part's eye, a gyroid in the sphere drawn solidly. Full re-run: `shapeview`, `weldvis`, `previewcache`, `slabbake`, `loadorder`, `partprep`, `fixtests2` all pass; `harness.js` main vs branch, all 23 exports byte-identical.
 
+## v0.13.1 · pinch to zoom (afternoon)
+Matt: pinch to zoom didn't work in the mobile browser. Approved: pinch zooms about the centre of the view, like the wheel (not toward the fingers).
+- `21-gimbal.js`: two fingers zoom by their spread (same limits as the wheel) and pan by their midpoint together; lifting one finger carries on rotating from the other; a second finger landing just off the canvas joins the gesture; `touchcancel` ends it; `preventDefault` only on cancelable events.
+- `ui12.css`: `#rmCanvas{touch-action:none}` so the browser doesn't zoom the page from the view.
+- `tests/pinch.js` (new) passes.
+
 ## Open / next
 - P2 (scene shader with per-member uniforms, tile and region sources, all sliders live in welds) is next; then P3 (exact GLSL sources), P4 (speed), then the parallel slab mesher.
 - Bench page has no preview tab yet (P4).

@@ -60,3 +60,6 @@ body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
 .dz-main{font:600 16px 'Exo 2',sans-serif;color:var(--t1)}
 .dz-sub{font:500 12.5px var(--mono);color:var(--t3)}
 .dz-pick{color:var(--mesh);font-weight:600}
+
+/* v0.13.1: the viewer handles its own touch gestures (rotate, pinch zoom, pan) — the browser must not zoom or scroll the page from the canvas. */
+#rmCanvas{touch-action:none}

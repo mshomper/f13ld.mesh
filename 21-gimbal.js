@@ -103,26 +103,54 @@ MeshRaymarcher.prototype._setupInteraction=function(){
       self._applyDelta(e.clientX-lx,e.clientY-ly); lx=e.clientX; ly=e.clientY;
     }
   });
+  // v0.13.1: touch. One finger rotates; two fingers pinch to zoom (spreading
+  // zooms in, same limits as the wheel) and pan by their midpoint, together.
+  // When a finger lifts, the remaining one carries on rotating from where it
+  // is, and a finger put back down starts a fresh pinch — no jumps.
+  var pinchD=0;
+  function zoomLimits(){ return [self.viewH*0.3, Math.max(80,self.viewH*8)]; }
+  function twoTouch(e){
+    var a=e.touches[0], b=e.touches[1];
+    return {cx:(a.clientX+b.clientX)*0.5, cy:(a.clientY+b.clientY)*0.5,
+            d:Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY)};
+  }
+  function touchBegin(e){
+    if(e.touches.length>=2){
+      var t=twoTouch(e); panning=true; drag=false; lx=t.cx; ly=t.cy; pinchD=t.d;
+    } else if(e.touches.length===1){
+      drag=true; panning=false; self.autoRot=false; pinchD=0;
+      lx=e.touches[0].clientX; ly=e.touches[0].clientY;
+    }
+  }
   this.canvas.addEventListener('touchstart',function(e){
-    if(e.touches.length===2){ panning=true; drag=false;
-      lx=(e.touches[0].clientX+e.touches[1].clientX)*0.5;
-      ly=(e.touches[0].clientY+e.touches[1].clientY)*0.5;
-    } else { drag=true; panning=false; self.autoRot=false;
-      lx=e.touches[0].clientX; ly=e.touches[0].clientY; }
+    touchBegin(e);
     self._beginInteract();
-    e.preventDefault();
+    if(e.cancelable) e.preventDefault();
   },{passive:false});
-  window.addEventListener('touchend',function(e){drag=false;panning=false;if(!e.touches||e.touches.length===0)self._endInteract();});
+  // A second finger that lands just outside the canvas still joins a gesture
+  // that started on it.
+  window.addEventListener('touchstart',function(e){
+    if((drag||panning) && e.target!==self.canvas){ touchBegin(e); if(e.cancelable) e.preventDefault(); }
+  },{passive:false});
+  window.addEventListener('touchend',function(e){
+    if(!drag && !panning) return;
+    if(!e.touches || e.touches.length===0){ drag=false; panning=false; pinchD=0; self._endInteract(); return; }
+    touchBegin(e);   // two → one finger: rotate from the remaining finger
+  });
+  window.addEventListener('touchcancel',function(){ drag=false; panning=false; pinchD=0; self._endInteract(); });
   window.addEventListener('touchmove',function(e){
-    if(panning && e.touches.length===2){
-      var cx=(e.touches[0].clientX+e.touches[1].clientX)*0.5;
-      var cy=(e.touches[0].clientY+e.touches[1].clientY)*0.5;
-      var k=panScale();
-      self.panX -= (cx-lx)*k; self.panY += (cy-ly)*k;
-      lx=cx; ly=cy; self._dirty=true; e.preventDefault();
+    if(panning && e.touches.length>=2){
+      var t=twoTouch(e), k=panScale();
+      self.panX -= (t.cx-lx)*k; self.panY += (t.cy-ly)*k;
+      if(pinchD>1 && t.d>1){
+        var lim=zoomLimits(), z=self.camZoom*(pinchD/t.d);
+        z=Math.max(lim[0], Math.min(lim[1], z));
+        self.camZoom=z;
+      }
+      lx=t.cx; ly=t.cy; pinchD=t.d; self._dirty=true; if(e.cancelable) e.preventDefault();
     } else if(drag && e.touches.length===1){
       self._applyDelta(e.touches[0].clientX-lx,e.touches[0].clientY-ly);
-      lx=e.touches[0].clientX; ly=e.touches[0].clientY; e.preventDefault();
+      lx=e.touches[0].clientX; ly=e.touches[0].clientY; if(e.cancelable) e.preventDefault();
     }
   },{passive:false});
   this.canvas.addEventListener('wheel',function(e){var maxZ=Math.max(80,self.viewH*8);self.camZoom=Math.max(self.viewH*0.3,Math.min(maxZ,self.camZoom+e.deltaY*0.04));self._dirty=true;self._beginInteract();clearTimeout(self._wheelT);self._wheelT=setTimeout(function(){self._endInteract();},180);e.preventDefault();},{passive:false});

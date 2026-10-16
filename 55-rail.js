@@ -480,6 +480,7 @@ function rlEdit(k, v){
   }
   else railSetXform(k, v);
   renderRailParts();                               // fill summary / weld summary follow the slider
+  if(k==='cell') renderRailEditor();               // the shift sliders' range follows the cell size
 }
 
 // ── Whole rail ────────────────────────────────────────────────────────────

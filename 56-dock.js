@@ -89,7 +89,7 @@ function dockEnsure(){
       '<section class="dr-pane" id="drExp" data-p="exp">'+
         '<div class="dr-ph"><div class="dr-pt">Export</div><div class="dr-ps">Mesh quality and size of the 3MF. The estimate learns from your own exports.</div></div>'+
         '<div class="dr-grid">'+
-          '<div class="dr-f"><label>Quality</label><div class="dr-chips" id="qualChips">'+
+          '<div class="dr-f dr-span2"><label>Quality</label><div class="dr-chips" id="qualChips">'+
             ['draft','low','med','high','ultra'].map(q=>{ const N=q[0].toUpperCase()+q.slice(1); return '<button type="button" class="dr-chip" id="q'+N+'" onclick="setQual(\''+q+'\')"><span class="dr-ql-n">'+N+'</span><small class="ql" id="ql'+N+'">—</small></button>'; }).join('')+
           '</div><div class="dr-hint">Triangle edge length of the exported mesh.</div></div>'+
           '<div class="dr-f"><label for="expDomainMm">Domain size (open cube)</label><div class="dr-pair"><input type="number" id="expDomainMm" class="dr-num" min="1" max="100" step="1" value="'+((typeof exportDomainMm!=='undefined')?exportDomainMm:10)+'" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()"><span>mm</span></div><div class="dr-hint" id="expDomainHint"></div></div>'+

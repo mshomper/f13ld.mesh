@@ -100,64 +100,155 @@ self.onmessage=async function(e){
         const fullBox={min:[gbb.mnx,gbb.mny,gbb.mnz],max:[gbb.mxx,gbb.mxy,gbb.mxz]};
         let bodies=d.bodies, regions=(w.regions&&w.regions.length)?w.regions:[fullBox];
         let hybrid=!!w.hybrid;
-        const solidMf=[];
-        if(hybrid){
+        // Exact solids as Manifolds. A union consumes them, so the slab re-mesh
+        // after a classic attempt (Auto) builds them again.
+        const buildSolids=()=>{
+          const out=[];
           try{
             for(let i=0;i<bodies.length;i++){
               const sm=w.solidMeshes&&w.solidMeshes[i]; if(!sm) continue;
               const mesh=new ManifoldAPI.Mesh({numProp:3, vertProperties:new Float32Array(sm.pos), triVerts:new Uint32Array(sm.idx)});
               mesh.merge();
               const m=new ManifoldAPI.Manifold(mesh);   // throws if not a closed manifold
-              solidMf.push(m);
+              out.push(m);
               if(!(m.volume()>0)) throw new Error('solid mesh is inside-out');
             }
-          }catch(err){
+          }catch(err){ for(const m of out) m.delete(); throw err; }
+          return out;
+        };
+        let solidMf=[], solidsUsed=false;
+        if(hybrid){
+          try{ solidMf=buildSolids(); }
+          catch(err){
             // The main thread's closed-mesh check passed but Manifold disagrees:
             // mesh the whole group the pre-v0.9.3 way (no inset, no cache).
-            for(const m of solidMf) m.delete();
-            solidMf.length=0; hybrid=false;
+            hybrid=false;
             bodies=bodies.map(b=>b.insetMm?Object.assign({},b,{insetMm:0}):b);
             regions=[fullBox];
             self.postMessage({type:'progress',stage:'solid mesh rejected ('+((err&&err.message)||err)+') — meshing the whole group...'});
           }
         }
+        const solidsFresh=()=>{ if(!solidsUsed){ solidsUsed=true; return solidMf; } return hybrid?buildSolids():[]; };
         // Built on first use: with every point pre-baked it may never be needed,
         // and some fields are costly to set up (foam relaxation, RD).
         let _field=null;
         const field=function(p){ if(!_field) _field=makeWeldField(bodies,d.blendK,w.reachMm||0); return _field(p); };
-        const tLevelSet=performance.now();
-        const pieces=[], diag=[];
-        for(let ri=0;ri<regions.length;ri++){
-          const r=regions[ri];
+        // Pre-baked values per region (null when the region wasn't baked).
+        const regionData=regions.map(r=>{
           const g=weldGridDims(r.min,r.max,edge);
-          let fn=field, stats=null;
+          let M=null, O=null;
           if(r.main && r.off && g.ok){
             const A=r.f32?Float32Array:Float64Array;
-            const M=new A(r.main), O=new A(r.off);
-            if(M.length===g.mainCount && O.length===g.offCount){ stats={}; fn=makeWeldLookup(g,M,O,field,stats); }
+            M=new A(r.main); O=new A(r.off);
+            if(!(M.length===g.mainCount && O.length===g.offCount)){ M=null; O=null; }
           }
+          return {r, g, M, O};
+        });
+        const unionAll=(parts, label)=>{
+          if(parts.length===1) return {m:parts[0], ms:0};
+          lastStage=label;
+          self.postMessage({type:'progress',stage:lastStage+'...'});
+          const tU=performance.now();
+          const m=ManifoldAPI.Manifold.union(parts);
+          for(const x of parts) x.delete();
+          return {m, ms:Math.round(performance.now()-tU)};
+        };
+        // v0.16.0: weld on the slab mesher. Each lattice region meshes in z
+        // slabs on every core from its pre-baked values, is checked closed,
+        // and is unioned with the exact solids as before. The regions are
+        // already simplified slab by slab, so the union is not simplified
+        // again (the imported solids come through exactly as imported).
+        // Resolves the slab result, or null (classic then meshes the group).
+        const weldSlab=async()=>{
+          const pieces=[];
+          try{
+            const agg={slabs:0, workers:0, raw:0, retries:0, locked:0, gaveUp:0, evals:0, seam:null, ms:{mesh:0, seam:0, union:0}, regions:regionData.length};
+            for(let ri=0;ri<regionData.length;ri++){
+              const rd=regionData[ri];
+              lastStage='weld slab mesher'+(regionData.length>1?' '+(ri+1)+'/'+regionData.length:'')+' ('+edge.toFixed(3)+'mm'+(rd.M?', pre-baked':'')+')';
+              self.postMessage({type:'progress',stage:lastStage+'...'});
+              const fn=rd.M ? makeWeldLookup(rd.g, rd.M, rd.O, field, {}) : field;
+              const sm=await slabMeshExport(d, fn, rd.r.min, rd.r.max, edge, d.simplifyTol||0, post, rd.M?{lookup:{main:rd.M, off:rd.O}}:null);
+              agg.slabs+=sm.slabs; agg.workers=Math.max(agg.workers, sm.workers||1); agg.raw+=sm.raw||0; agg.retries+=sm.retries||0;
+              agg.locked+=sm.locked||0; agg.gaveUp+=sm.gaveUp||0; agg.evals+=sm.evals||0; agg.seam=sm.seam||agg.seam;
+              agg.ms.mesh+=sm.ms.mesh; agg.ms.seam+=sm.ms.seam;
+              if(!sm.idx.length) continue;
+              const cr=meshClosedReport(sm.pos, sm.idx);
+              if(!cr.ok) throw new Error('region '+(ri+1)+' not closed ('+cr.bad+' edges)');
+              const mesh=new ManifoldAPI.Mesh({numProp:3, vertProperties:sm.pos, triVerts:sm.idx});
+              mesh.merge();
+              pieces.push(new ManifoldAPI.Manifold(mesh));
+            }
+            const parts=pieces.concat(solidsFresh());
+            pieces.length=0;
+            if(!parts.length) throw new Error('Empty weld mesh — check group overlap.');
+            const U=unionAll(parts, 'union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es'));
+            agg.ms.union=U.ms;
+            if(U.m.isEmpty()){ U.m.delete(); throw new Error('Empty weld mesh — check group overlap.'); }
+            const em=U.m.getMesh();
+            let pos=new Float32Array(em.vertProperties), idx=new Uint32Array(em.triVerts);
+            U.m.delete();
+            if(hybrid){
+              const r=dropTinyShells(pos, idx, 0.1*edge*edge*edge);
+              if(r){ pos=r.vertProperties; idx=r.triVerts;
+                self.postMessage({type:'diag',diag:{weld:true, tinyShellsDropped:r.dropped, ofShells:r.shells, droppedVolMm3:+r.droppedVol.toExponential(2)}}); }
+            }
+            // The union cuts the exact solids' flat faces into long thin
+            // triangles; flip them (near-flat only, no vertex moves, so the
+            // solids keep their exact shape).
+            const ff=checkedFlip(pos, idx, null);
+            idx=ff.idx; agg.finalFlips=(agg.finalFlips||0)+ff.flips;
+            const cr=meshClosedReport(pos, idx);
+            if(!cr.ok) throw new Error('weld result not closed ('+cr.bad+' edges)');
+            agg.pos=pos; agg.idx=idx; agg.ms.seam+=U.ms;
+            self.postMessage({type:'diag',diag:{weld:true, slab:true, hybrid, solids:solidMf.length, regions:regionData.length, slabs:agg.slabs, workers:agg.workers, retries:agg.retries, gaveUp:agg.gaveUp, msMesh:agg.ms.mesh, msSeam:agg.ms.seam-U.ms, msUnion:U.ms}});
+            return agg;
+          }catch(err){
+            for(const m of pieces){ try{ m.delete(); }catch(_){ } }
+            if(/Empty weld mesh/.test((err&&err.message)||'')) throw err;
+            slabFallback=(err&&err.message)||String(err);
+            self.postMessage({type:'progress',stage:'slab mesher skipped ('+slabFallback+') — classic mesher...'});
+            console.warn('[worker] weld slab mesher failed, using classic:', err);
+            return null;
+          }
+        };
+        const tLevelSet=performance.now();
+        if(useSlab) slabOut=await weldSlab();
+        if(!slabOut){
+        if(autoMode) autoCtx={redo:weldSlab};
+        const pieces=[], diag=[];
+        for(let ri=0;ri<regionData.length;ri++){
+          const {r, g, M, O}=regionData[ri];
+          let fn=field, stats=null;
+          if(M){ stats={}; fn=makeWeldLookup(g,M,O,field,stats); }
           lastStage='weld level set'+(regions.length>1?' '+(ri+1)+'/'+regions.length:'')+' ('+edge.toFixed(3)+'mm'+(stats?', pre-baked':'')+')';
           self.postMessage({type:'progress',stage:lastStage+'...'});
-          const m=safeLevelSet(fn,{min:r.min,max:r.max},edge,'weld level set');
+          let m;
+          try{ m=safeLevelSet(fn,{min:r.min,max:r.max},edge,'weld level set'); }
+          catch(err){
+            if(!(autoMode && isOOM(err))) throw err;
+            for(const x of pieces) x.delete();
+            pieces.length=0;
+            self.postMessage({type:'progress',stage:'classic mesher ran out of memory — slab mesher...'});
+            slabOut=await weldSlab();
+            if(!slabOut) throw err;
+            autoReason='classic ran out of memory';
+            break;
+          }
           diag.push({region:ri, points:g.mainCount+g.offCount, cached:stats?stats.hit:0, direct:stats?stats.miss:(g.mainCount+g.offCount)});
           if(m.isEmpty()) m.delete(); else pieces.push(m);
         }
+        if(!slabOut){
         msLevelSet=Math.round(performance.now()-tLevelSet);
-        let msUnion=0;
-        const parts=pieces.concat(solidMf);
+        const parts=pieces.concat(solidsFresh());
         if(!parts.length) throw new Error('Empty weld mesh — check group overlap.');
-        if(parts.length===1){ mfld=parts[0]; }
-        else{
-          lastStage='union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es');
-          self.postMessage({type:'progress',stage:lastStage+'...'});
-          const tU=performance.now();
-          mfld=ManifoldAPI.Manifold.union(parts);
-          for(const m of parts) m.delete();
-          msUnion=Math.round(performance.now()-tU);
-        }
+        const U=unionAll(parts, 'union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es'));
+        mfld=U.m;
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty weld mesh — check group overlap.');}
         if(hybrid) weldDustMm3=0.1*edge*edge*edge;
-        self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion}});
+        self.postMessage({type:'diag',diag:{weld:true, hybrid, solids:solidMf.length, regions:diag, msLevelSet, msUnion:U.ms}});
+        }
+        }
       } else if(d.shapeSdfData){
         const{relEdgeMm,simplifyTol,bbox,shapeSdfData,shapeN}=d;
         const tShape0=performance.now();
@@ -357,7 +448,7 @@ self.onmessage=async function(e){
       // if that one is closed.
       if(!cr.ok && autoMode && autoCtx){
         self.postMessage({type:'progress',stage:'classic mesh is torn ('+cr.bad+' open edges) — re-meshing with the slab mesher...'});
-        const sm=await trySlab(autoCtx.field, autoCtx.min, autoCtx.max, autoCtx.edge);
+        const sm=autoCtx.redo ? await autoCtx.redo() : await trySlab(autoCtx.field, autoCtx.min, autoCtx.max, autoCtx.edge);
         if(sm && sm.idx.length){
           slabOut=sm; vertProperties=sm.pos; triVerts=sm.idx; closedFix=null;
           msLevelSet+=sm.ms.mesh; msSimplify+=sm.ms.seam;
@@ -382,11 +473,14 @@ self.onmessage=async function(e){
       }
     }
     const triCount=triVerts.length/3;
+    // v0.16.0: triangle quality for the report and the bench page.
+    let quality=null;
+    try{ const q=triQuality(vertProperties, triVerts); quality={needles:q.needles, needlePct:+q.needlePct.toFixed(2), minAngleP5:+q.minAngleP5.toFixed(1)}; }catch(_){ }
     const ms=Math.round(performance.now()-t0);
     if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
-      mesher:slabOut?'slab':'classic', meshMode:meshMode, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
+      mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);

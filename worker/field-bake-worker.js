@@ -14,6 +14,9 @@
      {type:'job',  id, qa, qb}
      {type:'mesh', id, La, Lb, tol}   v0.15.0 slab mesher (m36-slab-pool.js):
         mesh tets with lowest layer in [La, Lb), simplify with seams locked
+     {type:'init', lookupOnly:true, edge, grid}   v0.16.0 weld region: no
+        field is built; each mesh job then carries main, off, kmA, koA — the
+        pre-baked values of the layers it reads (makeWeldLookupSlice, m31)
      {type:'band', id, pos, idx, outer, tol}   v0.15.0 seam band simplify
    Messages out:
      {type:'ready', n}
@@ -43,7 +46,7 @@ self.onmessage=async function(e){
   const d=e.data;
   try{
     if(d.type==='init'){
-      _field=buildExportField(d.spec, d.edge, null);
+      _field=d.lookupOnly?null:buildExportField(d.spec, d.edge, null);
       _grid=weldGridDims(d.grid.min, d.grid.max, d.grid.edge);
       _f32=!!d.f32;
       self.postMessage({type:'ready', n:_grid.n});
@@ -51,7 +54,9 @@ self.onmessage=async function(e){
     }
     if(d.type==='mesh'){
       const t0=performance.now();
-      let r=slabMeshLayers(_field, _grid, d.La, d.Lb);
+      const fn=d.main ? makeWeldLookupSlice(_grid, d.main, d.off, d.kmA, d.koA) : _field;
+      if(!fn) throw new Error('mesh job without a field');
+      let r=slabMeshLayers(fn, _grid, d.La, d.Lb);
       if(d.tol>0){ await slabMeshoptReady; r=simplifySlab(r, d.tol); }
       else r.rawTris=r.idx.length/3;
       self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer,

@@ -118,6 +118,7 @@ for (const s of specs) for (const k of ['mxx', 'mxy', 'mxz']) gbb[k] = Math.max(
   console.log(`new, 1 thread: ${(ms3 / 1000).toFixed(1)} s (level set ${(ms3ls / 1000).toFixed(1)} s, ${(n3 / 1e6).toFixed(2)}M points, ${(ms3ls * 1000 / n3).toFixed(1)} µs/point), ${r3.tris} tris, volume ${r3.vol.toFixed(1)} mm³, genus ${r3.genus}`);
 
   // 4. new, pre-baked from cropped grids
+  const baked4 = [];
   const t4 = performance.now(); let bakeMs = 0, lookMs = 0, miss = 0, hit = 0, cropBytes = 0, fullBytes = 0;
   const pieces4 = plan.regions.map(r => {
     const g = call(H, 'weldGridDims(__a,__b,__e)', { __a: r.min, __b: r.max, __e: EDGE });
@@ -132,6 +133,7 @@ for (const s of specs) for (const k of ['mxx', 'mxy', 'mxz']) gbb[k] = Math.max(
       M.set(s.main, s.kmA * (g.n[0] + 1) * (g.n[1] + 1)); O.set(s.off, s.koA * (g.n[0] + 2) * (g.n[1] + 2));
     }
     bakeMs += performance.now() - tb;
+    baked4.push({ M, O });
     const stats = {}; const look = call(W, 'makeWeldLookup(__g,__M,__O,__f,__s)', { __g: call(W, 'weldGridDims(__a,__b,__e)', { __a: r.min, __b: r.max, __e: EDGE }), __M: M, __O: O, __f: field, __s: stats });
     const tl = performance.now(); const m = Manifold.levelSet(look, { min: r.min, max: r.max }, EDGE); lookMs += performance.now() - tl;
     hit += stats.hit; miss += stats.miss; return m;
@@ -149,15 +151,27 @@ for (const s of specs) for (const k of ['mxx', 'mxy', 'mxz']) gbb[k] = Math.max(
   const volOf = (out) => { const d = out.find(m => m.type === 'done'); if (!d) return null; const V = new Float32Array(d.vertProperties), T = new Uint32Array(d.triVerts); let v = 0;
     for (let t = 0; t < T.length; t += 3) { const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3; v += (V[a] * (V[b + 1] * V[c + 2] - V[b + 2] * V[c + 1]) + V[a + 1] * (V[b + 2] * V[c] - V[b] * V[c + 2]) + V[a + 2] * (V[b] * V[c + 1] - V[b + 1] * V[c])) / 6; } return v; };
   {
-    const runMsg = async (weld) => {
+    const runMsg = async (weld, mesher, tol) => {
       const out = []; M.self.postMessage = (m) => out.push(m);
-      await M.self.onmessage({ data: { mode: 'export', bodies: bodiesW, blendK: FILLET, bbox: gbb, relEdgeMm: EDGE, simplifyTol: 0, scale: 1, weld } });
+      await M.self.onmessage({ data: { mode: 'export', bodies: bodiesW, blendK: FILLET, bbox: gbb, relEdgeMm: EDGE, simplifyTol: tol || 0, scale: 1, weld, mesher: mesher || 'classic', looseMode: 'keep' } });
       return out;
     };
     const solidMeshes = specs.map((s, i) => plan.solidOk[i] ? { pos: bodies.get(s.bodyId).posArr.slice().buffer, idx: bodies.get(s.bodyId).idxArr.slice().buffer } : null);
     const o1 = await runMsg({ hybrid: true, reachMm: plan.reachMm, regions: plan.regions.map(r => ({ min: r.min, max: r.max })), solidMeshes });
     const v1 = volOf(o1), e1 = o1.find(m => m.type === 'error'), dust1 = o1.find(m => m.type === 'diag' && m.diag.tinyShellsDropped);
     check(v1 != null && Math.abs(v1 - r3.vol) / r3.vol < 0.005, `mesh worker, hybrid message: ${e1 ? 'ERROR ' + e1.message : 'volume ' + v1.toFixed(1) + ' mm³ (one-thread run ' + r3.vol.toFixed(1) + ')'}${dust1 ? `, dropped ${dust1.diag.tinyShellsDropped} of ${dust1.diag.ofShells} shells under 0.1 voxel` : ''}`);
+    // 6b. v0.16.0 slab weld: the same message on the slab mesher (one thread
+    //     in Node), from the field and from the pre-baked values of (4).
+    for (const pre of [false, true]) {
+      const regs = plan.regions.map((r, ri) => pre ? { min: r.min, max: r.max, main: baked4[ri].M.slice().buffer, off: baked4[ri].O.slice().buffer, f32: false } : { min: r.min, max: r.max });
+      const ts = performance.now();
+      const o = await runMsg({ hybrid: true, reachMm: plan.reachMm, regions: regs, solidMeshes }, 'slab', EDGE * 0.05);
+      const d = o.find(m => m.type === 'done'), e = o.find(m => m.type === 'error'), v = volOf(o);
+      let closed = '—';
+      if (d) { const cr = M.meshClosedReport(new Float32Array(d.vertProperties), new Uint32Array(d.triVerts)); closed = cr.ok ? 'closed' : cr.bad + ' open edges'; }
+      check(d && d.mesher === 'slab' && closed === 'closed' && Math.abs(v - r3.vol) / r3.vol < 0.015,
+        `mesh worker, slab weld${pre ? ' (pre-baked)' : ''}: ${e ? 'ERROR ' + e.message : (d ? d.mesher + ', ' + closed + ', ' + d.triCount + ' tris, volume ' + v.toFixed(1) + ' mm³ (' + ((v / r3.vol - 1) * 100).toFixed(2) + ' % vs classic), ' + ((performance.now() - ts) / 1000).toFixed(1) + ' s' : 'no result')}${d && d.slabFallback ? ' — fell back: ' + d.slabFallback : ''}`);
+    }
     if (QUAL === 'draft' || process.env.OLD === '1') {
     const bad = solidMeshes.slice(); bad[0] = { pos: bad[0].pos, idx: new Uint32Array(new Uint32Array(bad[0].idx).slice(3)).buffer };   // drop a triangle
     const t6 = performance.now();

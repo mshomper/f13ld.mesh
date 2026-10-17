@@ -1,5 +1,8 @@
 // F13LD.mesh · tests/slabmesh.js — parallel slab mesher checks in Node (v0.15.0).
 // Usage: node tests/slabmesh.js [quick]
+// v0.16.0: simplified meshes are run with and without the edge-flip pass
+// (flipEdges, m35); needles and minimum-angle stats are printed for both,
+// and the flipped result must stay closed with the same volume.
 // For each test field: mesh with Manifold.levelSet and with the slab mesher at
 // 1, 2, 7 and 16 slabs; checks every slab mesh is a closed manifold with the
 // same vertices and triangles whatever the slab count, and reports volume,
@@ -26,13 +29,13 @@ function stats(pos,idx){
   }
   return {vol, area, tris:idx.length/3, needles};
 }
-function simplifiedSlabs(F,g,nS,tol){
-  const Lmax=g.layers-2, slabs=[], seamZ=[]; let slowest=0;
+function simplifiedSlabs(F,g,nS,tol,flip){
+  const Lmax=g.layers-2, slabs=[], seamZ=[]; let slowest=0, flips=0, flipMs=0, rejected=0;
   for(let s=0;s<nS;s++){
     const a=Math.round(Lmax*s/nS), c=Math.round(Lmax*(s+1)/nS);
     const ts=performance.now();
     let r=ctx.slabMeshLayers(F.fn,g,a,c);
-    if(tol>0) r=ctx.simplifySlab(r,tol);
+    if(tol>0){ r=ctx.simplifySlab(r,tol,flip); flips+=r.flips||0; flipMs+=r.flipMs||0; if(r.flipRejected) rejected++; }
     slowest=Math.max(slowest,performance.now()-ts);
     slabs.push(r);
     if(s>0) seamZ.push(a&1 ? g.min[2]+g.s[2]*((a-1)/2) : g.min[2]+g.s[2]*(a/2-0.5));
@@ -40,9 +43,19 @@ function simplifiedSlabs(F,g,nS,tol){
   const t0=performance.now();
   const J=ctx.joinSlabs(slabs);
   let idx=J.idx;
-  if(tol>0 && seamZ.length) idx=ctx.simplifySeamBands(J.pos,idx,seamZ,4*Math.max(g.s[0],g.s[1],g.s[2]),tol);
+  let bandFlips=0;
+  if(tol>0 && seamZ.length){ idx=ctx.simplifySeamBands(J.pos,idx,seamZ,4*Math.max(g.s[0],g.s[1],g.s[2]),tol,flip); if(ctx.simplifySeamBands.last){ bandFlips=ctx.simplifySeamBands.last.flips; rejected+=ctx.simplifySeamBands.last.flipRejected; } }
   const C=ctx.compactIndexed(J.pos,idx);
-  return {pos:C.pos, idx:C.idx, slowest, joinMs:performance.now()-t0};
+  // v0.16.0: the final unlocked flip pass over the joined mesh (as _slabFinish, m36)
+  let finalMs=0;
+  if(flip!==false && tol>0 && seamZ.length){
+    const tf=performance.now();
+    if(process.env.FINALSIMP!=='0'){ const ss=ctx.safeSimplify(C.pos,C.idx,tol); const C2=ctx.compactIndexed(C.pos,ss.idx); C.pos=C2.pos; C.idx=C2.idx; }
+    const f=ctx.checkedFlip(C.pos,C.idx,null); C.idx=f.idx; bandFlips+=f.flips; if(f.rejected) rejected++;
+    finalMs=performance.now()-tf;
+    if(process.env.VERBOSE) console.log('   final pass ms',Math.round(finalMs));
+  }
+  return {pos:C.pos, idx:C.idx, slowest, joinMs:performance.now()-t0, flips, bandFlips, flipMs, rejected};
 }
 (async()=>{
   const {MeshoptSimplifier:S}=await import(path.join(__dirname,'node_modules/meshoptimizer/index.js')); await S.ready;
@@ -85,12 +98,20 @@ function simplifiedSlabs(F,g,nS,tol){
     const RC=ctx.compactIndexed(rm.vertProperties,ri), rss=stats(RC.pos,RC.idx);
     let v1=null;
     for(const nS of [1,8]){
-      const R=simplifiedSlabs(F,g,nS,tol), st=stats(R.pos,R.idx), cl=ctx.meshClosedReport(R.pos,R.idx);
+      const R0=simplifiedSlabs(F,g,nS,tol,false), q0=ctx.triQuality(R0.pos,R0.idx), s0=stats(R0.pos,R0.idx);
+      const R=simplifiedSlabs(F,g,nS,tol), st=stats(R.pos,R.idx), cl=ctx.meshClosedReport(R.pos,R.idx), q=ctx.triQuality(R.pos,R.idx);
       let ok=cl.ok?'closed':('OPEN '+cl.bad+' edges');
       if(!cl.ok) fail++;
+      if(q.needles!==st.needles){ ok+=' NEEDLE COUNT MISMATCH'; fail++; }
+      // v0.16.0: with flips (and, on several slabs, the final simplify over
+      // the joined mesh) volume stays within the slab-count tolerance of the
+      // classic mesh (Manifold + one simplify)
+      if(!(F.under>=e) && Math.abs(st.vol/rss.vol-1)>0.015){ ok+=' VOL VS CLASSIC '+((st.vol/rss.vol-1)*100).toFixed(4)+'%'; fail++; }
       if(v1==null) v1=st.vol; else if(Math.abs(st.vol/v1-1)>0.015){ if(F.under>=e) ok+=' (under-sampled: wall thinner than the edge, volume not checked)'; else { ok+=' VOL DRIFT'; fail++; } }
       const ex=F.exact?' exact '+((st.vol/F.exact-1)*100).toFixed(2)+'% (classic '+((rss.vol/F.exact-1)*100).toFixed(2)+'%)':'';
       console.log(F.name.padEnd(13),'edge '+e,'simplified',String(nS).padStart(2)+' slabs',ok,'| tris',st.tris,'vs classic',rss.tris,'| needles',st.needles,'vs',rss.needles,'| vol vs classic',((st.vol/rss.vol-1)*100).toFixed(3)+'%'+ex,'| slowest slab ms',Math.round(R.slowest),'join',Math.round(R.joinMs),'manifold levelSet',Math.round(msRef));
+      const cq=ctx.triQuality(RC.pos,RC.idx);
+      console.log(''.padEnd(13),'  flips',R.flips+'+'+R.bandFlips+' band','in',Math.round(R.flipMs)+' ms'+(R.rejected?' ('+R.rejected+' passes not closed, kept unflipped)':''),'| needles',q0.needles,'->',q.needles,'(classic',cq.needles+')','| min angle p5',q0.minAngleP5.toFixed(1),'->',q.minAngleP5.toFixed(1),'(classic',cq.minAngleP5.toFixed(1)+')','| mean',q0.meanMinAngle.toFixed(1),'->',q.meanMinAngle.toFixed(1),'(classic',cq.meanMinAngle.toFixed(1)+')');
     }
   }
   // loose-piece clean-up: big sphere + a small detached speck

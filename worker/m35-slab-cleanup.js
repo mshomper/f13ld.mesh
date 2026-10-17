@@ -17,6 +17,9 @@
                            its tolerance) lock the points around the tear and
                            redo it; the classic mesher uses it too
    removeLoosePieces(...)  split into connected pieces and drop the small ones
+   flipEdges(...)          edge flips on nearly flat areas for better triangles
+                           (v0.16.0); run after each slab / band simplify
+   triQuality(pos,idx)     needles and minimum-angle stats, one pass
    ============================================================ */
 'use strict';
 var _slabMeshopt=null;
@@ -47,7 +50,8 @@ function compactIndexed(pos, idx){
 // Simplify one slab in place of r ({pos, idx, seamV, seamK}). Seam vertices
 // are locked so the neighbouring slab, simplified on its own, still meets
 // them exactly.
-function simplifySlab(r, tol){
+// flip: false skips the edge-flip pass (v0.16.0; tests compare with it).
+function simplifySlab(r, tol, flip){
   var S=slabMeshopt();
   if(!S || !(tol>0) || r.idx.length<3) return r;
   var nV=r.pos.length/3, open=new Uint8Array(nV), i;
@@ -61,10 +65,26 @@ function simplifySlab(r, tol){
     shared=function(a,b){ if(open[a]!==1||open[b]!==1) return false; var ka=key.get(a), kb=key.get(b); return pairs.has(ka<kb?ka+','+kb:kb+','+ka); };
   }
   var ss=safeSimplify(r.pos, r.idx, tol, open, null, shared);
-  var c=compactIndexed(r.pos, ss.idx);
+  // v0.16.0: edge flips; no edge between two seam vertices is removed or
+  // made and no vertex moves, so the slabs still join exactly
+  var fr=flip===false?{idx:ss.idx, flips:0, ms:0}:checkedFlip(r.pos, ss.idx, open, shared||open);
+  var c=compactIndexed(r.pos, fr.idx);
   var sv=[], sk=[];
   for(i=0;i<r.seamV.length;i++){ var m=c.remap[r.seamV[i]]; if(m>=0){ sv.push(m); sk.push(r.seamK[i]); } }
-  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), rawTris:r.idx.length/3, evals:r.evals, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe};
+  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), rawTris:r.idx.length/3, evals:r.evals, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected};
+}
+// flipEdges opts for the slab / band passes: 'edge' locking lets seam
+// vertices take part (their edges to each other and their positions stay),
+// which reaches the fans along the seams (about twice the needles fixed)
+var SLAB_FLIP_OPTS={lockMode:'edge'};
+// flipEdges, kept only if the result is still closed (ignore: as for
+// meshClosedReport — the sub-mesh's open edges). Returns {idx, flips, ms,
+// rejected}.
+function checkedFlip(pos, idx, lockV, ignore){
+  var t0=(typeof performance!=='undefined')?performance.now():0;
+  var out=flipEdges(pos, idx, lockV, SLAB_FLIP_OPTS), n=flipEdges.last.flips, rej=false;
+  if(n && !meshClosedReport(pos, out, false, ignore||null).ok){ out=idx; n=0; rej=true; }
+  return {idx:out, flips:n, rejected:rej, ms:((typeof performance!=='undefined')?performance.now():0)-t0};
 }
 
 // Second pass over the triangles within bandW of each seam plane (z values
@@ -107,9 +127,11 @@ function seamBandJobs(pos, idx, seamZ, bandW){
   }
   return {jobs:jobs, rest:rest, bandTris:nT-nRest};
 }
-function simplifyBandJob(job, tol){
+function simplifyBandJob(job, tol, flip){
   var ss=safeSimplify(job.pos, job.idx, tol, job.outer, ['Sparse']);
-  return {idx:ss.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe};
+  // v0.16.0: edge flips, outer edges (both ends outer) kept as they are
+  var fr=flip===false?{idx:ss.idx, flips:0, ms:0}:checkedFlip(job.pos, ss.idx, job.outer, job.outer);
+  return {idx:fr.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected};
 }
 function joinSeamBands(rest, jobs, results){
   var n=rest.length, i, k;
@@ -118,20 +140,20 @@ function joinSeamBands(rest, jobs, results){
   for(k=0;k<jobs.length;k++){ var gv=jobs[k].gv, li=results[k].idx; for(i=0;i<li.length;i++) out[o++]=gv[li[i]]; }
   return out;
 }
-function simplifySeamBands(pos, idx, seamZ, bandW, tol){
+function simplifySeamBands(pos, idx, seamZ, bandW, tol, flip){
   var S=slabMeshopt();
   if(!S || !(tol>0) || !seamZ.length) return idx;
   var cut=seamBandJobs(pos, idx, seamZ, bandW);
   if(!cut.jobs.length) return idx;
-  var res=cut.jobs.map(function(j){ return simplifyBandJob(j, tol); });
+  var res=cut.jobs.map(function(j){ return simplifyBandJob(j, tol, flip); });
   var out=joinSeamBands(cut.rest, cut.jobs, res);
   simplifySeamBands.last=bandStats(cut, res, out);
   return out;
 }
 function bandStats(cut, res, out){
-  var r=0, l=0, gu=false, un=false, after=0;
-  for(var k=0;k<res.length;k++){ r+=res[k].retries; l+=res[k].locked; gu=gu||res[k].gaveUp; un=un||res[k].unsafe; after+=res[k].idx.length/3; }
-  return {bandTris:cut.bandTris, after:after, bands:res.length, retries:r, locked:l, gaveUp:gu, unsafe:un};
+  var r=0, l=0, gu=false, un=false, after=0, fl=0, fr=0;
+  for(var k=0;k<res.length;k++){ r+=res[k].retries; l+=res[k].locked; gu=gu||res[k].gaveUp; un=un||res[k].unsafe; after+=res[k].idx.length/3; fl+=res[k].flips||0; if(res[k].flipRejected) fr++; }
+  return {bandTris:cut.bandTris, after:after, bands:res.length, retries:r, locked:l, gaveUp:gu, unsafe:un, flips:fl, flipRejected:fr};
 }
 
 // Closed, consistently oriented mesh: every directed edge a→b appears once
@@ -255,6 +277,174 @@ function safeSimplify(pos, idx, tol, open, flags, shared){
   var last=problems(res);
   if(!last.tear.length && !last.seam.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
   return {idx:idx, retries:retries, locked:locked, unsafe:false, gaveUp:true};
+}
+
+// Edge flips (v0.16.0). Simplify leaves long thin triangles on flat areas
+// (fans between locked seam points); flipping the shared edge of two
+// triangles that lie in one plane changes no shape and can fix them.
+// Greedy max-min-angle flips, edges in half-edge order, up to maxPasses
+// passes (stops at the first pass without a flip), so the result depends
+// only on the inputs. Positions never move; the triangle count stays.
+// An edge a→b (triangles abc, bad) becomes c→d (triangles adc, dbc) only if
+//   - it is shared by exactly two triangles, once each way
+//   - none of a, b, c, d is locked (lockV) or pinched, and a, b keep at
+//     least 3 edges. opts.lockMode 'edge': locked vertices may take part,
+//     but no edge with both ends locked is removed or made, and they never
+//     move — every seam (open) edge stays as it was
+//   - c–d is not an edge already (that would be non-manifold)
+//   - the two old triangles and both new ones are within maxDihedralDeg
+//     (default 1°) of each other, and neither new one is degenerate
+//   - Delaunay: the angles at c and d add up to more than 180° (then the
+//     quad is convex, and for a flat quad that is the max-min-angle choice; a small margin keeps
+//     square grids, whose two diagonals tie, as they are)
+// opts: {maxDihedralDeg, maxPasses (6), lockMode ('vertex' | 'edge')}. Returns the new idx (a copy);
+// stats in flipEdges.last = {flips, passes}.
+function flipEdges(pos, idx, lockV, opts){
+  opts=opts||{};
+  var maxPasses=opts.maxPasses>0?opts.maxPasses:6;
+  var cosT=Math.cos((opts.maxDihedralDeg>0?opts.maxDihedralDeg:1)*Math.PI/180);
+  var edgeLock=opts.lockMode==='edge';
+  var nV=pos.length/3, nH=idx.length, nT=nH/3, h, g, v, i, k;
+  var out=new Uint32Array(idx);
+  flipEdges.last={flips:0, passes:0};
+  if(nT<2) return out;
+  // half-edge h = 3t+q runs out[h] → out[nx(h)]
+  function nx(x){ return x%3===2?x-2:x+1; }
+  function pv(x){ return x%3===0?x+2:x-1; }
+  // outgoing half-edges per vertex (CSR) → opposite half-edges
+  var deg=new Int32Array(nV), st=new Int32Array(nV+1), lst=new Int32Array(nH), fill;
+  for(h=0;h<nH;h++) deg[out[h]]++;
+  for(v=0;v<nV;v++) st[v+1]=st[v]+deg[v];
+  fill=st.slice(0,nV);
+  for(h=0;h<nH;h++) lst[fill[out[h]]++]=h;
+  var opp=new Int32Array(nH).fill(-1);
+  for(h=0;h<nH;h++){
+    var a=out[h], b=out[nx(h)], m=-1, nf=0, nr=0;
+    for(k=st[a];k<st[a+1];k++) if(out[nx(lst[k])]===b) nf++;
+    for(k=st[b];k<st[b+1];k++){ g=lst[k]; if(out[nx(g)]===a){ nr++; m=g; } }
+    if(nf===1 && nr===1) opp[h]=m;
+  }
+  lst=null; fill=null;
+  // a vertex can take part only if walking its fan (both ways from one
+  // half-edge, for an open fan) reaches every one of its half-edges, so
+  // hasEdge sees all its neighbours (pinched vertices never do)
+  var vh=new Int32Array(nV).fill(-1), bad=new Uint8Array(nV), lk=new Uint8Array(nV);
+  for(h=0;h<nH;h++) if(vh[out[h]]<0) vh[out[h]]=h;
+  for(v=0;v<nV;v++){
+    if(vh[v]<0) continue;
+    if(lockV && lockV[v]){ lk[v]=1; if(!edgeLock){ bad[v]=1; continue; } }
+    var s=vh[v], c0=0; h=s;
+    do{ g=opp[pv(h)]; c0++; h=g; }while(h>=0 && h!==s && c0<=deg[v]);
+    if(h<0){ h=opp[s]; while(h>=0 && c0<=deg[v]){ h=nx(h); if(h===s) break; c0++; h=opp[h]; } }
+    if(c0!==deg[v]) bad[v]=1;
+  }
+  function hasEdge(c, d){
+    var s2=vh[c], x=s2, n2=0;
+    do{ if(out[nx(x)]===d || out[pv(x)]===d) return true; x=opp[pv(x)]; n2++; }while(x!==s2 && x>=0 && n2<=deg[c]);
+    if(x<0){ x=opp[s2]; while(x>=0 && n2<=deg[c]){ x=nx(x); if(x===s2) break; if(out[nx(x)]===d || out[pv(x)]===d) return true; n2++; x=opp[x]; } }
+    return false;
+  }
+  // triangle normals (unnormalised) and their lengths, kept up to date
+  var P=pos, tn=new Float64Array(3*nT), tl=new Float64Array(nT), t;
+  function triN(t){
+    var p=3*out[3*t], q=3*out[3*t+1], r=3*out[3*t+2];
+    var ux=P[q]-P[p], uy=P[q+1]-P[p+1], uz=P[q+2]-P[p+2];
+    var wx=P[r]-P[p], wy=P[r+1]-P[p+1], wz=P[r+2]-P[p+2];
+    var x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx;
+    tn[3*t]=x; tn[3*t+1]=y; tn[3*t+2]=z; tl[t]=Math.sqrt(x*x+y*y+z*z);
+  }
+  for(t=0;t<nT;t++) triN(t);
+  // dirty triangles: pass 0 checks every edge, later passes only edges of
+  // triangles a flip touched in the pass before (same fixed order)
+  var dirty=new Uint8Array(nT).fill(1), nxt=new Uint8Array(nT);
+  var flips=0, pass, eps=1e-6;
+  for(pass=0; pass<maxPasses; pass++){
+    var nf2=0;
+    for(h=0;h<nH;h++){
+      g=opp[h]; if(g<h) continue;           // each edge once, and -1 skipped
+      var t0=(h/3)|0, t1=(g/3)|0;
+      if(!dirty[t0] && !dirty[t1]) continue;
+      var h1=nx(h), h2=pv(h), g1=nx(g), g2=pv(g);
+      var A0=out[h], B0=out[h1], C0=out[h2], D0=out[g2];
+      if(bad[A0]||bad[B0]||bad[C0]||bad[D0] || C0===D0) continue;
+      if(deg[A0]<4 || deg[B0]<4) continue;
+      if(lk[A0]&&lk[B0] || lk[C0]&&lk[D0]) continue;   // 'edge' mode: locked–locked edges stay
+      // nearly flat
+      var l0=tl[t0], l1=tl[t1];
+      if(!(l0>0&&l1>0)) continue;
+      var n0x=tn[3*t0], n0y=tn[3*t0+1], n0z=tn[3*t0+2], n1x=tn[3*t1], n1y=tn[3*t1+1], n1z=tn[3*t1+2];
+      if(n0x*n1x+n0y*n1y+n0z*n1z < cosT*l0*l1) continue;
+      // Delaunay test (max-min angle for a flat convex quad): flip when the
+      // angles at c and d add up to more than 180° (sin(γ+δ) < -eps)
+      var pa=3*A0, pb=3*B0, pc=3*C0, pd=3*D0;
+      var cax=P[pa]-P[pc], cay=P[pa+1]-P[pc+1], caz=P[pa+2]-P[pc+2];
+      var cbx=P[pb]-P[pc], cby=P[pb+1]-P[pc+1], cbz=P[pb+2]-P[pc+2];
+      var dax=P[pa]-P[pd], day=P[pa+1]-P[pd+1], daz=P[pa+2]-P[pd+2];
+      var dbx=P[pb]-P[pd], dby=P[pb+1]-P[pd+1], dbz=P[pb+2]-P[pd+2];
+      var cc=cax*cbx+cay*cby+caz*cbz, dd=dax*dbx+day*dby+daz*dbz;
+      var sinS=l0*dd+cc*l1;                 // |ca×cb| = l0, |da×db| = l1
+      var Lc=(cax*cax+cay*cay+caz*caz)*(cbx*cbx+cby*cby+cbz*cbz), Ld=(dax*dax+day*day+daz*daz)*(dbx*dbx+dby*dby+dbz*dbz);
+      if(!(sinS < -eps*Math.sqrt(Lc*Ld))) continue;
+      // new triangles adc, dbc: not degenerate, normals within the limit
+      // adc normal = (d-a)×(c-a); dbc normal = (b-d)×(c-d)
+      var adx=-dax, ady=-day, adz=-daz, acx=-cax, acy=-cay, acz=-caz;
+      var m0x=ady*acz-adz*acy, m0y=adz*acx-adx*acz, m0z=adx*acy-ady*acx;
+      var cdx=P[pc]-P[pd], cdy=P[pc+1]-P[pd+1], cdz=P[pc+2]-P[pd+2];
+      var m1x=dby*cdz-dbz*cdy, m1y=dbz*cdx-dbx*cdz, m1z=dbx*cdy-dby*cdx;
+      var k0=Math.sqrt(m0x*m0x+m0y*m0y+m0z*m0z), k1=Math.sqrt(m1x*m1x+m1y*m1y+m1z*m1z);
+      var lm=Math.max(cdx*cdx+cdy*cdy+cdz*cdz, cax*cax+cay*cay+caz*caz, cbx*cbx+cby*cby+cbz*cbz, dax*dax+day*day+daz*daz, dbx*dbx+dby*dby+dbz*dbz);
+      if(!(k0>1e-9*lm && k1>1e-9*lm)) continue;
+      if(m0x*n0x+m0y*n0y+m0z*n0z < cosT*k0*l0 || m0x*n1x+m0y*n1y+m0z*n1z < cosT*k0*l1 ||
+         m1x*n0x+m1y*n0y+m1z*n0z < cosT*k1*l0 || m1x*n1x+m1y*n1y+m1z*n1z < cosT*k1*l1) continue;
+      if(hasEdge(C0,D0)) continue;
+      // flip: t0 slots h,h1,h2 = c,a,d (edges c→a, a→d, d→c);
+      //       t1 slots g,g1,g2 = d,b,c (edges d→b, b→c, c→d)
+      var oCA=opp[h2], oBC=opp[h1], oAD=opp[g1], oDB=opp[g2];
+      out[h]=C0; out[h1]=A0; out[h2]=D0;
+      out[g]=D0; out[g1]=B0; out[g2]=C0;
+      opp[h]=oCA; opp[oCA]=h; opp[h1]=oAD; opp[oAD]=h1;
+      opp[g]=oDB; opp[oDB]=g; opp[g1]=oBC; opp[oBC]=g1;
+      opp[h2]=g2; opp[g2]=h2;
+      vh[A0]=h1; vh[B0]=g1; vh[C0]=h; vh[D0]=g;
+      deg[A0]--; deg[B0]--; deg[C0]++; deg[D0]++;
+      triN(t0); triN(t1);
+      // the four outer edges' triangles get another look next pass
+      nxt[t0]=1; nxt[t1]=1; nxt[(oCA/3)|0]=1; nxt[(oBC/3)|0]=1; nxt[(oAD/3)|0]=1; nxt[(oDB/3)|0]=1;
+      nf2++;
+    }
+    flips+=nf2;
+    if(!nf2){ pass++; break; }
+    var sw=dirty; dirty=nxt; nxt=sw; nxt.fill(0);
+  }
+  flipEdges.last={flips:flips, passes:pass};
+  return out;
+}
+
+// Triangle quality, one pass: {tris, needles (height / longest edge under
+// 5 %, the tests' rule), needlePct, minAngleP5 (5th percentile of each
+// triangle's smallest angle, degrees, 0.1° bins), meanMinAngle} (v0.16.0).
+function triQuality(pos, idx){
+  var nT=idx.length/3, hist=new Float64Array(601), needles=0, sum=0, t;
+  for(t=0;t<nT;t++){
+    var a=3*idx[3*t], b=3*idx[3*t+1], c=3*idx[3*t+2];
+    var ux=pos[b]-pos[a], uy=pos[b+1]-pos[a+1], uz=pos[b+2]-pos[a+2];
+    var vx=pos[c]-pos[a], vy=pos[c+1]-pos[a+1], vz=pos[c+2]-pos[a+2];
+    var wx=pos[c]-pos[b], wy=pos[c+1]-pos[b+1], wz=pos[c+2]-pos[b+2];
+    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx, A2=Math.sqrt(nx*nx+ny*ny+nz*nz);
+    var C=ux*ux+uy*uy+uz*uz, B=vx*vx+vy*vy+vz*vz, Aa=wx*wx+wy*wy+wz*wz;
+    var l2=Math.max(Aa,B,C), ang=0;
+    if(l2>0 && A2/l2<0.05) needles++;
+    if(Aa>0&&B>0&&C>0){
+      // smallest angle is opposite the shortest edge; atan2 keeps it exact
+      var s=Math.min(Aa,B,C), p, q;
+      if(s===Aa){ p=B; q=C; } else if(s===B){ p=Aa; q=C; } else { p=Aa; q=B; }
+      ang=Math.atan2(2*A2, p+q-s)*180/Math.PI;
+    }
+    sum+=ang; hist[Math.min(600, Math.floor(ang*10))]++;
+  }
+  var want=0.05*nT, acc=0, p5=0;
+  for(var i=0;i<601;i++){ acc+=hist[i]; if(acc>=want){ p5=i/10; break; } }
+  return {tris:nT, needles:needles, needlePct:nT?100*needles/nT:0, minAngleP5:p5, meanMinAngle:nT?sum/nT:0};
 }
 
 // Loose-piece clean-up (v0.15.0). Splits the mesh into connected pieces

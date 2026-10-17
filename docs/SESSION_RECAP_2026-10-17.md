@@ -25,7 +25,17 @@ Branch `slab-welds`. Matt's decisions this session: slab welds keep the imported
 - The foam weld's extra time is the final pass: foam's thin walls tear when simplified, so `safeSimplify` redoes the whole mesh (Node, foam weld at Low: 1.0 M triangles, 4 redos, 8.5 s on one thread), and the final pass runs on one core over the joined mesh.
 - Decisions: merge v0.16.0 now; the parallel final pass is v0.16.1; leave the union-cut thin triangles on hybrid welds (the faces stay exactly flat).
 
+## v0.16.1 parallel final pass (branch `parallel-final`)
+
+- Two ideas tried and dropped: wide bands alone (re-cut at slab middles) can't flatten a flat face once it is strips spanning two seams — any split into pieces locks those rows (box: 1,156 triangles, also without ring locks); seeding the one-thread whole-mesh pass with the slabs' tear locks only cut its redos 3 → 2 (foam weld region at Low: 3.1 → 2.2 s).
+- Shipped (`m35` `finalBandRounds`, `markBandRows`, `simplifyRows`, `simplifyFinalRounds`; `m36 _slabFinish`): round A (wide bands around the even seams) and round B (odd seams) on the pool, each band reaching to the other round's seams, then the one-thread rows pass with everything locked except round B's band-edge rows plus 2 rings (`SLAB_ROWS_RINGS`). Replaces v0.15.0's narrow seam bands and v0.16.0's whole-mesh pass. Tear locks found by the slabs and bands (`safeSimplify` now returns `tearLock`, `simplifySlab` / band jobs return `tearV`, sent by `field-bake-worker.js`) stay locked in every later pass (`seed`).
+- Node (`tests/slabmesh.js`, 8 slabs): box cap 12 triangles (classic 12); gyroid solid at 0.2: 6,818 triangles, 31 needles (v0.16.0 6,966 / 39; classic 7,336 / 66). Foam weld region at Low, 24 slabs, one thread: rounds 3.1 s + 5.0 s of work split over 10 / 11 bands, rows pass 2.4 s, 236 k triangles, needles 2.25 %, closed — vs v0.16.0's 5.8 s finish on one core.
+- Stage times: the `done` message carries `stages` (slabs, round A, round B, rows, flips, union, clean-up; `m36 slabStageTimes`); the bench page shows them on each card and as a second table in the report.
+- Checks: `slabmesh.js`, `flipedges.js`, `weldtest.js` pass; `GEOM=1 MESHER=slab QUAL=low CORES=3` harness on gyroid sheet, open foam, shape gyroid, wet foam: closed, volume within 0.01 % of v0.15.0.
+- If the rows pass shows up as the big stage on Matt's bench, it can be split per row onto the pool next.
+
 ## Open / next
 
-- v0.16.1: final pass in parallel — re-cut the joined mesh at the middle of each original slab so every old seam lies inside a piece, simplify + flip each piece on the pool with only its cut edges locked; stage times (slab mesh / bands / final pass + redos / union / clean-up) on the bench cards.
+- Matt: bench v0.16.1 from `parallel-final` (weld cases, foam), check the stage table.
+- (done in v0.16.1) final pass in parallel — re-cut the joined mesh at the middle of each original slab so every old seam lies inside a piece, simplify + flip each piece on the pool with only its cut edges locked; stage times (slab mesh / bands / final pass + redos / union / clean-up) on the bench cards.
 - Then P3 (exact-math GLSL sources), P4 (empty-space skipping, adaptive resolution, bench preview tab), P5 (WebGPU, IndexedDB).

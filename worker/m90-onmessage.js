@@ -172,6 +172,7 @@ self.onmessage=async function(e){
               agg.slabs+=sm.slabs; agg.workers=Math.max(agg.workers, sm.workers||1); agg.raw+=sm.raw||0; agg.retries+=sm.retries||0;
               agg.locked+=sm.locked||0; agg.gaveUp+=sm.gaveUp||0; agg.evals+=sm.evals||0; agg.seam=sm.seam||agg.seam;
               agg.ms.mesh+=sm.ms.mesh; agg.ms.seam+=sm.ms.seam;
+              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]+=st[k]; }
               if(!sm.idx.length) continue;
               const cr=meshClosedReport(sm.pos, sm.idx);
               if(!cr.ok) throw new Error('region '+(ri+1)+' not closed ('+cr.bad+' edges)');
@@ -198,6 +199,7 @@ self.onmessage=async function(e){
             // solids keep their exact shape).
             const ff=checkedFlip(pos, idx, null);
             idx=ff.idx; agg.finalFlips=(agg.finalFlips||0)+ff.flips;
+            agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; agg.stages.flip+=Math.round(ff.ms); agg.stages.union=U.ms;
             const cr=meshClosedReport(pos, idx);
             if(!cr.ok) throw new Error('weld result not closed ('+cr.bad+' edges)');
             agg.pos=pos; agg.idx=idx; agg.ms.seam+=U.ms;
@@ -463,7 +465,9 @@ self.onmessage=async function(e){
     {
       lastStage='checking loose pieces';
       const eV=d.edgeWorld||d.relEdgeMm||0;               // mesh cell edge, vertex units
+      var tLoose=performance.now();
       const r=removeLoosePieces(vertProperties, triVerts, looseMode, eV*eV*eV);
+      var msLoose=Math.round(performance.now()-tLoose);
       const s3=Math.pow(d.scale||1,3);
       loose={mode:looseMode, dropped:r.dropped, pieces:r.pieces, bigPieces:r.bigPieces, droppedMm3:r.droppedVol*s3, capped:r.capped,
         manyPieces:r.bigPieces>LOOSE_WARN_PIECES || r.capped};
@@ -481,7 +485,9 @@ self.onmessage=async function(e){
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
       mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
-      msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
+      msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
+      // v0.16.1: where the slab mesher's time went (ms)
+      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}):null},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

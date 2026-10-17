@@ -39,32 +39,43 @@ async function _slabFinish(g, results, tol, post, t0, runBands){
   const tJ=performance.now();
   const J=joinSlabs(results);
   let idx=J.idx, seam=null;
+  // v0.16.1: every vertex a slab or band simplify locked for a tear, in the
+  // joined mesh's ids — seeds the final pass so it doesn't tear and redo there
+  const seedJ=new Uint8Array(J.pos.length/3);
+  let nSeed=0;
+  for(let s=0;s<results.length;s++){ const tv=results[s].tearV, rm=J.remap[s]; if(!tv) continue; for(let i=0;i<tv.length;i++){ const v=rm[tv[i]]; if(v>=0&&!seedJ[v]){ seedJ[v]=1; nSeed++; } } }
   const seamZ=[]; for(let i=1;i<results.length;i++) seamZ.push(slabSeamZ(g, results[i]._La));
+  // v0.16.1 final pass (m35 finalBandRounds): two rounds of wide bands on the
+  // pool — round A around the even seams, round B around the odd ones — then
+  // the one-thread rows pass with everything locked except the rows round B
+  // had to lock. Replaces v0.15.0's narrow seam bands and v0.16.0's
+  // one-thread simplify of the whole mesh (slow on foams: tears made it redo
+  // the whole mesh). Tear locks from the slabs and bands stay locked (seedJ).
+  const tF=performance.now();
+  let rounds=[], rows=null;
   if(tol>0 && seamZ.length){
-    if(post) post({type:'progress', stage:'tidying '+seamZ.length+' seam'+(seamZ.length===1?'':'s')+'...'});
-    const cut=seamBandJobs(J.pos, idx, seamZ, SLAB_BAND_EDGES*Math.max(g.s[0],g.s[1],g.s[2]));
-    if(cut.jobs.length){
+    const R=finalBandRounds(seamZ), free=new Uint8Array(J.pos.length/3);
+    for(let r=0;r<2;r++){
+      if(!R[r].length) continue;
+      if(post) post({type:'progress', stage:'final pass, round '+(r?'B':'A')+' ('+R[r].length+' band'+(R[r].length===1?'':'s')+')...'});
+      const tRound=performance.now();
+      const cut=seamBandJobs(J.pos, idx, R[r], R[2]);
+      if(!cut.jobs.length) continue;
+      if(nSeed) for(const j of cut.jobs){ const sd=new Uint8Array(j.gv.length); let any=0; for(let i=0;i<j.gv.length;i++) if(seedJ[j.gv[i]]){ sd[i]=1; any=1; } if(any) j.seed=sd; }
       const res=runBands ? await runBands(cut.jobs, tol) : cut.jobs.map(j=>simplifyBandJob(j, tol));
+      markBandRows(cut.jobs, res, r===1?free:null, seedJ);
       idx=joinSeamBands(cut.rest, cut.jobs, res);
-      seam=bandStats(cut, res, idx);
+      const st=bandStats(cut, res, idx); st.round=r?'B':'A'; st.ms=Math.round(performance.now()-tRound); rounds.push(st);
     }
+    if(post) post({type:'progress', stage:'final pass, rows...'});
+    const tR=performance.now();
+    rows=simplifyRows(J.pos, idx, tol, free, seedJ);
+    idx=rows.idx; rows={free:rows.free, retries:rows.retries, gaveUp:rows.gaveUp, ms:Math.round(performance.now()-tR)};
   }
+  seam=rounds.length?rounds[rounds.length-1]:null;
   const C=compactIndexed(J.pos, idx);
-  // v0.16.0 final pass over the joined mesh, nothing locked: the seams no
-  // longer have to match anything. The slab and band passes leave the rows of
-  // vertices they had to lock, which split flat areas into strips of long thin
-  // triangles (a box cap: thousands of triangles instead of 12). One
-  // tear-safe simplify of the whole, already-simplified mesh (cheap next to
-  // the slab simplify), then a flip pass (near-flat only, positions never
-  // move, kept only if still closed).
-  let finalFlip=null, finalSimp=null;
-  if(tol>0 && results.length>1){
-    if(post) post({type:'progress', stage:'final pass over '+(C.idx.length/3/1e6).toFixed(2)+'M tris...'});
-    const tF=performance.now();
-    const ss=safeSimplify(C.pos, C.idx, tol);
-    if(ss.idx!==C.idx){ const C2=compactIndexed(C.pos, ss.idx); C.pos=C2.pos; C.idx=C2.idx; }
-    finalSimp={retries:ss.retries||0, gaveUp:!!ss.gaveUp, ms:Math.round(performance.now()-tF)};
-  }
+  let finalFlip=null;
+  const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF)};
   if(tol>0){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);
   let raw=0, retries=0, locked=0, gaveUp=0, evals=0, slowest=0;
@@ -74,6 +85,16 @@ async function _slabFinish(g, results, tol, post, t0, runBands){
     ms:{mesh:Math.round(tJ-t0), seam:msSeam, slowest:Math.round(slowest)}};
 }
 
+// v0.16.1: stage times (ms) of a slab result, for the export report and the
+// bench: slab mesh + simplify, final-pass rounds A / B, rows pass, flips.
+function slabStageTimes(out){
+  const t={mesh:0, roundA:0, roundB:0, rows:0, flip:0};
+  if(!out) return t;
+  t.mesh=(out.ms&&out.ms.mesh)||0; t.flip=out.finalFlipMs||0;
+  const f=out.finalSimp;
+  if(f){ for(const r of (f.rounds||[])){ if(r.round==='A') t.roundA+=r.ms||0; else t.roundB+=r.ms||0; } if(f.rows) t.rows+=f.rows.ms||0; }
+  return t;
+}
 async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
   opts=opts||{};
   const t0=performance.now();
@@ -154,7 +175,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
         if(m.type==='meshslab'){
           kick();
           const j=jobs[m.id];
-          results[m.id]={pos:new Float32Array(m.pos), idx:new Uint32Array(m.idx), seamV:new Uint32Array(m.seamV), seamK:new Float64Array(m.seamK),
+          results[m.id]={pos:new Float32Array(m.pos), idx:new Uint32Array(m.idx), seamV:new Uint32Array(m.seamV), seamK:new Float64Array(m.seamK), tearV:m.tearV?new Uint32Array(m.tearV):null,
             rawTris:m.rawTris, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, evals:m.evals, _La:j.La, _ms:m.ms};
           done++;
           const now=performance.now();
@@ -173,9 +194,10 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     const end=(err)=>{ if(bdog) clearTimeout(bdog); onBand=null; err?reject(err):resolve(out); };
     failBands=end;
     const bkick=()=>{ if(bdog) clearTimeout(bdog); bdog=setTimeout(()=>end(new Error('seam bands stalled')), SLAB_STALL_MS); };
-    const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice();
-      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, tol:btol}, [p.buffer, ix.buffer, o.buffer]); } };
-    onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
+    const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice(), sd=j.seed?j.seed.slice():null;
+      const tr=[p.buffer, ix.buffer, o.buffer]; if(sd) tr.push(sd.buffer);
+      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, tol:btol}, tr); } };
+    onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), tearV:m.tearV?new Uint32Array(m.tearV):null, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
     bkick();
     if(post) post({type:'progress', stage:'tidying '+bjobs.length+' seam band'+(bjobs.length===1?'':'s')+' on '+Math.min(workers.length,bjobs.length)+' cores...'});
     for(const w of workers) send(w);

@@ -364,13 +364,147 @@ function rlTopoKey(){
   return bodyOrder.map(id=>id+':'+(bodyGroup.get(id)||'')).join(',')+'|'+[...weldGroups.keys()].join(',');
 }
 
-// 16-swatch colour picker (COLOR_PALETTE; the first, null, resets).
-function rlColourRow(act, curHex){
-  return '<div class="rl-cols">'+COLOR_PALETTE.map(hex=>{
-    const cur=(!hex&&!curHex)||(hex&&curHex&&hex.toLowerCase()===curHex.toLowerCase());
-    return hex ? '<button type="button" class="rl-cs'+(cur?' on':'')+'" data-act="'+act+'" data-hex="'+hex+'" style="background:'+hex+'" title="'+hex+'" aria-label="Colour '+hex+'"></button>'
-               : '<button type="button" class="rl-cs rl-cs0'+(cur?' on':'')+'" data-act="'+act+'" data-hex="" title="Reset to the default colour" aria-label="Reset colour">'+rlIc('reset',12)+'</button>';
-  }).join('')+'</div>';
+// v0.15.1: viewport colour = one hue strip, a Light / Mid / Deep toggle and a
+// reset (docs/mockups/colour-picker.html, option A). The row is built once per
+// editor; rlColSync() repaints it in place from data-cur (the part's or weld's
+// colour) so the editor never rebuilds under a finger -- colour is therefore
+// not part of the editor cache keys.
+const RL_SHADES=[{name:'Light',s:0.42,v:1.00},{name:'Mid',s:0.68,v:0.90},{name:'Deep',s:0.85,v:0.58}];
+const RL_COL_MS=60;                               // live update interval while dragging
+let _rlColDrag=null;                              // {root, act, id, pid, timer, t, hex, applied, pending}
+
+function rlHsv2Hex(h,s,v){
+  h=((h%360)+360)%360;
+  const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c; let r=0,g=0,b=0;
+  if(h<60){r=c;g=x;} else if(h<120){r=x;g=c;} else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;} else if(h<300){r=x;b=c;} else {r=c;b=x;}
+  return '#'+[r+m,g+m,b+m].map(n=>('0'+Math.round(n*255).toString(16)).slice(-2)).join('');
+}
+function rlHex2Hsv(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||'').trim()); if(!m) return null;
+  const n=parseInt(m[1],16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn; let h=0;
+  if(d){ h=mx===r?((g-b)/d)%6:mx===g?(b-r)/d+2:(r-g)/d+4; h*=60; if(h<0) h+=360; }
+  return {h, s:mx?d/mx:0, v:mx};
+}
+const rlColClamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+
+// Default colours (what "reset" gives), for the idle thumb.
+function rlDefBodyColour(id){
+  const rid=assignments.get(id);
+  if(isSolidAssignment(rid)) return SOLID_COLOR_HEX;
+  if(rid && recipes.has(rid)) return familyColor(recipes.get(rid).family);
+  return '#888888';
+}
+function rlDefWeldColour(gid){
+  const g=weldGroups.get(gid), ci=(g&&g.colorIndex!=null)?g.colorIndex:0;
+  return WELD_COLORS[ci%WELD_COLORS.length];
+}
+
+function rlColourRow(act, curHex, defHex){
+  return '<div class="rl-hue-w" data-colour="'+act+'" data-cur="'+esc(curHex||'')+'" data-def="'+esc(defHex||'')+'" data-h="" data-shade="" data-last="">'+
+    '<div class="rl-hue-top"><span class="rl-hdot"></span><span class="rl-hhex"></span></div>'+
+    '<div class="rl-hue idle" role="slider" tabindex="0" aria-label="Hue" aria-valuemin="0" aria-valuemax="359" aria-valuenow="0"><div class="rl-hue-track"></div><div class="rl-hue-thumb"></div></div>'+
+    '<div class="rl-hue-row"><div class="rl-hseg" role="group" aria-label="Shade">'+
+      RL_SHADES.map((s,i)=>'<button type="button" data-shade="'+i+'" aria-pressed="false"><span class="rl-hd"></span>'+s.name+'</button>').join('')+
+    '</div><button type="button" class="rl-hrst" data-act="'+act+'" data-hex="" title="Reset to the default colour" aria-label="Reset to the default colour">'+rlIc('reset',14)+'</button></div></div>';
+}
+
+// Repaint one colour row from its data attributes (no events, no setters).
+function rlColSync(root){
+  const cur=(root.dataset.cur||'').toLowerCase(), def=root.dataset.def||'';
+  const curOk=!!rlHex2Hsv(cur);
+  let h=root.dataset.h===''?null:+root.dataset.h;
+  let shade=root.dataset.shade===''?1:+root.dataset.shade;
+  if(curOk && !(cur===root.dataset.last && h!=null)){          // set from outside: derive hue + nearest shade
+    const hsv=rlHex2Hsv(cur); let bd=9;
+    RL_SHADES.forEach((sh,i)=>{ const d=Math.abs(sh.s-hsv.s)+Math.abs(sh.v-hsv.v); if(d<bd){ bd=d; shade=i; } });
+    if(hsv.s>0.05 || h==null) h=Math.round(hsv.h);
+  }
+  if(h==null){ const dh=rlHex2Hsv(def); h=dh&&dh.s>0.05?Math.round(dh.h):0; }   // idle: the default colour's hue
+  h=rlColClamp(h,0,359);
+  root.dataset.h=String(h); root.dataset.shade=String(shade);
+  const shown=curOk?cur:def, hue=root.querySelector('.rl-hue'), thumb=root.querySelector('.rl-hue-thumb');
+  root.querySelector('.rl-hdot').style.setProperty('--dc', shown||'#888');
+  root.querySelector('.rl-hhex').textContent=curOk?cur:'default';
+  thumb.style.setProperty('--p',(h/359).toFixed(4));
+  thumb.style.setProperty('--tc', curOk?cur:(shown||'#888'));
+  hue.classList.toggle('idle',!curOk);
+  hue.setAttribute('aria-valuenow',String(h));
+  hue.setAttribute('aria-valuetext',h+' degrees'+(curOk?'':', not set'));
+  root.querySelectorAll('.rl-hseg button').forEach((b,i)=>{
+    const hx=rlHsv2Hex(h,RL_SHADES[i].s,RL_SHADES[i].v);
+    b.dataset.hex=hx; b.firstChild.style.setProperty('--dc',hx);
+    b.setAttribute('aria-pressed',curOk&&shade===i?'true':'false');
+  });
+  const rs=root.querySelector('.rl-hrst'); rs.classList.toggle('on',!curOk); rs.setAttribute('aria-pressed',String(!curOk));
+}
+function rlColSyncAll(host){ for(const r of host.querySelectorAll('.rl-hue-w')) rlColSync(r); }
+// Same editor, colour changed elsewhere (reset, undo, another control): repaint in place.
+function rlColFollow(host, sel){
+  if(_rlColDrag) return;
+  for(const r of host.querySelectorAll('.rl-hue-w')){
+    const o=r.dataset.colour==='wcolor'?weldGroups.get(sel.id):bodies.get(sel.id);
+    r.dataset.cur=(o&&o.colorHex)||''; rlColSync(r);
+  }
+}
+function rlColSet(act, id, hex){ if(act==='wcolor') setWeldColor(id, hex); else setBodyColor(id, hex); }
+
+// Move the strip / pick a shade: repaint at once, push to the viewport at most
+// every RL_COL_MS while dragging, and always commit the last value.
+function rlColPush(root, h, shade, final){
+  const hex=rlHsv2Hex(h, RL_SHADES[shade].s, RL_SHADES[shade].v);
+  root.dataset.h=String(h); root.dataset.shade=String(shade); root.dataset.last=hex; root.dataset.cur=hex;
+  rlColSync(root);
+  const d=_rlColDrag, act=root.dataset.colour;
+  if(!d || d.root!==root){ const s=railSel(); if(s) rlColSet(act, s.id, hex); return; }
+  d.hex=hex;
+  if(final) return;                                // pointerup commits
+  const now=performance.now(), wait=RL_COL_MS-(now-d.t);
+  if(wait<=0){ if(d.timer){ clearTimeout(d.timer); d.timer=0; } d.t=now; d.applied=hex; rlColSet(act,d.id,hex); }
+  else if(!d.timer) d.timer=setTimeout(()=>{ d.timer=0; if(_rlColDrag!==d) return; d.t=performance.now(); d.applied=d.hex; rlColSet(act,d.id,d.hex); }, wait);
+}
+function rlColFromX(root, clientX){
+  const hue=root.querySelector('.rl-hue'), r=hue.getBoundingClientRect(), tw=24;
+  const p=rlColClamp((clientX-r.left-tw/2)/Math.max(1,r.width-tw),0,1);
+  rlColPush(root, Math.round(p*359), +root.dataset.shade||0, false);
+}
+function rlColDragEnd(){
+  const d=_rlColDrag; if(!d) return;
+  if(d.timer){ clearTimeout(d.timer); d.timer=0; }
+  _rlColDrag=null;
+  if(d.hex && d.hex!==d.applied) rlColSet(d.root.dataset.colour, d.id, d.hex);
+  if(d.pending) renderRailEditor();
+}
+function rlColWire(ed){
+  ed.addEventListener('pointerdown',e=>{
+    const hue=e.target.closest&&e.target.closest('.rl-hue'); if(!hue||!ed.contains(hue)) return;
+    const s=railSel(); if(!s) return;
+    const root=hue.closest('.rl-hue-w');
+    _rlColDrag={root, id:s.id, pid:e.pointerId, timer:0, t:0, hex:null, applied:null, pending:false};
+    try{ hue.setPointerCapture(e.pointerId); }catch(_){}
+    hue.focus({preventScroll:true});
+    rlColFromX(root, e.clientX); e.preventDefault();
+  });
+  ed.addEventListener('pointermove',e=>{
+    const d=_rlColDrag; if(!d || e.pointerId!==d.pid) return;
+    rlColFromX(d.root, e.clientX);
+  });
+  const end=e=>{ if(_rlColDrag && e.pointerId===_rlColDrag.pid) rlColDragEnd(); };
+  ed.addEventListener('pointerup',end); ed.addEventListener('pointercancel',end); ed.addEventListener('lostpointercapture',end);
+  ed.addEventListener('keydown',e=>{
+    const hue=e.target.closest&&e.target.closest('.rl-hue'); if(!hue) return;
+    const root=hue.closest('.rl-hue-w'), k=e.key, step=e.shiftKey?15:5; let h=+root.dataset.h||0;
+    if(k==='ArrowRight'||k==='ArrowUp') h+=step; else if(k==='ArrowLeft'||k==='ArrowDown') h-=step;
+    else if(k==='Home') h=0; else if(k==='End') h=359; else return;
+    e.preventDefault();
+    rlColPush(root, rlColClamp(h,0,359), +root.dataset.shade||0, false);
+  });
+  ed.addEventListener('click',e=>{
+    const b=e.target.closest&&e.target.closest('.rl-hseg button'); if(!b) return;
+    const root=b.closest('.rl-hue-w');
+    rlColPush(root, +root.dataset.h||0, +b.dataset.shade, false);
+  });
 }
 
 function rlEdPart(id){
@@ -379,7 +513,7 @@ function rlEdPart(id){
   const trimOk=!!(r && familyHasTrim(r));
   const trimOn=!!($rl('trimToNodes')&&$rl('trimToNodes').checked);
   const noRec=recipes.size===0;
-  const key=['p',id,fill,assignments.get(id),gid,trimOk,trimOn,b.colorHex,gid?weldGroupColor(gid):'',recipeOrder.join(','),rlTopoKey()].join('|');
+  const key=['p',id,fill,assignments.get(id),gid,trimOk,trimOn,gid?weldGroupColor(gid):'',recipeOrder.join(','),rlTopoKey()].join('|');
   let h='<div class="rl-ed"><div class="rl-ch"><span class="rl-lbl">'+esc(rlName(id).toUpperCase())+'</span><div class="rl-r"><span class="rl-mini">'+(r?esc(FAMILY_LABEL[r.family]||r.family):'solid')+'</span></div></div><div class="rl-cb rl-eb">';
   // Weld row
   h+='<div class="rl-erow"><label>Weld</label>';
@@ -415,7 +549,7 @@ function rlEdPart(id){
   if(gid){
     h+='<div class="rl-erow"><label>Viewport colour</label><div class="rl-pair"><span class="rl-fsw rl-fsw-dot" style="background:'+esc(weldGroupColor(gid))+'"></span><span class="rl-hint">Shown in Weld '+weldGroupLetter(gid)+'\'s colour</span><button type="button" class="rl-sbtn" data-act="goWeld">Edit weld</button></div></div>';
   }else{
-    h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('color', b.colorHex)+'</div>';
+    h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('color', b.colorHex, rlDefBodyColour(id))+'</div>';
   }
   // v0.12.0: remove the part (two taps: the first asks, the second removes)
   h+='<button type="button" class="rl-sbtn warn rl-rm" data-act="rmPart">'+rlIc('trash')+'Remove part</button>';
@@ -428,7 +562,7 @@ function rlEdWeld(gid){
   // (as the export); without both they are shown unavailable.
   const mix=mem.some(id=>bodyFill(id)==='solid') && mem.some(id=>bodyFill(id)!=='solid');
   const rule=mix?weldGroupRule(gid):'union';
-  const key=['w',gid,mem.join(','),rule,mix,!!g.showJoins,g.colorHex||'',rlTopoKey()].join('|');
+  const key=['w',gid,mem.join(','),rule,mix,!!g.showJoins,rlTopoKey()].join('|');
   const opts=[];
   for(const o of bodyOrder){ if(!bodies.has(o)||mem.includes(o)) continue; const og=bodyGroup.get(o); if(og) continue; opts.push(['p:'+o,rlName(o)]); }
   for(const x of weldGroups.keys()) if(x!==gid) opts.push(['g:'+x,'Weld '+weldGroupLetter(x)+' (merge)']);
@@ -446,7 +580,7 @@ function rlEdWeld(gid){
   if(rule==='anchor') h+='<div class="rl-erow"><label>Anchor depth <em>mm</em></label>'+rlSlider('w.anchor','Anchor depth',0,2,0.1,gid)+'</div>';
   if(rule==='graded') h+='<div class="rl-erow"><label>Grade over <em>mm</em></label>'+rlSlider('w.grade','Grade distance',0.2,5,0.1,gid)+'</div>';
   h+='<div class="rl-erow"><label>Show joins</label><div class="rl-pair"><button type="button" class="rl-sw'+(g.showJoins?' on':'')+'" data-act="joins" aria-label="Show joins" aria-pressed="'+!!g.showJoins+'"></button><span class="rl-mini">highlight where parts meet</span></div></div>';
-  h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('wcolor', g.colorHex)+'</div>';
+  h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('wcolor', g.colorHex, rlDefWeldColour(gid))+'</div>';
   h+='<button type="button" class="rl-sbtn warn rl-wide" data-act="sepAll">'+rlIc('split')+'Separate all parts</button>';
   return {key, html:h+'</div></div>'};
 }
@@ -458,11 +592,14 @@ function renderRailEditor(){
   if(!sel){ if(_rlEdKey!==''){ host.innerHTML=''; _rlEdKey=''; } return; }
   const e = sel.t==='weld' ? rlEdWeld(sel.id) : rlEdPart(sel.id);
   if(e.key===_rlEdKey && host.firstChild){ rlEdSync(host, sel); return; }
+  if(_rlColDrag && host.firstChild){ _rlColDrag.pending=true; return; }   // never rebuild under a colour drag
   _rlEdKey=e.key;
   host.innerHTML=e.html;
+  rlColSyncAll(host);
 }
 // Same structure: refresh the numbers in place (never rebuild under a finger).
 function rlEdSync(host, sel){
+  rlColFollow(host, sel);
   if(sel.t==='part'){                              // a new cell size or recipe moves the shift range
     const b=bodies.get(sel.id), r=b&&recipes.get(assignments.get(sel.id));
     if(r&&bodyFill(sel.id)!=='solid'){
@@ -713,6 +850,7 @@ function rlInit(){
   });
 
   // ---- editor
+  rlColWire(ed);
   ed.addEventListener('input',e=>{
     const el=e.target, k=el.dataset&&el.dataset.k; if(!k) return;
     const v=parseFloat(el.value); if(isNaN(v)) return;

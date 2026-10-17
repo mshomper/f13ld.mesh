@@ -52,7 +52,15 @@ function simplifySlab(r, tol){
   if(!S || !(tol>0) || r.idx.length<3) return r;
   var nV=r.pos.length/3, open=new Uint8Array(nV), i;
   for(i=0;i<r.seamV.length;i++) open[r.seamV[i]]=1;
-  var ss=safeSimplify(r.pos, r.idx, tol, open, null);
+  // Edges between seam vertices that the neighbouring slab also uses
+  // (r.nbrA/nbrB, m34) must come out unchanged; the rest are this slab's own.
+  var shared=null;
+  if(r.nbrA){
+    var key=new Map(); for(i=0;i<r.seamV.length;i++) key.set(r.seamV[i], r.seamK[i]);
+    var pairs=new Set(); for(i=0;i<r.nbrA.length;i++) pairs.add(r.nbrA[i]+','+r.nbrB[i]);
+    shared=function(a,b){ if(open[a]!==1||open[b]!==1) return false; var ka=key.get(a), kb=key.get(b); return pairs.has(ka<kb?ka+','+kb:kb+','+ka); };
+  }
+  var ss=safeSimplify(r.pos, r.idx, tol, open, null, shared);
   var c=compactIndexed(r.pos, ss.idx);
   var sv=[], sk=[];
   for(i=0;i<r.seamV.length;i++){ var m=c.remap[r.seamV[i]]; if(m>=0){ sv.push(m); sk.push(r.seamK[i]); } }
@@ -97,7 +105,7 @@ function meshClosedReport(pos, idx, wantVerts, ignore){
   var nV=pos.length/3, f=new Float64Array(idx.length), r=new Float64Array(idx.length), t, q, nE=0;
   for(t=0;t<idx.length;t+=3) for(q=0;q<3;q++){
     var a=idx[t+q], b=idx[t+(q===2?0:q+1)];
-    if(ignore && ignore[a] && ignore[b]) continue;
+    if(ignore && (typeof ignore==='function' ? ignore(a,b) : (ignore[a] && ignore[b]))) continue;
     f[nE]=a*nV+b; r[nE]=b*nV+a; nE++;
   }
   f=f.subarray(0,nE); r=r.subarray(0,nE);
@@ -125,75 +133,87 @@ function meshClosedReport(pos, idx, wantVerts, ignore){
 // slab's seam, a band's outer edge). Edges with both ends open are not
 // checked, and every triangle holding an open edge is locked whole (its
 // three corners), so no open edge can disappear.
-function ringLock(idx, nV, open, lock){
-  // open edges: edges used once in this sub-mesh, both ends open
+function ringLock(idx, nV, shared, lock){
+  // open edges: shared edges used once in this sub-mesh
   var cnt=new Map(), t, q, a, b, k;
   for(t=0;t<idx.length;t+=3) for(q=0;q<3;q++){
     a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
-    if(!(open[a]&&open[b])) continue;
+    if(!shared(a,b)) continue;
     k=a<b?a*nV+b:b*nV+a; cnt.set(k,(cnt.get(k)||0)+1);
   }
   for(t=0;t<idx.length;t+=3){
     var hit=false;
     for(q=0;q<3&&!hit;q++){ a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
-      if(open[a]&&open[b]){ k=a<b?a*nV+b:b*nV+a; if(cnt.get(k)===1) hit=true; } }
+      if(shared(a,b)){ k=a<b?a*nV+b:b*nV+a; if(cnt.get(k)===1) hit=true; } }
     if(hit){ lock[idx[t]]=1; lock[idx[t+1]]=1; lock[idx[t+2]]=1; }
   }
 }
 // Directed edges with both ends open, counted. A sub-mesh's open edges are
 // shared with its neighbour, so simplify must leave every one of them as it
 // was: same edges, same counts. Returns the vertices of edges that changed.
-function openEdgeCounts(idx, nV, open){
+function openEdgeCounts(idx, nV, shared){
   var m=new Map(), t, q, a, b, k;
   for(t=0;t<idx.length;t+=3) for(q=0;q<3;q++){
     a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
-    if(!(open[a]&&open[b])) continue;
+    if(!shared(a,b)) continue;
     k=a*nV+b; m.set(k,(m.get(k)||0)+1);
   }
   return m;
 }
-function openEdgeChanges(before, idx, nV, open){
-  var after=openEdgeCounts(idx, nV, open), vs=[];
+function openEdgeChanges(before, idx, nV, shared){
+  var after=openEdgeCounts(idx, nV, shared), vs=[];
   function add(k){ var a=Math.floor(k/nV); vs.push(a, k-a*nV); }
   before.forEach(function(c,k){ if(after.get(k)!==c) add(k); });
   after.forEach(function(c,k){ if(!before.has(k)) add(k); });
   return vs;
 }
 var SAFE_SIMPLIFY_RETRIES=12, SAFE_SIMPLIFY_RINGS=3;
-function safeSimplify(pos, idx, tol, open, flags){
+// shared: optional function(a,b) — true for an edge the neighbouring
+// sub-mesh also uses; defaults to "both ends open".
+function safeSimplify(pos, idx, tol, open, flags, shared){
   var lock0=null;
-  if(open){ lock0=new Uint8Array(open); ringLock(idx, open.length, open, lock0); }   // open vertices themselves stay put too
+  if(open && !shared) shared=function(a,b){ return open[a]===1 && open[b]===1; };
+  if(open){ lock0=new Uint8Array(open); ringLock(idx, open.length, shared, lock0); }   // open vertices themselves stay put too
   var S=slabMeshopt();
   if(!S || !(tol>0) || idx.length<3) return {idx:idx, retries:0, locked:0, unsafe:false};
   var nV=pos.length/3, nT=idx.length/3;
   var lock=new Uint8Array(nV); if(lock0) lock.set(lock0);
   var attr=new Float32Array(nV), fl=['ErrorAbsolute'].concat(flags||[]);
-  if(meshClosedReport(pos, idx, false, open).ok===false) return {idx:idx, retries:0, locked:0, unsafe:true};
+  if(meshClosedReport(pos, idx, false, shared||null).ok===false) return {idx:idx, retries:0, locked:0, unsafe:true};
   var res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
-  var retries=0, locked=0, before=open?openEdgeCounts(idx, nV, open):null;
+  var retries=0, locked=0, before=shared?openEdgeCounts(idx, nV, shared):null;
+  // Two kinds of problem: a tear (closed check) and a changed seam edge.
+  // A tear can come from a collapse a few edges away, so its lock grows to
+  // SAFE_SIMPLIFY_RINGS rings; a changed seam edge comes from a collapse next
+  // to it, so one ring is enough.
   function problems(r){
-    var rep=meshClosedReport(pos, r, true, open), vs=rep.verts?Array.from(rep.verts):[];
-    if(before) vs=vs.concat(openEdgeChanges(before, r, nV, open));
-    return vs;
+    var rep=meshClosedReport(pos, r, true, shared||null);
+    return {tear:rep.verts?Array.from(rep.verts):[], seam:before?openEdgeChanges(before, r, nV, shared):[]};
   }
-  for(; retries<SAFE_SIMPLIFY_RETRIES; retries++){
-    var bad=problems(res);
-    if(!bad.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
+  function lockRings(list, rings){
+    if(!list.length) return;
     var hit=new Uint8Array(nV), t, k;
-    for(k=0;k<bad.length;k++) hit[bad[k]]=1;
-    // lock the tear and SAFE_SIMPLIFY_RINGS rings around it in the input
-    // mesh (locks add up across retries: tears tend to move, so the next try
-    // only has to catch the new ones)
-    for(var ring=0; ring<Math.min(retries+1, SAFE_SIMPLIFY_RINGS); ring++){
+    for(k=0;k<list.length;k++) hit[list[k]]=1;
+    for(var ring=0; ring<rings; ring++){
       var nxt=hit.slice();
       for(t=0;t<nT;t++){ var a=idx[3*t], b=idx[3*t+1], c=idx[3*t+2];
         if(hit[a]||hit[b]||hit[c]){ nxt[a]=1; nxt[b]=1; nxt[c]=1; } }
       hit=nxt;
     }
     for(k=0;k<nV;k++) if(hit[k]&&!lock[k]){ lock[k]=1; locked++; }
+  }
+  for(; retries<SAFE_SIMPLIFY_RETRIES; retries++){
+    var pr=problems(res);
+    if(retries===0){ safeSimplify.first={tear:pr.tear.length, seam:pr.seam.length}; }
+    if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
+    // locks add up across retries: tears tend to move, so the next try only
+    // has to catch the new ones
+    lockRings(pr.tear, Math.min(retries+1, SAFE_SIMPLIFY_RINGS));
+    lockRings(pr.seam, 1);
     res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
   }
-  if(!problems(res).length) return {idx:res, retries:retries, locked:locked, unsafe:false};
+  var last=problems(res);
+  if(!last.tear.length && !last.seam.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
   return {idx:idx, retries:retries, locked:locked, unsafe:false, gaveUp:true};
 }
 

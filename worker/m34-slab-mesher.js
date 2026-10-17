@@ -231,7 +231,7 @@ function slabMeshLayers(fn, g, La, Lb, opts){
       else { ppos(0,1,1,1,G[0]); ppos(0,1,2,1,G[1]); ppos(1,CI[mm],1,CJ[mm],G[2]); ppos(1,CI[m2],1,CJ[m2],G[3]); }
       BASE[ax*4+mm]=det4(0,1,2,3)>0?1:-1; }
   })();
-  for(var L=La; L<Lb; L++){
+  function doLayer(L){
     for(var qq=L;qq<=L+2;qq++){ ensureVals(qq); ensureSnap(qq); }
     var mm, m2, cj, ci, A, Bv, c0, c1, c2, c3, sg;
     if((L&1)===0){
@@ -267,10 +267,38 @@ function slabMeshLayers(fn, g, La, Lb, opts){
           tet(); } }
     }
     // free caches and values no later tet can reach
+  }
+  for(var L=La; L<Lb; L++){
+    doLayer(L);
     cache[L]=null; snapL[L]=null; vals[L-halo]=null;
   }
+  // ── neighbour seam edges (v0.15.0). Mesh, without keeping them, the tets of
+  //    the neighbouring slabs that touch the shared layers (two layers each
+  //    side), and list which pairs of seam vertices they join. Only those
+  //    edges have to come out of this slab's simplify unchanged.
+  var nbrA=[], nbrB=[];
+  if(opts.neighbours!==false && (La>0 || Lb<Lmax)){
+    var npMark=np, svMark=seamV.length, ghost=[];
+    var realPush=pushT;
+    pushT=function(a,b,c){ if(a===b||b===c||a===c) return; ghost.push(a,b,c); };
+    var Lg;
+    for(Lg=Lb; Lg<Math.min(Lb+2,Lmax); Lg++){ doLayer(Lg); }
+    for(Lg=Math.max(0,La-2); Lg<La; Lg++){ doLayer(Lg); }
+    pushT=realPush;
+    var keyOf=new Map();
+    for(var si=0; si<seamV.length; si++) keyOf.set(seamV[si], seamK[si]);
+    var seen=new Set();
+    for(var gi=0; gi<ghost.length; gi+=3) for(var gq=0; gq<3; gq++){
+      var ka=keyOf.get(ghost[gi+gq]), kb=keyOf.get(ghost[gi+(gq===2?0:gq+1)]);
+      if(ka===undefined||kb===undefined) continue;
+      if(ka>kb){ var tk=ka; ka=kb; kb=tk; }
+      var sk=ka+','+kb; if(seen.has(sk)) continue; seen.add(sk); nbrA.push(ka); nbrB.push(kb);
+    }
+    np=npMark; seamV.length=svMark; seamK.length=svMark;
+  }
   return {pos:pos.slice(0,np), idx:idx.slice(0,ni),
-    seamV:Uint32Array.from(seamV), seamK:Float64Array.from(seamK), evals:evals};
+    seamV:Uint32Array.from(seamV), seamK:Float64Array.from(seamK), evals:evals,
+    nbrA:Float64Array.from(nbrA), nbrB:Float64Array.from(nbrB)};
 }
 
 // Join slabs: concatenate, weld seam vertices with equal keys.

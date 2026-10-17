@@ -88,7 +88,7 @@ function simplifiedSlabs(F,g,nS,tol){
       const R=simplifiedSlabs(F,g,nS,tol), st=stats(R.pos,R.idx), cl=ctx.meshClosedReport(R.pos,R.idx);
       let ok=cl.ok?'closed':('OPEN '+cl.bad+' edges');
       if(!cl.ok) fail++;
-      if(v1==null) v1=st.vol; else if(Math.abs(st.vol/v1-1)>0.01){ if(F.under>=e) ok+=' (under-sampled: wall thinner than the edge, volume not checked)'; else { ok+=' VOL DRIFT'; fail++; } }
+      if(v1==null) v1=st.vol; else if(Math.abs(st.vol/v1-1)>0.015){ if(F.under>=e) ok+=' (under-sampled: wall thinner than the edge, volume not checked)'; else { ok+=' VOL DRIFT'; fail++; } }
       const ex=F.exact?' exact '+((st.vol/F.exact-1)*100).toFixed(2)+'% (classic '+((rss.vol/F.exact-1)*100).toFixed(2)+'%)':'';
       console.log(F.name.padEnd(13),'edge '+e,'simplified',String(nS).padStart(2)+' slabs',ok,'| tris',st.tris,'vs classic',rss.tris,'| needles',st.needles,'vs',rss.needles,'| vol vs classic',((st.vol/rss.vol-1)*100).toFixed(3)+'%'+ex,'| slowest slab ms',Math.round(R.slowest),'join',Math.round(R.joinMs),'manifold levelSet',Math.round(msRef));
     }

@@ -193,6 +193,11 @@ self.onmessage=async function(e){
               if(r){ pos=r.vertProperties; idx=r.triVerts;
                 self.postMessage({type:'diag',diag:{weld:true, tinyShellsDropped:r.dropped, ofShells:r.shells, droppedVolMm3:+r.droppedVol.toExponential(2)}}); }
             }
+            // The union cuts the exact solids' flat faces into long thin
+            // triangles; flip them (near-flat only, no vertex moves, so the
+            // solids keep their exact shape).
+            const ff=checkedFlip(pos, idx, null);
+            idx=ff.idx; agg.finalFlips=(agg.finalFlips||0)+ff.flips;
             const cr=meshClosedReport(pos, idx);
             if(!cr.ok) throw new Error('weld result not closed ('+cr.bad+' edges)');
             agg.pos=pos; agg.idx=idx; agg.ms.seam+=U.ms;
@@ -468,11 +473,14 @@ self.onmessage=async function(e){
       }
     }
     const triCount=triVerts.length/3;
+    // v0.16.0: triangle quality for the report and the bench page.
+    let quality=null;
+    try{ const q=triQuality(vertProperties, triVerts); quality={needles:q.needles, needlePct:+q.needlePct.toFixed(2), minAngleP5:+q.minAngleP5.toFixed(1)}; }catch(_){ }
     const ms=Math.round(performance.now()-t0);
     if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
-      mesher:slabOut?'slab':'classic', meshMode:meshMode, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
+      mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);

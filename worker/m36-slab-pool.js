@@ -50,10 +50,27 @@ async function _slabFinish(g, results, tol, post, t0, runBands){
     }
   }
   const C=compactIndexed(J.pos, idx);
+  // v0.16.0 final pass over the joined mesh, nothing locked: the seams no
+  // longer have to match anything. The slab and band passes leave the rows of
+  // vertices they had to lock, which split flat areas into strips of long thin
+  // triangles (a box cap: thousands of triangles instead of 12). One
+  // tear-safe simplify of the whole, already-simplified mesh (cheap next to
+  // the slab simplify), then a flip pass (near-flat only, positions never
+  // move, kept only if still closed).
+  let finalFlip=null, finalSimp=null;
+  if(tol>0 && results.length>1){
+    if(post) post({type:'progress', stage:'final pass over '+(C.idx.length/3/1e6).toFixed(2)+'M tris...'});
+    const tF=performance.now();
+    const ss=safeSimplify(C.pos, C.idx, tol);
+    if(ss.idx!==C.idx){ const C2=compactIndexed(C.pos, ss.idx); C.pos=C2.pos; C.idx=C2.idx; }
+    finalSimp={retries:ss.retries||0, gaveUp:!!ss.gaveUp, ms:Math.round(performance.now()-tF)};
+  }
+  if(tol>0){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);
   let raw=0, retries=0, locked=0, gaveUp=0, evals=0, slowest=0;
   for(const r of results){ raw+=r.rawTris||0; retries+=r.retries||0; locked+=r.locked||0; if(r.gaveUp) gaveUp++; evals+=r.evals||0; slowest=Math.max(slowest, r._ms||0); }
   return {pos:C.pos, idx:C.idx, slabs:results.length, raw, retries, locked, gaveUp, evals, seam,
+    finalFlips:finalFlip?finalFlip.flips:0, finalFlipMs:finalFlip?Math.round(finalFlip.ms):0, finalSimp,
     ms:{mesh:Math.round(tJ-t0), seam:msSeam, slowest:Math.round(slowest)}};
 }
 

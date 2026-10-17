@@ -116,7 +116,9 @@ async function run(site, root, recipe, opts) {
   });
   if (opts.cores) await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), opts.cores);
   // v0.15.0: MESHER=slab|classic, LOOSE=<fraction> pick the Export settings (older builds ignore them)
-  if (opts.mesher || opts.loose != null) await ctx.addInitScript(([m, l]) => { try { if (m) localStorage.setItem('f13ld.mesh.mesher', m); if (l != null) localStorage.setItem('f13ld.mesh.looseFrac', String(l)); } catch (e) {} }, [opts.mesher || null, opts.loose != null ? opts.loose : null]);
+  if (opts.mesher || opts.loose != null) await ctx.addInitScript(([m, l]) => { try { if (m) localStorage.setItem('f13ld.mesh.mesher', m); if (l != null) localStorage.setItem('f13ld.mesh.loose', l === '0' || l === 0 ? 'keep' : String(l)); } catch (e) {} }, [opts.mesher || null, opts.loose != null ? opts.loose : null]);
+  // DUMPJOB=<dir>: keep a copy of each export job sent to the mesh worker (dev only)
+  if (process.env.DUMPJOB) await ctx.addInitScript(() => { const P = Worker.prototype.postMessage; Worker.prototype.postMessage = function (m, t) { try { if (m && m.mode === 'export') window.__lastJob = structuredClone(m); } catch (e) {} return P.call(this, m, t); }; });
   const page = await ctx.newPage();
   const errors = [], logs = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -160,6 +162,10 @@ async function run(site, root, recipe, opts) {
       result.tris = (xml.match(/<triangle /g) || []).length;
       result.verts = (xml.match(/<vertex /g) || []).length;
       result.report = await page.evaluate(() => ((document.querySelector('.exp-report') || {}).innerText || '').replace(/\s+/g, ' '));
+      if (process.env.DUMPJOB) {
+        const job = await page.evaluate(() => { const j = window.__lastJob; if (!j) return null; const o = {}; for (const k in j) { const v = j[k]; if (v instanceof ArrayBuffer) { let b = ''; const u = new Uint8Array(v); for (let i = 0; i < u.length; i += 8192) b += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); o[k] = { __b64: btoa(b) }; } else o[k] = v; } return o; });
+        if (job) fs.writeFileSync(path.join(process.env.DUMPJOB, site + '.job.json'), JSON.stringify(job));
+      }
     } catch (e) {
       result.exportErr = String(e.message || e).slice(0, 200);
       result.box = await page.evaluate(() => (document.getElementById('errorBox') || {}).textContent || '');
@@ -195,7 +201,7 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
   for (const [name, spec] of Object.entries(R)) {
     if (FILTER && !name.includes(FILTER)) continue;
     const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export,
-      mesher: process.env.MESHER, loose: process.env.LOOSE != null ? +process.env.LOOSE : undefined };
+      mesher: process.env.MESHER, loose: process.env.LOOSE != null ? process.env.LOOSE : undefined };
     const a = await run('orig.test', ORIG, spec.recipe, opts);
     const b = await run('new.test', NEW, spec.recipe, opts);
     if (process.env.DUMP) { for (const [lbl, r] of [['orig', a], ['new', b]]) if (r.model) fs.writeFileSync(path.join(process.env.DUMP, name + '.' + lbl + '.model'), r.model); }

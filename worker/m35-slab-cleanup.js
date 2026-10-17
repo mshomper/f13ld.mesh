@@ -159,6 +159,7 @@ function openEdgeChanges(before, idx, nV, open){
   after.forEach(function(c,k){ if(!before.has(k)) add(k); });
   return vs;
 }
+var SAFE_SIMPLIFY_RETRIES=12, SAFE_SIMPLIFY_RINGS=3;
 function safeSimplify(pos, idx, tol, open, flags){
   var lock0=null;
   if(open){ lock0=new Uint8Array(open); ringLock(idx, open.length, open, lock0); }   // open vertices themselves stay put too
@@ -175,13 +176,15 @@ function safeSimplify(pos, idx, tol, open, flags){
     if(before) vs=vs.concat(openEdgeChanges(before, r, nV, open));
     return vs;
   }
-  for(; retries<4; retries++){
+  for(; retries<SAFE_SIMPLIFY_RETRIES; retries++){
     var bad=problems(res);
     if(!bad.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
     var hit=new Uint8Array(nV), t, k;
     for(k=0;k<bad.length;k++) hit[bad[k]]=1;
-    // grow by retries+1 rings in the input mesh
-    for(var ring=0; ring<=retries; ring++){
+    // lock the tear and SAFE_SIMPLIFY_RINGS rings around it in the input
+    // mesh (locks add up across retries: tears tend to move, so the next try
+    // only has to catch the new ones)
+    for(var ring=0; ring<Math.min(retries+1, SAFE_SIMPLIFY_RINGS); ring++){
       var nxt=hit.slice();
       for(t=0;t<nT;t++){ var a=idx[3*t], b=idx[3*t+1], c=idx[3*t+2];
         if(hit[a]||hit[b]||hit[c]){ nxt[a]=1; nxt[b]=1; nxt[c]=1; } }
@@ -194,13 +197,37 @@ function safeSimplify(pos, idx, tol, open, flags){
   return {idx:idx, retries:retries, locked:locked, unsafe:false, gaveUp:true};
 }
 
-// Loose-piece clean-up. Splits the mesh into connected pieces (shared
-// vertices) and drops every piece whose |volume| is below
-//   max(minAbs, frac · |volume of the largest piece|).
-// Pieces are kept or dropped whole, so the rest stays closed. Returns
-// null when nothing was dropped, else
+// Loose-piece clean-up (v0.15.0). Splits the mesh into connected pieces
+// (shared vertices). mode:
+//   'specks'  drop solid pieces smaller than cell·10 (cell = one mesh cell's
+//             volume); woven or disconnected design regions are far larger
+//   'largest' keep only the largest solid piece and the cavities inside it
+//   'keep'    nothing (returns null)
+// A piece with negative volume is a sealed cavity — real geometry — and is
+// kept unless it is smaller than one cell (or, for 'largest', not inside the
+// kept piece). Pieces go whole, so the rest stays closed. Returns null when
+// nothing was dropped, else
 //   {vertProperties, triVerts, dropped, pieces, droppedVol, keptVol}.
-function removeLoosePieces(vp, tv, frac, minAbs){
+var LOOSE_SPECK_CELLS=10;
+function _pointInMesh(px,py,pz, vp, tv, tris){
+  // ray along +x with a slight tilt; count crossings
+  var dy=1e-7, dz=1.3e-7, hits=0;
+  for(var n=0;n<tris.length;n++){
+    var t=tris[n], A=3*tv[3*t], B=3*tv[3*t+1], C=3*tv[3*t+2];
+    var ay=vp[A+1]-py-dy*(vp[A]-px), az=vp[A+2]-pz-dz*(vp[A]-px);
+    var by=vp[B+1]-py-dy*(vp[B]-px), bz=vp[B+2]-pz-dz*(vp[B]-px);
+    var cy=vp[C+1]-py-dy*(vp[C]-px), cz=vp[C+2]-pz-dz*(vp[C]-px);
+    // does the triangle's projection on the (y,z) plane contain the origin?
+    var d1=ay*bz-az*by, d2=by*cz-bz*cy, d3=cy*az-cz*ay;
+    if(!((d1>0&&d2>0&&d3>0)||(d1<0&&d2<0&&d3<0))) continue;
+    // x of the hit
+    var w=d1+d2+d3, x=(d2*vp[A]+d3*vp[B]+d1*vp[C])/w;
+    if(x>px) hits++;
+  }
+  return (hits&1)===1;
+}
+function removeLoosePieces(vp, tv, mode, cell){
+  if(mode==='keep') return null;
   var nV=vp.length/3, nT=tv.length/3, i, t;
   if(nT===0) return null;
   var parent=new Int32Array(nV); for(i=0;i<nV;i++) parent[i]=i;
@@ -218,13 +245,23 @@ function removeLoosePieces(vp, tv, frac, minAbs){
     used[k]=1;
     vol[k]+=(vp[A]*(vp[B+1]*vp[C+2]-vp[B+2]*vp[C+1])+vp[A+1]*(vp[B+2]*vp[C]-vp[B]*vp[C+2])+vp[A+2]*(vp[B]*vp[C+1]-vp[B+1]*vp[C]))/6;
   }
-  var pieces=0, big=0;
-  for(i=0;i<nC;i++){ if(!used[i]) continue; pieces++; if(Math.abs(vol[i])>big) big=Math.abs(vol[i]); }
+  var pieces=0, big=-1;
+  for(i=0;i<nC;i++){ if(!used[i]) continue; pieces++; if(big<0||vol[i]>vol[big]) big=i; }
   if(pieces<2) return null;
-  var lim=Math.max(minAbs||0, (frac||0)*big);
-  var drop=new Uint8Array(nC), nDrop=0, dropVol=0, keptVol=0;
+  cell=cell||0;
+  var drop=new Uint8Array(nC), nDrop=0, dropVol=0, keptVol=0, bigTris=null;
   for(i=0;i<nC;i++){ if(!used[i]) continue;
-    if(Math.abs(vol[i])<lim){ drop[i]=1; nDrop++; dropVol+=Math.abs(vol[i]); } else keptVol+=vol[i]; }
+    var gone;
+    if(vol[i]<0) gone = -vol[i]<cell;                      // cavity: only if under one cell
+    else if(mode==='largest') gone = i!==big;
+    else gone = vol[i]<LOOSE_SPECK_CELLS*cell;
+    if(!gone && vol[i]<0 && mode==='largest'){
+      // keep a cavity only if it lies inside the kept piece
+      if(!bigTris){ bigTris=[]; for(t=0;t<nT;t++) if(root[tv[3*t]]===big) bigTris.push(t); }
+      var v0=-1; for(t=0;t<nT&&v0<0;t++) if(root[tv[3*t]]===i) v0=tv[3*t];
+      gone = !_pointInMesh(vp[3*v0],vp[3*v0+1],vp[3*v0+2], vp, tv, bigTris);
+    }
+    if(gone){ drop[i]=1; nDrop++; dropVol+=Math.abs(vol[i]); } else keptVol+=vol[i]; }
   if(!nDrop) return null;
   var keepT=0; for(t=0;t<nT;t++) if(!drop[root[tv[3*t]]]) keepT++;
   var map=new Int32Array(nV).fill(-1), nv=0, otv=new Uint32Array(keepT*3), o=0;

@@ -24,20 +24,25 @@
    clamped to ≤ 0 and vertex positions are clamped to the bounds, so solid
    reaching the box is capped exactly on its faces.
 
-   Snapping. A crossing within SNAP (0.1 % of an edge) of a grid point is
-   moved onto that point, one shared vertex keyed by the point. That merges
-   the near-coincident vertices TPMS fields give at cell symmetry points,
-   which would otherwise be separate vertices at one float32 position and
-   make the simplifier tear the mesh. (A 10 % snap removed more needles, but
-   collapsed walls thinner than one edge into shared edges.) Each slab needs
-   the snap decision for every point its tets touch, so it evaluates two
-   extra layers on each side (halo).
+   Crossings at grid points. Where a grid point sits on (or within float32
+   rounding of) the surface — TPMS and beam fields do at symmetry points —
+   several edges' crossings would land on one position as separate vertices,
+   and meshoptimizer tears the mesh at such duplicates. Each crossing is kept
+   at least TCLAMP (0.01 % of an edge) from both ends of its edge, so every
+   vertex has its own position and the topology still comes only from the
+   signs: the raw mesh is always a closed 2-manifold. (Snapping crossings
+   onto grid points — SNAP, still here but off — removed needles, but merging
+   vertices collapsed walls thinner than one edge, and on fields with points
+   exactly on the surface even a 0.1 % snap made edges shared by four
+   triangles.) With snapping on, a slab evaluates two extra layers each side
+   for the snap decision (halo).
 
    Field: fn([x,y,z]) in Manifold's convention (positive inside).
    ============================================================ */
 'use strict';
-var SLAB_SNAP=1e-3;    // fraction of an edge; 0 turns snapping off
+var SLAB_SNAP=0;       // fraction of an edge; 0 = off (the default — see Snapping)
 var SLAB_SNAP_IN=1e-3; // same for inside points
+var SLAB_TCLAMP=1e-4;  // keep crossings this fraction of an edge away from grid points
 var SLAB_HALO=2;       // extra value layers each side, for the snap decision
 
 // Point helpers. A point is (t,i,j,k): t=1 main, t=0 offset.
@@ -46,6 +51,7 @@ function slabMeshLayers(fn, g, La, Lb, opts){
   opts=opts||{};
   var snap=(opts.snap!=null)?opts.snap:SLAB_SNAP;
   var snapIn=snap>0?Math.min(snap,SLAB_SNAP_IN):0;
+  var tclamp=(opts.tclamp!=null)?opts.tclamp:SLAB_TCLAMP;
   var n0=g.n[0], n1=g.n[1], n2=g.n[2];
   var nx1=n0+1, ny1=n1+1, nx2=n0+2, ny2=n1+2;
   var mainCount=nx1*ny1*(n2+1);
@@ -167,6 +173,7 @@ function slabMeshLayers(fn, g, La, Lb, opts){
     if(c[s]>=0) return c[s];
     ppos(ta,ia,ja,ka,PA); ppos(tb,ib,jb,kb,PB);
     var tt=va/(va-vb);
+    if(tclamp>0){ if(tt<tclamp) tt=tclamp; else if(tt>1-tclamp) tt=1-tclamp; }
     var id=pushV(PA[0]+(PB[0]-PA[0])*tt, PA[1]+(PB[1]-PA[1])*tt, PA[2]+(PB[2]-PA[2])*tt);
     c[s]=id;
     if(onSeam(qa,qb)){ seamV.push(id); seamK.push(gid(ta,ia,ja,ka)*8+slot); }

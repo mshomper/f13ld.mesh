@@ -117,7 +117,7 @@ async function _exportWeldGroup(gid){
       bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
       relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0,
       weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes},
-      mesher:'classic', looseFrac:exportLooseFrac()   // v0.15.0: welds stay on the classic mesher
+      mesher:'classic', looseMode:exportLooseMode()   // v0.15.0: welds stay on the classic mesher
     };
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
@@ -506,7 +506,7 @@ async function _triggerExportImpl(){
     workerMsg={
       mode:'export',recipe:currentRecipe,
       cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
-      mesher:exportMesherPref(), looseFrac:exportLooseFrac(),   // v0.15.0
+      mesher:exportMesherPref(), looseMode:exportLooseMode(),   // v0.15.0
       shapeSdfData:shapeSdfBuffer,
       shapeN:importedShape.sdfGrid.N,
       bbox:{mnx,mny,mnz,mxx,mxy,mxz},
@@ -593,7 +593,7 @@ async function _triggerExportImpl(){
     workerMsg={
       mode:'export',recipe:currentRecipe,edgeWorld,
       cores:exportFieldCores(),   // v0.11.0: field pre-bake pool size (worker/m33-field-pool.js)
-      mesher:exportMesherPref(), looseFrac:exportLooseFrac(),   // v0.15.0
+      mesher:exportMesherPref(), looseMode:exportLooseMode(),   // v0.15.0
       simplifyTol:cubeSimplifyTol,
       simplifyCappedByFeature:cubeSimplifyCappedByFeature,
       featMm:cubeFeatMm,  // mm value, for timings-pill display
@@ -768,7 +768,7 @@ function expTimeSplitChip(bd){
 function expLooseChip(l){
   if(!l||!l.dropped) return '';
   const v=l.droppedMm3, vs=v<0.01?v.toExponential(1):v.toFixed(v<1?3:1);
-  return expChip('loose pieces removed', l.dropped+' \u00b7 '+vs+' mm\u00b3');
+  return expChip(l.mode==='largest'?'pieces removed (largest kept)':'specks removed', l.dropped+' \u00b7 '+vs+' mm\u00b3');
 }
 // v0.15.0: a classic result that isn't closed (worker/m90 counts its open edges).
 function expOpenChip(c){

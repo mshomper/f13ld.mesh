@@ -220,12 +220,12 @@ function estimateMeshStats(recipe, edgeMm, bbox, cellSizeMm){
 const EXPORT_MARCH_US=2.0;                       // Manifold level set + simplify, per grid point, one core
 const EXPORT_SLAB_US=1.6;                        // slab mesher + per-slab simplify, per grid point, one core (v0.15.0)
 // ── Mesher and loose-piece settings (v0.15.0), remembered in this browser ──
-const EXPORT_MESHER_KEY='f13ld.mesh.mesher', EXPORT_LOOSE_KEY='f13ld.mesh.looseFrac';
-const EXPORT_LOOSE_CHOICES=[0, 0.001, 0.01, 0.05];
+const EXPORT_MESHER_KEY='f13ld.mesh.mesher', EXPORT_LOOSE_KEY='f13ld.mesh.loose';
+const EXPORT_LOOSE_MODES=['specks','keep','largest'];   // worker/m35 removeLoosePieces
 function exportMesherPref(){ try{ return localStorage.getItem(EXPORT_MESHER_KEY)==='classic'?'classic':'slab'; }catch(_){ return 'slab'; } }
 function setExportMesher(v){ try{ localStorage.setItem(EXPORT_MESHER_KEY, v==='classic'?'classic':'slab'); }catch(_){} if(typeof updateExportEstimate==='function') updateExportEstimate(); }
-function exportLooseFrac(){ try{ const v=localStorage.getItem(EXPORT_LOOSE_KEY); if(v===null) return 0.01; const f=+v; return EXPORT_LOOSE_CHOICES.indexOf(f)>=0?f:0.01; }catch(_){ return 0.01; } }
-function setExportLoose(v){ const f=+v; try{ localStorage.setItem(EXPORT_LOOSE_KEY, String(EXPORT_LOOSE_CHOICES.indexOf(f)>=0?f:0.01)); }catch(_){} }
+function exportLooseMode(){ try{ const v=localStorage.getItem(EXPORT_LOOSE_KEY); return EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'; }catch(_){ return 'specks'; } }
+function setExportLoose(v){ try{ localStorage.setItem(EXPORT_LOOSE_KEY, EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'); }catch(_){} }
 const EXPORT_CAL_KEY='f13ld.mesh.exportCal.v1';  // {"<family>:<cube|shape>": {t, n}}
 function _exportCalAll(){ try{ const o=JSON.parse(localStorage.getItem(EXPORT_CAL_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; } }
 function exportCal(key){

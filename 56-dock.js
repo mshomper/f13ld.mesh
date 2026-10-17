@@ -34,7 +34,7 @@ function dkIcon(name,size,cls){
   return '<svg width="'+(size||14)+'" height="'+(size||14)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(cls?' class="'+cls+'"':'')+'>'+DK_IC[name]+'</svg>';
 }
 function _dkMesher(){ return (typeof exportMesherPref==='function')?exportMesherPref():'slab'; }
-function _dkLoose(){ return (typeof exportLooseFrac==='function')?exportLooseFrac():0.01; }
+function _dkLoose(){ return (typeof exportLooseMode==='function')?exportLooseMode():'specks'; }
 function _dkEl(id){ return document.getElementById(id); }
 function _dkSet(id,t){ const e=_dkEl(id); if(e && e.textContent!==t) e.textContent=t; }
 
@@ -102,8 +102,8 @@ function dockEnsure(){
             '<option value="classic"'+(_dkMesher()==='classic'?' selected':'')+'>Classic · Manifold</option>'+
           '</select><div class="dr-hint">Slab splits the part into layers and meshes them on all cores. Classic is the previous mesher, kept for comparison. Welds use Classic for now.</div></div>'+
           '<div class="dr-f"><label for="expLoose">Loose pieces</label><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
-            [[0,'Keep all'],[0.001,'Remove under 0.1 %'],[0.01,'Remove under 1 %'],[0.05,'Remove under 5 %']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-          '</select><div class="dr-hint">Drops pieces that aren\u2019t connected to the part when their volume is under this share of the largest piece.</div></div>'+
+            [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+          '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+
           '<div class="dr-f dr-wide"><label>Estimate</label><div class="dr-est" id="expEstimate"></div></div>'+
         '</div>'+
       '</section>'+

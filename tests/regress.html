@@ -96,7 +96,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">This build mesher</label>
         <div class="seg" id="mesherSeg"><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">reference always runs classic</span></div>
       <div class="row"><label class="k">Loose pieces</label>
-        <div class="seg" id="looseSeg"><button data-f="0">Keep all</button><button data-f="0.001">0.1 %</button><button data-f="0.01">1 %</button><button data-f="0.05">5 %</button></div><span class="note" style="margin:0">drop pieces smaller than this share of the volume; reference keeps all</span></div>
+        <div class="seg" id="looseSeg"><button data-f="keep">Keep all</button><button data-f="specks">Remove specks</button><button data-f="largest">Largest piece only</button></div><span class="note" style="margin:0">specks are pieces under 10 mesh cells; the reference keeps all</span></div>
       <div class="row"><label class="k">Extra run</label><label class="chk"><input type="checkbox" id="oneCore"> this build on one core as well</label></div>
       <p class="note">This build is the page's own folder. The reference defaults to the live tool, so the check is "branch vs. what users have today". The app pane below builds each export job exactly as the tool would; the bench then meshes that job with each build and compares every vertex and triangle. When the meshes differ, the case passes if this build's mesh is closed and its volume is within 2 % of the reference.</p>
     </div>
@@ -156,7 +156,7 @@ $('refUrl').value=load('ref', DEFAULT_REF);
 $('refUrl').onchange=()=>{ store('ref', $('refUrl').value.trim()); refBlobUrl=null; };
 $('limit').value=load('limit',300); $('limit').onchange=()=>store('limit', +$('limit').value);
 let MESHER=load('mesher','slab'); if(MESHER!=='classic') MESHER='slab';
-let LOOSE=+load('loose',0); if(![0,0.001,0.01,0.05].includes(LOOSE)) LOOSE=0;
+let LOOSE=String(load('looseMode','keep')); if(!['keep','specks','largest'].includes(LOOSE)) LOOSE='keep';
 function bindSeg(id,key,cur,set){
   const bs=[...$(id).querySelectorAll('button')];
   const paint=()=>bs.forEach(b=>b.classList.toggle('on', b.dataset[key]===String(cur())));
@@ -164,7 +164,7 @@ function bindSeg(id,key,cur,set){
   paint();
 }
 bindSeg('mesherSeg','m',()=>MESHER,v=>{ MESHER=v; store('mesher',v); });
-bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=+v; store('loose',LOOSE); });
+bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=String(v); store('looseMode',LOOSE); });
 const looseLabel=()=>{ const b=$('looseSeg').querySelector('button.on'); return b?b.textContent:String(LOOSE); };
 $('oneCore').checked=load('oneCore',false); $('oneCore').onchange=()=>store('oneCore',$('oneCore').checked);
 
@@ -284,7 +284,7 @@ function runMesh(workerUrl, job, cores, onStage, extra){
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
     const msg=structuredClone(job); msg.cores=cores;
-    if(extra){ msg.mesher=extra.mesher; msg.looseFrac=extra.looseFrac; }
+    if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; }
     const tr=[]; if(msg.shapeSdfData) tr.push(msg.shapeSdfData); if(msg.huGridData) tr.push(msg.huGridData);
     w.postMessage(msg,tr);
   });
@@ -491,14 +491,14 @@ async function run(){
       if(!testWorkerUrl) throw new Error('could not find this build\'s mesh worker');
       r.label='reference'; stage('reference build…');
       r.scale=job.scale||1;
-      r.ref=await runMesh(refUrl, job, cores, t=>stage('reference: '+t), {mesher:'classic', looseFrac:0}); r.ref.scale=r.scale;
+      r.ref=await runMesh(refUrl, job, cores, t=>stage('reference: '+t), {mesher:'classic', looseMode:'keep'}); r.ref.scale=r.scale;
       r.tris=r.ref.tris; setCard(el,r);
       if($('oneCore').checked){
         r.label='1 core'; stage('this build, one core…');
-        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t), {mesher:MESHER, looseFrac:LOOSE}); r.one.scale=r.scale;
+        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t), {mesher:MESHER, looseMode:LOOSE}); r.one.scale=r.scale;
       }
       r.label=cores+' cores'; stage('this build, '+cores+' cores…');
-      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseFrac:LOOSE}); r.test.scale=r.scale;
+      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseMode:LOOSE}); r.test.scale=r.scale;
       r.trisTest=r.test.tris!=null?r.test.tris:r.test.tv.length/3;
       r.same=sameMesh(r.ref, r.test);
       r.oneSame=r.one?sameMesh(r.test, r.one):null;
@@ -557,7 +557,7 @@ $('dlBtn').onclick=()=>{
   L.push('- This build: '+R.testBase+' ('+R.ver+')');
   L.push('- Reference: '+R.refBase);
   L.push('- Quality: '+R.quality+' · cores: '+R.cores+' · browser threads: '+R.threads);
-  L.push('- This build mesher: '+R.mesher+' · loose pieces: '+R.looseLabel+' (looseFrac '+R.loose+') · reference: classic, looseFrac 0');
+  L.push('- This build mesher: '+R.mesher+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
   L.push('- Browser: '+R.ua,'');
   L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Result |');
   L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');

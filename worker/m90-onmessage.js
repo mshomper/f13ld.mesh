@@ -55,8 +55,12 @@ self.onmessage=async function(e){
       try{
         const sm=await slabMeshExport(d, field, min, max, edge, d.simplifyTol||0, post);
         if(!sm.idx.length) return sm;              // empty: the caller reports it
-        const cr=meshClosedReport(sm.pos, sm.idx);
-        if(!cr.ok) throw new Error('result not closed ('+cr.bad+' edges)');
+        const cr=meshClosedReport(sm.pos, sm.idx, true);
+        if(!cr.ok){
+          const at=[]; for(let i=0;i<Math.min(6,cr.verts.length);i++){ const v=cr.verts[i]; at.push([sm.pos[3*v],sm.pos[3*v+1],sm.pos[3*v+2]].map(x=>+x.toFixed(3)).join(',')); }
+          console.warn('[worker] slab result not closed', JSON.stringify({bad:cr.bad, at, box:[min,max], edge, slabs:sm.slabs, seam:sm.seam, gaveUp:sm.gaveUp}));
+          throw new Error('result not closed ('+cr.bad+' edges)');
+        }
         return sm;
       }catch(err){
         slabFallback=(err&&err.message)||String(err);
@@ -323,17 +327,18 @@ self.onmessage=async function(e){
       const cr=meshClosedReport(vertProperties, triVerts);
       if(!cr.ok) closedFix={openEdges:cr.bad};
     }
-    // v0.15.0: loose-piece clean-up — split into connected pieces and drop
-    // those under d.looseFrac of the largest piece's volume (0 = off).
+    // v0.15.0: loose-piece clean-up (removeLoosePieces, m35). d.looseMode:
+    // 'specks' (default) | 'largest' | 'keep'.
     let loose=null;
-    const looseFrac=(d.looseFrac!=null)?+d.looseFrac:0.01;
-    if(looseFrac>0){
+    const looseMode=(d.looseMode==='keep'||d.looseMode==='largest')?d.looseMode:'specks';
+    if(looseMode!=='keep'){
       lastStage='removing loose pieces';
-      const r=removeLoosePieces(vertProperties, triVerts, looseFrac, 0);
+      const eV=d.edgeWorld||d.relEdgeMm||0;               // mesh cell edge, vertex units
+      const r=removeLoosePieces(vertProperties, triVerts, looseMode, eV*eV*eV);
       if(r){
         vertProperties=r.vertProperties; triVerts=r.triVerts;
         const s3=Math.pow(d.scale||1,3);
-        loose={dropped:r.dropped, pieces:r.pieces, droppedMm3:r.droppedVol*s3};
+        loose={mode:looseMode, dropped:r.dropped, pieces:r.pieces, droppedMm3:r.droppedVol*s3};
         self.postMessage({type:'progress',stage:'removed '+r.dropped+' loose piece'+(r.dropped===1?'':'s')+'...'});
       }
     }

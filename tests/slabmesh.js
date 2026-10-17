@@ -95,13 +95,15 @@ function simplifiedSlabs(F,g,nS,tol){
   }
   // loose-piece clean-up: big sphere + a small detached speck
   {
-    const fn=p=>Math.max(0.6-Math.hypot(p[0]+0.2,p[1],p[2]), 0.06-Math.hypot(p[0]-0.75,p[1]-0.6,p[2]-0.6));
+    // big sphere with a sealed cavity (r 0.1, kept) + a small detached speck (dropped)
+    const fn=p=>Math.max(Math.min(0.6-Math.hypot(p[0]+0.2,p[1],p[2]), Math.hypot(p[0]+0.2,p[1],p[2])-0.1), 0.06-Math.hypot(p[0]-0.75,p[1]-0.6,p[2]-0.6));
     const g=ctx.weldGridDims([-1,-1,-1],[1,1,1],0.02);
     const R=simplifiedSlabs({fn},g,4,0.003);
-    const r1=ctx.removeLoosePieces(R.pos,R.idx,0.01,0), r0=ctx.removeLoosePieces(R.pos,R.idx,0.0001,0);
-    const okL=r1&&r1.dropped===1&&r1.pieces===2&&ctx.meshClosedReport(r1.vertProperties,r1.triVerts).ok&&r0===null;
+    const cell=0.02**3, r1=ctx.removeLoosePieces(R.pos,R.idx,'largest',cell), r0=ctx.removeLoosePieces(R.pos,R.idx,'keep',cell), rs=ctx.removeLoosePieces(R.pos,R.idx,'specks',cell);
+    // speck: 0.06 radius sphere = 9e-4 mm³ = 113 cells → not a speck; largest drops it and keeps the cavity
+    const okL=r1&&r1.dropped===1&&r1.pieces===3&&ctx.meshClosedReport(r1.vertProperties,r1.triVerts).ok&&r0===null&&rs===null;
     if(!okL) fail++;
-    console.log('loose pieces', okL?'ok':'FAIL', r1?('dropped '+r1.dropped+' of '+r1.pieces+', '+r1.droppedVol.toExponential(2)+' vs kept '+r1.keptVol.toFixed(3)):'nothing dropped', '| at 0.01 % kept:', r0===null);
+    console.log('loose pieces', okL?'ok':'FAIL', r1?('dropped '+r1.dropped+' of '+r1.pieces+', '+r1.droppedVol.toExponential(2)+' vs kept '+r1.keptVol.toFixed(3)):'nothing dropped', '| keep: nothing dropped', r0===null, '| specks: nothing dropped (113 cells)', rs===null);
   }
   console.log(fail?('FAIL '+fail):'all slab meshes closed; raw meshes identical across slab counts');
   process.exit(fail?1:0);

@@ -48,8 +48,13 @@ self.onmessage=async function(e){
     // v0.15.0 slab mesher (m34–m36): open-cube and shape-clipped parts mesh in
     // z slabs on every core unless the export asks for the classic mesher.
     // Any failure, or a result that isn't closed, meshes the classic way.
-    const useSlab=d.mesher!=='classic';
-    let slabOut=null, slabFallback=null;
+    // d.mesher: 'auto' (default) meshes classic first and switches to the slab
+    // mesher when Manifold runs out of memory or its result is torn; 'slab'
+    // and 'classic' force one.
+    const meshMode=(d.mesher==='slab'||d.mesher==='classic')?d.mesher:'auto';
+    const useSlab=meshMode==='slab', autoMode=meshMode==='auto';
+    let slabOut=null, slabFallback=null, autoReason=null, autoCtx=null;
+    const isOOM=err=>/ran out of working memory/.test((err&&err.message)||'');
     const post=m=>self.postMessage(m);
     async function trySlab(field, min, max, edge){
       try{
@@ -232,9 +237,20 @@ self.onmessage=async function(e){
       if(fpb){ fineFn=fpb.fn; fieldBake=fpb; }
       self.postMessage({type:'progress',stage:lastStage+(fpb?' (field pre-baked on '+fpb.workers+' cores)':'')+'...'});
       const tLevelSet=performance.now();
-      mfld=safeLevelSet(fineFn,{min:fineMin,max:fineMax},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
+      if(autoMode) autoCtx={field:wrappedSDF, min:fineMin, max:fineMax, edge:relEdgeMm};
+      try{
+        mfld=safeLevelSet(fineFn,{min:fineMin,max:fineMax},relEdgeMm,'fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)');
+      }catch(err){
+        if(!(autoMode && isOOM(err))) throw err;
+        self.postMessage({type:'progress',stage:'classic mesher ran out of memory — slab mesher...'});
+        slabOut=await trySlab(wrappedSDF, fineMin, fineMax, relEdgeMm);
+        if(!slabOut) throw err;
+        autoReason='classic ran out of memory';
+      }
+      if(!slabOut){
       if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — check shape/scaffold overlap.');}
       msLevelSet=Math.round(performance.now()-tLevelSet);
+      }
       }
       // Shape-sdf export mode falls through to the unified extract+simplify+done
       // block below. msLevelSet captured here so timings-pill stays accurate.
@@ -258,9 +274,20 @@ self.onmessage=async function(e){
         lastStage='level set ('+d.edgeWorld.toFixed(3)+' world edge'+(cpb?', field pre-baked on '+cpb.workers+' cores':'')+')';
         self.postMessage({type:'progress',stage:lastStage+'...'});
         const tLevelSet=performance.now();
-        mfld=safeLevelSet(lsFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
+        if(autoMode) autoCtx={field:cubeFn, min:[-5,-5,-5], max:[5,5,5], edge:d.edgeWorld};
+        try{
+          mfld=safeLevelSet(lsFn,{min:[-5,-5,-5],max:[5,5,5]},d.edgeWorld,'cube export level set');
+        }catch(err){
+          if(!(autoMode && isOOM(err))) throw err;
+          self.postMessage({type:'progress',stage:'classic mesher ran out of memory — slab mesher...'});
+          slabOut=await trySlab(cubeFn, [-5,-5,-5], [5,5,5], d.edgeWorld);
+          if(!slabOut) throw err;
+          autoReason='classic ran out of memory';
+        }
+        if(!slabOut){
         if(mfld.isEmpty()){mfld.delete();throw new Error('Empty mesh — adjust recipe parameters.');}
         msLevelSet=Math.round(performance.now()-tLevelSet);
+        }
         }
       }
     } else {
@@ -326,6 +353,17 @@ self.onmessage=async function(e){
     if(!slabOut){
       const cr=meshClosedReport(vertProperties, triVerts);
       if(!cr.ok) closedFix={openEdges:cr.bad};
+      // Auto: a torn classic result is re-meshed with the slab mesher, kept
+      // if that one is closed.
+      if(!cr.ok && autoMode && autoCtx){
+        self.postMessage({type:'progress',stage:'classic mesh is torn ('+cr.bad+' open edges) — re-meshing with the slab mesher...'});
+        const sm=await trySlab(autoCtx.field, autoCtx.min, autoCtx.max, autoCtx.edge);
+        if(sm && sm.idx.length){
+          slabOut=sm; vertProperties=sm.pos; triVerts=sm.idx; closedFix=null;
+          msLevelSet+=sm.ms.mesh; msSimplify+=sm.ms.seam;
+          autoReason='classic result was torn ('+cr.bad+' open edges)';
+        }
+      }
     }
     // v0.15.0: loose-piece clean-up (removeLoosePieces, m35). d.looseMode:
     // 'specks' (default) | 'largest' | 'keep'.
@@ -347,7 +385,7 @@ self.onmessage=async function(e){
     if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
-      mesher:slabOut?'slab':'classic', slabFallback:slabFallback, loose:loose, closedFix:closedFix,
+      mesher:slabOut?'slab':'classic', meshMode:meshMode, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);

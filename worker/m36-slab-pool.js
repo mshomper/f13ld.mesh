@@ -21,6 +21,7 @@ const SLAB_MIN_POINTS=150000;     // below this, one slab in this thread
 const SLAB_JOB_LAYERS=24;         // smallest slab, in grid layers (halo is 2 each side)
 const SLAB_JOBS_PER_WORKER=3;     // so a dense slab doesn't leave the rest idle
 const SLAB_STALL_MS=180000;
+const SLAB_BAND_EDGES=3;          // seam band half-width, in grid spacings
 
 function slabSeamZ(g, L){ return L&1 ? g.min[2]+g.s[2]*((L-1)/2) : g.min[2]+g.s[2]*(L/2-0.5); }
 
@@ -32,15 +33,21 @@ function slabJobs(g, nW){
   return jobs;
 }
 
-function _slabFinish(g, results, tol, post, t0){
+// Join the slabs, tidy each seam band (on the pool when runBands is given,
+// else here), compact.
+async function _slabFinish(g, results, tol, post, t0, runBands){
   const tJ=performance.now();
   const J=joinSlabs(results);
   let idx=J.idx, seam=null;
   const seamZ=[]; for(let i=1;i<results.length;i++) seamZ.push(slabSeamZ(g, results[i]._La));
   if(tol>0 && seamZ.length){
     if(post) post({type:'progress', stage:'tidying '+seamZ.length+' seam'+(seamZ.length===1?'':'s')+'...'});
-    idx=simplifySeamBands(J.pos, idx, seamZ, 4*Math.max(g.s[0],g.s[1],g.s[2]), tol);
-    seam=simplifySeamBands.last||null;
+    const cut=seamBandJobs(J.pos, idx, seamZ, SLAB_BAND_EDGES*Math.max(g.s[0],g.s[1],g.s[2]));
+    if(cut.jobs.length){
+      const res=runBands ? await runBands(cut.jobs, tol) : cut.jobs.map(j=>simplifyBandJob(j, tol));
+      idx=joinSeamBands(cut.rest, cut.jobs, res);
+      seam=bandStats(cut, res, idx);
+    }
   }
   const C=compactIndexed(J.pos, idx);
   const msSeam=Math.round(performance.now()-tJ);
@@ -69,7 +76,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
     if(tol>0){ if(post) post({type:'progress', stage:'simplifying '+(r.idx.length/3/1e6).toFixed(2)+'M tris...'}); r=simplifySlab(r, tol); }
     else r.rawTris=r.idx.length/3;
     r._La=0; r._ms=performance.now()-ts;
-    const out=_slabFinish(g, [r], tol, post, t0);
+    const out=await _slabFinish(g, [r], tol, post, t0, null);
     out.workers=1;
     return out;
   }
@@ -83,9 +90,12 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
   const results=new Array(jobs.length);
   let next=0, done=0, lastPost=0, settled=false, watchdog=null;
   const workers=[];
+  let onBand=null;                         // set during the seam-band stage
   const stopAll=()=>{ if(watchdog){ clearTimeout(watchdog); watchdog=null; } for(const w of workers){ try{ w.terminate(); }catch(_){} } };
+  let failBands=null;
+  try{
   await new Promise((resolve,reject)=>{
-    const finish=(err)=>{ if(settled) return; settled=true; stopAll(); err?reject(err):resolve(); };
+    const finish=(err)=>{ if(settled) return; settled=true; if(watchdog){ clearTimeout(watchdog); watchdog=null; } err?reject(err):resolve(); };
     const kick=()=>{ if(watchdog) clearTimeout(watchdog); watchdog=setTimeout(()=>finish(new Error('slab mesher stalled')), SLAB_STALL_MS); };
     kick();
     const initMsg={type:'init', spec, edge, grid:{min, max, edge}, f32:false};
@@ -96,13 +106,14 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
       workers.push(w);
       const dispatch=()=>{ if(next<jobs.length){ const j=jobs[next++]; w.postMessage({type:'mesh', id:j.id, La:j.La, Lb:j.Lb, tol}); } };
       w.onmessage=e=>{
-        if(settled) return;
         const m=e.data;
+        if(m.type==='band'){ if(onBand) onBand(w, m); return; }
+        if(m.type==='error'){ if(onBand){ failBands(new Error('seam band worker: '+m.message)); return; } finish(new Error('slab worker: '+m.message)); return; }
+        if(settled) return;
         if(m.type==='ready'){
           if(!m.n || m.n.join(',')!==g.n.join(',')){ finish(new Error('grid mismatch '+m.n+' vs '+g.n)); return; }
           dispatch(); return;
         }
-        if(m.type==='error'){ finish(new Error('slab worker: '+m.message)); return; }
         if(m.type==='meshslab'){
           kick();
           const j=jobs[m.id];
@@ -115,11 +126,25 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
           dispatch();
         }
       };
-      w.onerror=ev=>{ if(ev&&ev.preventDefault) ev.preventDefault(); finish(new Error('slab worker failed'+(ev&&ev.message?': '+ev.message:''))); };
+      w.onerror=ev=>{ if(ev&&ev.preventDefault) ev.preventDefault(); const err=new Error('slab worker failed'+(ev&&ev.message?': '+ev.message:'')); if(onBand) failBands(err); else finish(err); };
       w.postMessage(initMsg);
     }
   });
-  const out=_slabFinish(g, results, tol, post, t0);
+  // ── seam bands, one job per seam, on the same workers ──
+  const runBands=(bjobs, btol)=>new Promise((resolve,reject)=>{
+    const out=new Array(bjobs.length); let bn=0, bd=0, bdog=null;
+    const end=(err)=>{ if(bdog) clearTimeout(bdog); onBand=null; err?reject(err):resolve(out); };
+    failBands=end;
+    const bkick=()=>{ if(bdog) clearTimeout(bdog); bdog=setTimeout(()=>end(new Error('seam bands stalled')), SLAB_STALL_MS); };
+    const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice();
+      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, tol:btol}, [p.buffer, ix.buffer, o.buffer]); } };
+    onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
+    bkick();
+    if(post) post({type:'progress', stage:'tidying '+bjobs.length+' seam band'+(bjobs.length===1?'':'s')+' on '+Math.min(workers.length,bjobs.length)+' cores...'});
+    for(const w of workers) send(w);
+  });
+  const out=await _slabFinish(g, results, tol, post, t0, runBands);
   out.workers=nW;
   return out;
+  } finally { stopAll(); }
 }

@@ -704,7 +704,7 @@ async function _triggerExportImpl(){
       expChip('domain',domainLabel)+
       expChip('edge',edgeLabel)+
       expChip('cores',result.cores||1)+
-      expChip('mesher',result.mesher==='slab'?'slab':(result.slabFallback?'classic (slab skipped)':'classic'))+
+      expMesherChip(result)+
       expLooseChip(result.loose)+
       expOpenChip(result.closedFix)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+
@@ -763,6 +763,13 @@ function expTimeSplitChip(bd){
     '<div class="ic-sub">where the time went</div>'+
     '<div class="split">'+seg(fld,'var(--warn)')+seg(mesh,'var(--mesh)')+seg(simp,'#7c6ff7')+'</div>'+
     '<div class="splitkey">'+key(fld,'var(--warn)','field','in mesh')+key(mesh,'var(--mesh)','mesh','\u2014')+key(simp,'#7c6ff7','simplify','\u2014')+'</div></div>';
+}
+// v0.15.0: which mesher made the file, and why when Auto switched.
+function expMesherChip(r){
+  let v=r.mesher==='slab'?'slab':'classic';
+  if(r.meshMode==='auto') v='auto \u00b7 '+v+(r.autoReason?' ('+r.autoReason+')':'');
+  else if(r.mesher!=='slab' && r.slabFallback) v+=' (slab skipped)';
+  return expChip('mesher', v);
 }
 // v0.15.0: loose pieces removed by the clean-up (worker/m35 removeLoosePieces).
 function expLooseChip(l){

@@ -222,8 +222,9 @@ const EXPORT_SLAB_US=1.6;                        // slab mesher + per-slab simpl
 // ── Mesher and loose-piece settings (v0.15.0), remembered in this browser ──
 const EXPORT_MESHER_KEY='f13ld.mesh.mesher', EXPORT_LOOSE_KEY='f13ld.mesh.loose';
 const EXPORT_LOOSE_MODES=['specks','keep','largest'];   // worker/m35 removeLoosePieces
-function exportMesherPref(){ try{ return localStorage.getItem(EXPORT_MESHER_KEY)==='classic'?'classic':'slab'; }catch(_){ return 'slab'; } }
-function setExportMesher(v){ try{ localStorage.setItem(EXPORT_MESHER_KEY, v==='classic'?'classic':'slab'); }catch(_){} if(typeof updateExportEstimate==='function') updateExportEstimate(); }
+const EXPORT_MESHERS=['auto','slab','classic'];   // worker/m90 d.mesher
+function exportMesherPref(){ try{ const v=localStorage.getItem(EXPORT_MESHER_KEY); return EXPORT_MESHERS.indexOf(v)>=0?v:'auto'; }catch(_){ return 'auto'; } }
+function setExportMesher(v){ try{ localStorage.setItem(EXPORT_MESHER_KEY, EXPORT_MESHERS.indexOf(v)>=0?v:'auto'); }catch(_){} if(typeof updateExportEstimate==='function') updateExportEstimate(); }
 function exportLooseMode(){ try{ const v=localStorage.getItem(EXPORT_LOOSE_KEY); return EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'; }catch(_){ return 'specks'; } }
 function setExportLoose(v){ try{ localStorage.setItem(EXPORT_LOOSE_KEY, EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'); }catch(_){} }
 const EXPORT_CAL_KEY='f13ld.mesh.exportCal.v1';  // {"<family>:<cube|shape>": {t, n}}

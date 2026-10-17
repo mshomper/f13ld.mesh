@@ -67,34 +67,71 @@ function simplifySlab(r, tol){
   return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), rawTris:r.idx.length/3, evals:r.evals, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe};
 }
 
-// Second pass over the band of triangles within bandW of each seam plane
-// (z values in seamZ). The band's outer edges are locked (LockBorder on the
-// sub-mesh), so the result stays closed. Returns new index array.
-function simplifySeamBands(pos, idx, seamZ, bandW, tol){
-  var S=slabMeshopt();
-  if(!S || !(tol>0) || !seamZ.length) return idx;
-  var nV=pos.length/3, near=new Uint8Array(nV), i, t;
+// Second pass over the triangles within bandW of each seam plane (z values
+// in seamZ), one band per seam so the bands can be simplified on separate
+// cores (v0.15.0). seamBandJobs cuts them out as small local meshes whose
+// outer vertices (also used outside the band) are locked; simplifyBandJob
+// runs one; joinSeamBands puts the results back. simplifySeamBands does all
+// three in this thread.
+function seamBandJobs(pos, idx, seamZ, bandW){
+  var nV=pos.length/3, nT=idx.length/3, i, t, k;
   var zs=Array.from(seamZ).sort(function(a,b){return a-b;});
+  var vb=new Int32Array(nV).fill(-1);
   for(i=0;i<nV;i++){
     var z=pos[3*i+2], lo=0, hi=zs.length-1;
     while(lo<hi){ var mid=(lo+hi)>>1; if(zs[mid]<z) lo=mid+1; else hi=mid; }
-    if(Math.abs(zs[lo]-z)<=bandW || (lo>0 && Math.abs(zs[lo-1]-z)<=bandW)) near[i]=1;
+    var best=-1, bd=bandW;
+    if(Math.abs(zs[lo]-z)<=bd){ best=lo; bd=Math.abs(zs[lo]-z); }
+    if(lo>0 && Math.abs(zs[lo-1]-z)<=bd) best=lo-1;
+    vb[i]=best;
   }
-  var nT=idx.length/3, inBand=new Uint8Array(nT), nb=0;
-  for(t=0;t<nT;t++){ if(near[idx[3*t]]||near[idx[3*t+1]]||near[idx[3*t+2]]){ inBand[t]=1; nb++; } }
-  if(!nb) return idx;
-  var band=new Uint32Array(nb*3), rest=new Uint32Array((nT-nb)*3), ob=0, or=0;
-  for(t=0;t<nT;t++){ var dst=inBand[t]?band:rest, o=inBand[t]?ob:or;
-    dst[o]=idx[3*t]; dst[o+1]=idx[3*t+1]; dst[o+2]=idx[3*t+2];
-    if(inBand[t]) ob+=3; else or+=3; }
-  // lock the band's outer vertices (those also used outside the band)
-  var outer=new Uint8Array(nV);
-  for(i=0;i<rest.length;i++) outer[rest[i]]=1;
-  var ss=safeSimplify(pos, band, tol, outer, ['Sparse']);
-  var nb2=ss.idx, out=new Uint32Array(rest.length+nb2.length);
-  out.set(rest,0); out.set(nb2,rest.length);
-  simplifySeamBands.last={bandTris:nb, after:nb2.length/3, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe};
+  var tb=new Int32Array(nT);
+  for(t=0;t<nT;t++){ var a0=vb[idx[3*t]], a1=vb[idx[3*t+1]], a2=vb[idx[3*t+2]]; tb[t]=a0>=0?a0:(a1>=0?a1:a2); }
+  // a vertex used by triangles of more than one band (or the rest) is outer
+  var own=new Int32Array(nV).fill(-2), mixed=new Uint8Array(nV);
+  for(t=0;t<nT;t++) for(k=0;k<3;k++){ var v=idx[3*t+k]; if(own[v]===-2) own[v]=tb[t]; else if(own[v]!==tb[t]) mixed[v]=1; }
+  var cnt=new Int32Array(zs.length), nRest=0;
+  for(t=0;t<nT;t++){ if(tb[t]>=0) cnt[tb[t]]++; else nRest++; }
+  var rest=new Uint32Array(nRest*3), or=0, jobs=[], tris=[];
+  for(k=0;k<zs.length;k++) tris.push(new Uint32Array(cnt[k]));
+  var fill=new Int32Array(zs.length);
+  for(t=0;t<nT;t++){ if(tb[t]<0){ rest[or++]=idx[3*t]; rest[or++]=idx[3*t+1]; rest[or++]=idx[3*t+2]; } else tris[tb[t]][fill[tb[t]]++]=t; }
+  var map=new Int32Array(nV).fill(-1);
+  for(k=0;k<zs.length;k++){
+    var T=tris[k]; if(!T.length) continue;
+    var gv=[], li=new Uint32Array(T.length*3);
+    for(i=0;i<T.length;i++) for(var e=0;e<3;e++){ var g=idx[3*T[i]+e]; if(map[g]<0){ map[g]=gv.length; gv.push(g); } li[3*i+e]=map[g]; }
+    var lp=new Float32Array(gv.length*3), outer=new Uint8Array(gv.length);
+    for(i=0;i<gv.length;i++){ lp[3*i]=pos[3*gv[i]]; lp[3*i+1]=pos[3*gv[i]+1]; lp[3*i+2]=pos[3*gv[i]+2]; outer[i]=mixed[gv[i]]; map[gv[i]]=-1; }
+    jobs.push({k:k, pos:lp, idx:li, outer:outer, gv:Uint32Array.from(gv)});
+  }
+  return {jobs:jobs, rest:rest, bandTris:nT-nRest};
+}
+function simplifyBandJob(job, tol){
+  var ss=safeSimplify(job.pos, job.idx, tol, job.outer, ['Sparse']);
+  return {idx:ss.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe};
+}
+function joinSeamBands(rest, jobs, results){
+  var n=rest.length, i, k;
+  for(k=0;k<results.length;k++) n+=results[k].idx.length;
+  var out=new Uint32Array(n); out.set(rest,0); var o=rest.length;
+  for(k=0;k<jobs.length;k++){ var gv=jobs[k].gv, li=results[k].idx; for(i=0;i<li.length;i++) out[o++]=gv[li[i]]; }
   return out;
+}
+function simplifySeamBands(pos, idx, seamZ, bandW, tol){
+  var S=slabMeshopt();
+  if(!S || !(tol>0) || !seamZ.length) return idx;
+  var cut=seamBandJobs(pos, idx, seamZ, bandW);
+  if(!cut.jobs.length) return idx;
+  var res=cut.jobs.map(function(j){ return simplifyBandJob(j, tol); });
+  var out=joinSeamBands(cut.rest, cut.jobs, res);
+  simplifySeamBands.last=bandStats(cut, res, out);
+  return out;
+}
+function bandStats(cut, res, out){
+  var r=0, l=0, gu=false, un=false, after=0;
+  for(var k=0;k<res.length;k++){ r+=res[k].retries; l+=res[k].locked; gu=gu||res[k].gaveUp; un=un||res[k].unsafe; after+=res[k].idx.length/3; }
+  return {bandTris:cut.bandTris, after:after, bands:res.length, retries:r, locked:l, gaveUp:gu, unsafe:un};
 }
 
 // Closed, consistently oriented mesh: every directed edge a→b appears once

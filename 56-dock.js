@@ -33,7 +33,7 @@ const DK_IC={
 function dkIcon(name,size,cls){
   return '<svg width="'+(size||14)+'" height="'+(size||14)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(cls?' class="'+cls+'"':'')+'>'+DK_IC[name]+'</svg>';
 }
-function _dkMesher(){ return (typeof exportMesherPref==='function')?exportMesherPref():'slab'; }
+function _dkMesher(){ return (typeof exportMesherPref==='function')?exportMesherPref():'auto'; }
 function _dkLoose(){ return (typeof exportLooseMode==='function')?exportLooseMode():'specks'; }
 function _dkEl(id){ return document.getElementById(id); }
 function _dkSet(id,t){ const e=_dkEl(id); if(e && e.textContent!==t) e.textContent=t; }
@@ -98,9 +98,8 @@ function dockEnsure(){
           '<div class="dr-f"><label>File name</label><div class="dr-file" id="expFileName"></div></div>'+
           '<div class="dr-f"><label>Cores</label><div class="dr-hint" id="expCoresNote"></div></div>'+
           '<div class="dr-f"><label for="expMesher">Mesher</label><select id="expMesher" class="dr-sel" onchange="setExportMesher(this.value)">'+
-            '<option value="slab"'+(_dkMesher()==='slab'?' selected':'')+'>Slab · every core</option>'+
-            '<option value="classic"'+(_dkMesher()==='classic'?' selected':'')+'>Classic · Manifold</option>'+
-          '</select><div class="dr-hint">Slab splits the part into layers and meshes them on all cores. Classic is the previous mesher, kept for comparison. Welds use Classic for now.</div></div>'+
+            [['auto','Auto'],['slab','Slab · every core'],['classic','Classic · Manifold']].map(o=>'<option value="'+o[0]+'"'+(_dkMesher()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+          '</select><div class="dr-hint">Auto meshes with Classic and switches to Slab when Classic runs out of memory or its mesh comes out torn. Slab splits the part into layers and meshes them on every core. Welds use Classic for now.</div></div>'+
           '<div class="dr-f"><label for="expLoose">Loose pieces</label><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
             [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
           '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+

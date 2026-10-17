@@ -14,6 +14,7 @@
      {type:'job',  id, qa, qb}
      {type:'mesh', id, La, Lb, tol}   v0.15.0 slab mesher (m36-slab-pool.js):
         mesh tets with lowest layer in [La, Lb), simplify with seams locked
+     {type:'band', id, pos, idx, outer, tol}   v0.15.0 seam band simplify
    Messages out:
      {type:'ready', n}
      {type:'slab', id, main, off, kmA, kmB, koA, koB, ms}   (buffers transferred)
@@ -56,6 +57,14 @@ self.onmessage=async function(e){
       self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer,
         rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, ms:performance.now()-t0},
         [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer]);
+      return;
+    }
+    if(d.type==='band'){
+      await slabMeshoptReady;
+      const t0=performance.now();
+      const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer)}, d.tol);
+      const idx=new Uint32Array(r.idx);
+      self.postMessage({type:'band', id:d.id, idx:idx.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0}, [idx.buffer]);
       return;
     }
     if(d.type==='job'){

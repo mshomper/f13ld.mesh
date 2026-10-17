@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viewport colour options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#06080c; --card:#0d1017; --line:#1c2230; --rail:#090c12; --pop:#111620;
+  --label:#8a93a8; --text:#d7dbe6; --accent:#1D9E75; --lime:#c8f542;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:'Exo 2',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+html{background:var(--ground)}
+body{margin:0;background:var(--ground);color:var(--text);font:400 13px/1.45 var(--sans);padding:20px 16px 40px}
+h1{font:600 20px/1.25 var(--sans);margin:0 0 6px;text-align:center}
+.intro{margin:0 auto 18px;max-width:320px;text-align:center;color:var(--label)}
+.stack{display:flex;flex-direction:column;align-items:center;gap:16px}
+.card{width:100%;max-width:320px;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.card-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.opt{font:500 12px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--label)}
+.name{font:600 14px/1.2 var(--sans);color:var(--text)}
+.cap{margin:4px 0 10px;color:var(--label);font-size:13px}
+.rail{background:var(--rail);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+.row-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px}
+.lab{font:400 12px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--label)}
+.hex{font:500 12px/1.2 var(--mono);letter-spacing:.04em;color:var(--text);text-transform:lowercase}
+.code{margin-top:8px;font:400 12px/1.35 var(--mono);color:var(--label);overflow-wrap:anywhere}
+.body{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.ctrls{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+
+/* preview tile: rounded square lit like a lattice */
+.tile{--c:#8f9db3;--hi:#c0c8d6;--lo:#2a2f3a;position:relative;flex:none;width:48px;height:48px;border-radius:10px;
+  background:radial-gradient(circle at 32% 26%,var(--hi) 0,var(--c) 48%,var(--lo) 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.tile::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:
+   repeating-linear-gradient(45deg,rgba(0,0,0,.30) 0 2px,transparent 2px 8px),
+   repeating-linear-gradient(-45deg,rgba(0,0,0,.30) 0 2px,transparent 2px 8px)}
+.tile.is-default{box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 0 0 1px var(--card),0 0 0 2px var(--line)}
+
+/* shared button chrome */
+button{font:inherit;color:inherit}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-ic{flex:none;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;padding:0;
+  background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--label);cursor:pointer}
+.btn-ic:hover{color:var(--text);border-color:#2b3447}
+.btn-ic svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn-txt{height:30px;padding:0 12px;background:var(--accent);border:0;border-radius:8px;color:#04120d;font:600 13px var(--sans);cursor:pointer}
+
+/* hue strip */
+.strip-wrap{display:flex;flex-direction:column;gap:6px;min-width:0}
+.hue{position:relative;height:32px;touch-action:none;cursor:pointer;border-radius:8px;user-select:none;-webkit-user-select:none}
+.hue-track{position:absolute;left:0;right:0;top:9px;height:14px;border-radius:7px;
+  background:linear-gradient(90deg,#f00 0%,#ff0 16.67%,#0f0 33.33%,#0ff 50%,#00f 66.67%,#f0f 83.33%,#f00 100%);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);filter:saturate(.85) brightness(.92)}
+.hue-thumb{--p:0;--tc:#1D9E75;position:absolute;top:3px;width:26px;height:26px;border-radius:50%;
+  left:calc(var(--p) * (100% - 26px));background:var(--tc);border:3px solid #e8ecf5;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),0 2px 5px rgba(0,0,0,.5);pointer-events:none}
+.hue.idle .hue-thumb{background:var(--card);border-color:#8a93a8}
+.hue:focus-visible{outline-offset:1px}
+.shade-row{display:flex;gap:8px;align-items:center;min-width:0}
+.seg{flex:1;min-width:0;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;min-width:0;height:30px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 4px;
+  background:transparent;border:0;border-right:1px solid var(--line);cursor:pointer;font:400 13px var(--sans);color:var(--label)}
+.seg button:last-child{border-right:0}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:#13202a;color:var(--text);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.seg button:focus-visible{outline-offset:-2px}
+.dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--dc,#888);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+
+/* option B */
+.pick{display:flex;gap:8px;align-items:center;min-width:0}
+.swatch-btn{flex:1;min-width:0;height:36px;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;
+  border:1px solid #2b3447;border-radius:8px;background:var(--sw,#8f9db3);cursor:pointer;color:#fff}
+.swatch-btn.is-default{background:repeating-linear-gradient(45deg,#1a2030 0 6px,#141a27 6px 12px);border-style:dashed}
+.swatch-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+  filter:drop-shadow(0 0 2px rgba(0,0,0,.85));transition:transform .15s}
+.swatch-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pop{margin-top:10px;background:var(--pop);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+.pop[hidden]{display:none}
+.wheel-wrap{display:flex;justify-content:center;min-width:0}
+canvas.wheel{display:block;touch-action:none;cursor:crosshair;border-radius:50%}
+canvas.wheel:focus-visible{outline-offset:3px}
+.hint{margin:6px 0 8px;color:var(--label);font-size:12px;text-align:center}
+.hexrow{display:flex;gap:8px;align-items:center}
+.hexin{flex:1;min-width:0;height:32px;padding:0 10px;background:var(--rail);border:1px solid var(--line);border-radius:8px;
+  color:var(--text);font:500 13px var(--mono);letter-spacing:.04em;text-transform:lowercase}
+.hexin.bad{border-color:#b4504a}
+.hexin:focus-visible{outline-offset:0;border-color:var(--accent)}
+.chips-lab{margin:10px 0 6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:var(--cc,#888);padding:0;cursor:pointer}
+.chip:hover{border-color:rgba(255,255,255,.4)}
+.pop-foot{display:flex;justify-content:flex-end;margin-top:10px}
+
+/* option C */
+.head-c{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.head-c .meta{flex:1;min-width:0}
+.head-c .row-head{margin-bottom:0}
+.curated{display:grid;grid-template-columns:repeat(9,minmax(28px,1fr));gap:4px;align-items:center;justify-items:center}
+.curated .chip,.curated .btn-ic{width:100%;max-width:34px;aspect-ratio:1;height:auto;min-height:28px;border-radius:50%}
+.curated .btn-ic{padding:0}
+.curated .chip[aria-pressed="true"],.curated .btn-ic[aria-pressed="true"]{position:relative;z-index:1;box-shadow:0 0 0 1.5px var(--rail),0 0 0 3px var(--accent)}
+.chip-custom{position:relative;border:0;background:conic-gradient(from 0deg,#d8574d,#d8b04d,#7cd84d,#4dd8b0,#4d7cd8,#b04dd8,#d8574d)}
+.chip-custom .core{position:absolute;inset:4px;border-radius:50%;background:var(--cc,var(--rail));display:flex;align-items:center;justify-content:center;color:var(--text)}
+.chip-custom svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 0 2px rgba(0,0,0,.8));transition:transform .15s}
+.chip-custom[aria-expanded="true"] svg{transform:rotate(45deg)}
+.custom-panel{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.custom-panel[hidden]{display:none}
+.foot{margin:18px auto 0;max-width:320px;text-align:center;color:var(--label);font-size:12px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<h1>Viewport colour — options</h1>
+<p class="intro">Tap or drag each one; pick the one that feels right.</p>
+
+<div class="stack">
+
+  <!-- ===== Option A ===== -->
+  <section class="card" id="cardA" aria-labelledby="hA">
+    <div class="card-head"><span class="opt" id="hA">Option A</span><span class="name">Hue strip</span></div>
+    <p class="cap">One rainbow slider, three shades, one reset.</p>
+    <div class="rail">
+      <div class="row-head"><span class="lab">Viewport colour</span><span class="hex" data-hex>default</span></div>
+      <div class="body">
+        <div class="tile is-default" data-tile></div>
+        <div class="ctrls" data-slot></div>
+      </div>
+      <div class="code" data-code></div>
+    </div>
+  </section>
+
+  <!-- ===== Option B ===== -->
+  <section class="card" id="cardB" aria-labelledby="hB">
+    <div class="card-head"><span class="opt" id="hB">Option B</span><span class="name">Swatch + wheel</span></div>
+    <p class="cap">One swatch opens an inline colour wheel.</p>
+    <div class="rail">
+      <div class="row-head"><span class="lab">Viewport colour</span><span class="hex" data-hex>default</span></div>
+      <div class="body">
+        <div class="tile is-default" data-tile></div>
+        <div class="ctrls">
+          <div class="pick">
+            <button type="button" class="swatch-btn is-default" id="swB" aria-haspopup="true" aria-expanded="false" aria-controls="popB" aria-label="Open colour wheel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <button type="button" class="btn-ic" id="rstB" aria-label="Reset to default colour" title="Reset to default">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="pop" id="popB" hidden>
+        <div class="wheel-wrap" id="wheelWrap">
+          <canvas class="wheel" id="wheelB" tabindex="0" role="application" aria-label="Colour wheel. Left and right arrows change hue, up and down change brightness, shift with left and right changes saturation."></canvas>
+        </div>
+        <p class="hint">Arrows: hue, brightness. Shift + arrows: saturation.</p>
+        <div class="hexrow">
+          <span class="lab">Hex</span>
+          <input class="hexin" id="hexB" type="text" inputmode="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Hex colour">
+        </div>
+        <div class="lab chips-lab">Recent</div>
+        <div class="chips" id="chipsB"></div>
+        <div class="pop-foot"><button type="button" class="btn-txt" id="doneB">Done</button></div>
+      </div>
+      <div class="code" data-code></div>
+    </div>
+  </section>
+
+  <!-- ===== Option C ===== -->
+  <section class="card" id="cardC" aria-labelledby="hC">
+    <div class="card-head"><span class="opt" id="hC">Option C</span><span class="name">Curated + custom</span></div>
+    <p class="cap">Seven palette chips; the last one opens a custom strip.</p>
+    <div class="rail">
+      <div class="head-c">
+        <div class="tile is-default" data-tile></div>
+        <div class="meta">
+          <div class="row-head"><span class="lab">Viewport colour</span><span class="hex" data-hex>default</span></div>
+          <div class="code" data-code></div>
+        </div>
+      </div>
+      <div class="curated" id="curatedC" role="group" aria-label="Curated colours"></div>
+      <div class="custom-panel" id="customC" hidden></div>
+    </div>
+  </section>
+
+</div>
+<p class="foot">Mockup only. Every control calls the same stand-in for setBodyColor(id, hex); reset passes null.</p>
+
+<script>
+(function(){
+'use strict';
+
+var DEFAULT_HEX = '#8f9db3';
+var SVG_RESET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/></svg>';
+
+/* ---------- colour maths ---------- */
+function clamp(x,a,b){ return Math.min(b, Math.max(a, x)); }
+function hsv2rgb(h,s,v){
+  h = ((h % 360) + 360) % 360;
+  var c = v*s, x = c*(1 - Math.abs((h/60) % 2 - 1)), m = v - c, r=0, g=0, b=0;
+  if(h<60){r=c;g=x;} else if(h<120){r=x;g=c;} else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;} else if(h<300){r=x;b=c;} else {r=c;b=x;}
+  return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+function rgb2hsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  var mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx-mn, h = 0;
+  if(d){
+    if(mx===r) h = ((g-b)/d) % 6; else if(mx===g) h = (b-r)/d + 2; else h = (r-g)/d + 4;
+    h *= 60; if(h<0) h += 360;
+  }
+  return {h:h, s: mx ? d/mx : 0, v: mx};
+}
+function rgb2hex(c){
+  return '#' + c.map(function(n){ var s = n.toString(16); return s.length<2 ? '0'+s : s; }).join('');
+}
+function hex2rgb(hex){
+  if(typeof hex !== 'string') return null;
+  var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if(!m) return null;
+  var t = m[1];
+  if(t.length === 3) t = t.charAt(0)+t.charAt(0)+t.charAt(1)+t.charAt(1)+t.charAt(2)+t.charAt(2);
+  return [parseInt(t.slice(0,2),16), parseInt(t.slice(2,4),16), parseInt(t.slice(4,6),16)];
+}
+function hsv2hex(h,s,v){ return rgb2hex(hsv2rgb(h,s,v)); }
+function mix(a,b,t){ return a.map(function(n,i){ return Math.round(n + (b[i]-n)*t); }); }
+
+/* ---------- shared preview + readout ---------- */
+function paint(card, hex){
+  var c = hex || DEFAULT_HEX, rgb = hex2rgb(c);
+  var tile = card.querySelector('[data-tile]');
+  tile.style.setProperty('--c', c);
+  tile.style.setProperty('--hi', rgb2hex(mix(rgb,[255,255,255],0.38)));
+  tile.style.setProperty('--lo', rgb2hex(mix(rgb,[0,0,0],0.62)));
+  tile.classList.toggle('is-default', !hex);
+  card.querySelector('[data-hex]').textContent = hex ? hex.toLowerCase() : 'default';
+  card.querySelector('[data-code]').textContent = hex ? "setBodyColor(id, '" + hex.toLowerCase() + "')" : 'setBodyColor(id, null)';
+}
+
+/* ---------- hue strip + shade toggle (used by A and C) ---------- */
+var SHADES = [
+  {name:'Light', s:0.42, v:1.00},
+  {name:'Mid',   s:0.68, v:0.90},
+  {name:'Deep',  s:0.85, v:0.58}
+];
+function createStrip(onChange){
+  var st = {h:160, shade:1, active:false};
+  var el = document.createElement('div');
+  el.className = 'strip-wrap';
+  el.innerHTML =
+    '<div class="hue idle" role="slider" tabindex="0" aria-label="Hue" aria-valuemin="0" aria-valuemax="359" aria-valuenow="160">' +
+      '<div class="hue-track"></div><div class="hue-thumb"></div></div>' +
+    '<div class="shade-row"><div class="seg" role="group" aria-label="Shade"></div></div>';
+  var hue = el.querySelector('.hue'), thumb = el.querySelector('.hue-thumb');
+  var seg = el.querySelector('.seg'), shadeRow = el.querySelector('.shade-row');
+  var btns = SHADES.map(function(sh,i){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<span class="dot"></span><span>' + sh.name + '</span>';
+    b.addEventListener('click', function(){ st.shade = i; st.active = true; update(true); });
+    seg.appendChild(b);
+    return b;
+  });
+  function curHex(){ var sh = SHADES[st.shade]; return hsv2hex(st.h, sh.s, sh.v); }
+  function update(emit){
+    var hx = curHex();
+    thumb.style.setProperty('--p', (st.h/359).toFixed(4));
+    thumb.style.setProperty('--tc', hx);
+    hue.classList.toggle('idle', !st.active);
+    hue.setAttribute('aria-valuenow', String(Math.round(st.h)));
+    hue.setAttribute('aria-valuetext', Math.round(st.h) + ' degrees' + (st.active ? '' : ', not set'));
+    btns.forEach(function(b,i){
+      b.setAttribute('aria-pressed', st.active && st.shade === i ? 'true' : 'false');
+      b.querySelector('.dot').style.setProperty('--dc', hsv2hex(st.h, SHADES[i].s, SHADES[i].v));
+    });
+    if(emit) onChange(st.active ? hx : null);
+  }
+  function fromX(clientX){
+    var r = hue.getBoundingClientRect(), tw = 26;
+    var p = clamp((clientX - r.left - tw/2) / Math.max(1, r.width - tw), 0, 1);
+    st.h = Math.round(p*359); st.active = true; update(true);
+  }
+  var dragging = false;
+  hue.addEventListener('pointerdown', function(e){
+    dragging = true;
+    try{ hue.setPointerCapture(e.pointerId); }catch(_){}
+    hue.focus({preventScroll:true});
+    fromX(e.clientX); e.preventDefault();
+  });
+  hue.addEventListener('pointermove', function(e){ if(dragging) fromX(e.clientX); });
+  function end(){ dragging = false; }
+  hue.addEventListener('pointerup', end);
+  hue.addEventListener('pointercancel', end);
+  hue.addEventListener('lostpointercapture', end);
+  hue.addEventListener('keydown', function(e){
+    var d = 0, k = e.key, big = e.shiftKey ? 10 : 1;
+    if(k==='ArrowRight' || k==='ArrowUp') d = big;
+    else if(k==='ArrowLeft' || k==='ArrowDown') d = -big;
+    else if(k==='PageUp') d = 15; else if(k==='PageDown') d = -15;
+    else if(k==='Home'){ st.h = 0; st.active = true; update(true); e.preventDefault(); return; }
+    else if(k==='End'){ st.h = 359; st.active = true; update(true); e.preventDefault(); return; }
+    else return;
+    st.h = clamp(Math.round(st.h) + d, 0, 359); st.active = true; update(true); e.preventDefault();
+  });
+  function setHex(hex){
+    var rgb = hex ? hex2rgb(hex) : null;
+    if(!rgb){ st.active = false; update(false); return; }
+    var hsv = rgb2hsv(rgb[0], rgb[1], rgb[2]);
+    var best = 1, bd = 9;
+    SHADES.forEach(function(sh,i){
+      var d = Math.abs(sh.s - hsv.s) + Math.abs(sh.v - hsv.v);
+      if(d < bd){ bd = d; best = i; }
+    });
+    if(hsv.s > 0.05) st.h = clamp(Math.round(hsv.h), 0, 359);
+    st.shade = best; st.active = true; update(false);
+  }
+  update(false);
+  return {el:el, shadeRow:shadeRow, setHex:setHex};
+}
+
+function resetButton(label){
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'btn-ic';
+  b.setAttribute('aria-label', label); b.title = 'Reset to default';
+  b.innerHTML = SVG_RESET;
+  return b;
+}
+
+/* ============ Option A ============ */
+(function(){
+  var card = document.getElementById('cardA');
+  var strip = createStrip(function(hex){ paint(card, hex); });
+  var rst = resetButton('Reset to default colour');
+  rst.addEventListener('click', function(){ strip.setHex(null); paint(card, null); });
+  strip.shadeRow.appendChild(rst);
+  card.querySelector('[data-slot]').appendChild(strip.el);
+  paint(card, null);
+})();
+
+/* ============ Option B ============ */
+(function(){
+  var card = document.getElementById('cardB');
+  var swatch = document.getElementById('swB'), pop = document.getElementById('popB');
+  var canvas = document.getElementById('wheelB'), wrap = document.getElementById('wheelWrap');
+  var hexIn = document.getElementById('hexB'), chipsEl = document.getElementById('chipsB');
+  var ctx = canvas.getContext('2d');
+  var d0 = rgb2hsv.apply(null, hex2rgb(DEFAULT_HEX));
+  var hsv = {h:d0.h, s:d0.s, v:d0.v};
+  var committed = null;          // hex or null
+  var recents = ['#1D9E75','#c8f542','#4f8fe8','#9b7be0','#e0735a','#e0a03a'].map(function(x){ return x.toLowerCase(); });
+  var geo = {size:0, dpr:1, ring:null, ringW:0};
+  var mode = null;
+
+  function curHex(){ return hsv2hex(hsv.h, hsv.s, hsv.v); }
+  function geometry(){
+    var s = geo.size, R = s/2 - 2, rIn = R - geo.ringW, half = (rIn - 5) / Math.SQRT2;
+    return {cx:s/2, cy:s/2, R:R, rIn:rIn, half:half, left:s/2-half, top:s/2-half, side:half*2};
+  }
+  function buildRing(){
+    var dpr = geo.dpr, px = Math.round(geo.size*dpr), g = geometry();
+    var c = document.createElement('canvas'); c.width = c.height = px;
+    var x = c.getContext('2d'), img = x.createImageData(px, px), d = img.data;
+    var cx = px/2, Ro = g.R*dpr, Ri = g.rIn*dpr;
+    for(var yy=0; yy<px; yy++){
+      for(var xx=0; xx<px; xx++){
+        var dx = xx + 0.5 - cx, dy = yy + 0.5 - cx, dist = Math.sqrt(dx*dx + dy*dy);
+        var a = clamp(dist - Ri + 0.5, 0, 1) * clamp(Ro - dist + 0.5, 0, 1);
+        if(a <= 0) continue;
+        var rgb = hsv2rgb(Math.atan2(dy, dx) * 180 / Math.PI + 360, 1, 1), i = (yy*px + xx) * 4;
+        d[i] = rgb[0]; d[i+1] = rgb[1]; d[i+2] = rgb[2]; d[i+3] = Math.round(a*255);
+      }
+    }
+    x.putImageData(img, 0, 0);
+    geo.ring = c;
+  }
+  function size(){
+    var w = Math.floor(Math.min(240, wrap.clientWidth || 240));
+    if(w < 120) w = 120;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if(w === geo.size && dpr === geo.dpr && geo.ring) return;
+    geo.size = w; geo.dpr = dpr; geo.ringW = Math.max(16, Math.round(w*0.085));
+    canvas.style.width = w + 'px'; canvas.style.height = w + 'px';
+    canvas.width = Math.round(w*dpr); canvas.height = Math.round(w*dpr);
+    buildRing();
+  }
+  function marker(x, y, fill){
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2);
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 9.5, 0, Math.PI*2);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke();
+  }
+  function draw(){
+    if(!geo.ring) return;
+    var g = geometry();
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(geo.ring, 0, 0);
+    ctx.setTransform(geo.dpr,0,0,geo.dpr,0,0);
+    ctx.fillStyle = hsv2hex(hsv.h, 1, 1);
+    ctx.fillRect(g.left, g.top, g.side, g.side);
+    var gw = ctx.createLinearGradient(g.left, 0, g.left + g.side, 0);
+    gw.addColorStop(0, 'rgba(255,255,255,1)'); gw.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gw; ctx.fillRect(g.left, g.top, g.side, g.side);
+    var gb = ctx.createLinearGradient(0, g.top, 0, g.top + g.side);
+    gb.addColorStop(0, 'rgba(0,0,0,0)'); gb.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = gb; ctx.fillRect(g.left, g.top, g.side, g.side);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.14)';
+    ctx.strokeRect(g.left + 0.5, g.top + 0.5, g.side - 1, g.side - 1);
+    var ang = hsv.h * Math.PI / 180, rm = (g.R + g.rIn) / 2;
+    marker(g.cx + Math.cos(ang)*rm, g.cy + Math.sin(ang)*rm, hsv2hex(hsv.h, 1, 1));
+    marker(g.left + hsv.s*g.side, g.top + (1 - hsv.v)*g.side, curHex());
+  }
+  function refreshSwatch(){
+    swatch.classList.toggle('is-default', !committed);
+    swatch.style.setProperty('--sw', committed || DEFAULT_HEX);
+  }
+  function commit(fromHexField){
+    committed = curHex();
+    paint(card, committed);
+    refreshSwatch();
+    if(!fromHexField){ hexIn.value = committed; hexIn.classList.remove('bad'); }
+    draw();
+  }
+  function renderChips(){
+    chipsEl.innerHTML = '';
+    recents.forEach(function(hx){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip';
+      b.style.setProperty('--cc', hx);
+      b.setAttribute('aria-label', 'Use ' + hx);
+      b.addEventListener('click', function(){
+        var rgb = hex2rgb(hx), v = rgb2hsv(rgb[0], rgb[1], rgb[2]);
+        hsv.h = v.h; hsv.s = v.s; hsv.v = v.v; commit(false);
+      });
+      chipsEl.appendChild(b);
+    });
+  }
+  function pushRecent(){
+    if(!committed) return;
+    var hx = committed.toLowerCase();
+    recents = [hx].concat(recents.filter(function(x){ return x !== hx; })).slice(0, 6);
+    renderChips();
+  }
+  function open(){
+    pop.hidden = false;
+    swatch.setAttribute('aria-expanded', 'true');
+    size();
+    hexIn.value = curHex(); hexIn.classList.remove('bad');
+    draw();
+  }
+  function close(returnFocus){
+    if(pop.hidden) return;
+    pop.hidden = true;
+    swatch.setAttribute('aria-expanded', 'false');
+    pushRecent();
+    if(returnFocus) swatch.focus();
+  }
+  swatch.addEventListener('click', function(){ pop.hidden ? open() : close(false); });
+  document.getElementById('doneB').addEventListener('click', function(){ close(true); });
+  document.addEventListener('pointerdown', function(e){
+    if(pop.hidden) return;
+    if(pop.contains(e.target) || swatch.contains(e.target)) return;
+    close(false);
+  });
+  card.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !pop.hidden){ close(true); e.preventDefault(); }
+  });
+  document.getElementById('rstB').addEventListener('click', function(){
+    committed = null; paint(card, null); refreshSwatch();
+    var d = rgb2hsv.apply(null, hex2rgb(DEFAULT_HEX));
+    hsv.h = d.h; hsv.s = d.s; hsv.v = d.v;
+    hexIn.value = DEFAULT_HEX; hexIn.classList.remove('bad'); draw();
+  });
+
+  /* wheel pointer */
+  function local(e){
+    var r = canvas.getBoundingClientRect(), k = geo.size / r.width;
+    return {x:(e.clientX - r.left)*k, y:(e.clientY - r.top)*k};
+  }
+  function apply(p){
+    var g = geometry();
+    if(mode === 'ring'){
+      hsv.h = (Math.atan2(p.y - g.cy, p.x - g.cx) * 180 / Math.PI + 360) % 360;
+    }else{
+      hsv.s = clamp((p.x - g.left) / g.side, 0, 1);
+      hsv.v = 1 - clamp((p.y - g.top) / g.side, 0, 1);
+    }
+    commit(false);
+  }
+  canvas.addEventListener('pointerdown', function(e){
+    var p = local(e), g = geometry();
+    var dist = Math.sqrt((p.x-g.cx)*(p.x-g.cx) + (p.y-g.cy)*(p.y-g.cy));
+    var inSq = p.x >= g.left && p.x <= g.left + g.side && p.y >= g.top && p.y <= g.top + g.side;
+    mode = inSq ? 'sq' : (dist >= g.rIn - 4 ? 'ring' : 'sq');
+    try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+    canvas.focus({preventScroll:true});
+    apply(p); e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', function(e){ if(mode) apply(local(e)); });
+  function endDrag(){ mode = null; }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('lostpointercapture', endDrag);
+  canvas.addEventListener('keydown', function(e){
+    var k = e.key, step = 2, ch = false;
+    if(k==='ArrowLeft' || k==='ArrowRight'){
+      var sgn = k==='ArrowRight' ? 1 : -1;
+      if(e.shiftKey) hsv.s = clamp(hsv.s + sgn*0.02, 0, 1);
+      else hsv.h = (hsv.h + sgn*step + 360) % 360;
+      ch = true;
+    }else if(k==='ArrowUp' || k==='ArrowDown'){
+      hsv.v = clamp(hsv.v + (k==='ArrowUp' ? 0.02 : -0.02), 0, 1); ch = true;
+    }
+    if(ch){ commit(false); e.preventDefault(); }
+  });
+
+  /* hex field */
+  hexIn.addEventListener('input', function(){
+    var t = hexIn.value.trim();
+    if(t && t.charAt(0) !== '#' && /^[0-9a-f]+$/i.test(t)){ hexIn.value = t = '#' + t; }
+    var rgb = hex2rgb(t);
+    if(rgb && (t.length === 7 || t.length === 4)){
+      var v = rgb2hsv(rgb[0], rgb[1], rgb[2]);
+      hsv.h = (v.s > 0 ? v.h : hsv.h); hsv.s = v.s; hsv.v = v.v;
+      hexIn.classList.remove('bad'); commit(true);
+    }else{
+      hexIn.classList.toggle('bad', t.length >= 7 || (t.length > 1 && !/^#[0-9a-f]*$/i.test(t)));
+    }
+  });
+  function normaliseField(){ hexIn.value = curHex(); hexIn.classList.remove('bad'); }
+  hexIn.addEventListener('blur', normaliseField);
+  hexIn.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ normaliseField(); e.preventDefault(); }
+  });
+
+  window.addEventListener('resize', function(){ if(!pop.hidden){ size(); draw(); } });
+  renderChips(); refreshSwatch(); paint(card, null);
+})();
+
+/* ============ Option C ============ */
+(function(){
+  var card = document.getElementById('cardC');
+  var row = document.getElementById('curatedC'), panel = document.getElementById('customC');
+  var CURATED = [
+    {n:'Jade',   x:'#1D9E75'},
+    {n:'Lime',   x:'#b8d95a'},
+    {n:'Amber',  x:'#e0a03a'},
+    {n:'Coral',  x:'#e0735a'},
+    {n:'Rose',   x:'#d4679f'},
+    {n:'Violet', x:'#9b7be0'},
+    {n:'Blue',   x:'#4f8fe8'}
+  ];
+  var color = null, customOpen = false;
+  var strip = createStrip(function(hex){ color = hex; sync(); });
+  panel.appendChild(strip.el);
+
+  var chipEls = CURATED.map(function(c){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip';
+    b.style.setProperty('--cc', c.x);
+    b.setAttribute('aria-label', c.n + ' ' + c.x.toLowerCase());
+    b.title = c.n;
+    b.addEventListener('click', function(){ color = c.x.toLowerCase(); strip.setHex(color); sync(); });
+    row.appendChild(b);
+    return b;
+  });
+  var rst = resetButton('Reset to default colour');
+  rst.setAttribute('aria-pressed', 'false');
+  rst.addEventListener('click', function(){ color = null; strip.setHex(null); sync(); });
+  row.appendChild(rst);
+
+  var custom = document.createElement('button');
+  custom.type = 'button'; custom.className = 'chip chip-custom';
+  custom.setAttribute('aria-label', 'Custom colour');
+  custom.setAttribute('aria-expanded', 'false');
+  custom.setAttribute('aria-controls', 'customC');
+  custom.title = 'Custom';
+  custom.innerHTML = '<span class="core"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>';
+  custom.addEventListener('click', function(){
+    customOpen = !customOpen; panel.hidden = !customOpen;
+    custom.setAttribute('aria-expanded', customOpen ? 'true' : 'false');
+    sync();
+  });
+  row.appendChild(custom);
+
+  function sync(){
+    var lc = color ? color.toLowerCase() : null, isCurated = false;
+    CURATED.forEach(function(c,i){
+      var on = lc === c.x.toLowerCase();
+      if(on) isCurated = true;
+      chipEls[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    rst.setAttribute('aria-pressed', color ? 'false' : 'true');
+    var customActive = customOpen || (!!color && !isCurated);
+    custom.setAttribute('aria-pressed', customActive ? 'true' : 'false');
+    if(color && !isCurated) custom.style.setProperty('--cc', color); else custom.style.removeProperty('--cc');
+    paint(card, color);
+  }
+  sync();
+})();
+
+})();
+</script>
+</body>
+</html>

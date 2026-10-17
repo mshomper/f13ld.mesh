@@ -18,8 +18,14 @@ Branch `slab-welds`. Matt's decisions this session: slab welds keep the imported
 - Timings on the session VM (2 threads, shared) mean nothing; use the bench.
 - Classic harness (`MESHER=classic LOOSE=keep`, Draft): 22/23 identical on the first run; `shape-hyperuniform` differed by one vertex under load and was identical on rerun (old vs old and old vs new) — a timing flake, not this change.
 
+## Matt's bench and click-test (16 threads, High, slab, Remove specks)
+
+- His implant cage with a tough foam exports at Medium in under 7 s.
+- Weld bench vs the live tool (classic): solid + gyroid + solid 29.5 s → 3.36 s (8.8×), 25 → 0 open edges; two gyroids 36.8 s → 8.54 s (4.3×), 119 → 0; solid + foam + solid 14.1 s → 19.5 s (0.72×), 195 → 0, 16 % fewer triangles. Volumes within 0.02 %. Needles 3.3 % → 4.6 % on the solid + gyroid weld, equal or better on the other two.
+- The foam weld's extra time is the final pass: foam's thin walls tear when simplified, so `safeSimplify` redoes the whole mesh (Node, foam weld at Low: 1.0 M triangles, 4 redos, 8.5 s on one thread), and the final pass runs on one core over the joined mesh.
+- Decisions: merge v0.16.0 now; the parallel final pass is v0.16.1; leave the union-cut thin triangles on hybrid welds (the faces stay exactly flat).
+
 ## Open / next
 
-- Matt: click-test and run `tests/regress.html` from the branch (open-cube, shape and weld cases; Auto and Slab) on his machine.
-- Union-cut thin triangles on hybrid welds (above), if wanted.
+- v0.16.1: final pass in parallel — re-cut the joined mesh at the middle of each original slab so every old seam lies inside a piece, simplify + flip each piece on the pool with only its cut edges locked; stage times (slab mesh / bands / final pass + redos / union / clean-up) on the bench cards.
 - Then P3 (exact-math GLSL sources), P4 (empty-space skipping, adaptive resolution, bench preview tab), P5 (WebGPU, IndexedDB).

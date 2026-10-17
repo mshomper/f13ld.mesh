@@ -167,7 +167,10 @@ function openEdgeChanges(before, idx, nV, shared){
   after.forEach(function(c,k){ if(!before.has(k)) add(k); });
   return vs;
 }
-var SAFE_SIMPLIFY_RETRIES=12, SAFE_SIMPLIFY_RINGS=3;
+var SAFE_SIMPLIFY_RETRIES=12;
+// rings of lock around a tear, by retry: small first (most tears settle),
+// then larger for a tear that creeps along a line a cell per retry
+var SAFE_SIMPLIFY_RINGS=[1,1,2,2,3,3,4,6,8,10,12,12];
 // shared: optional function(a,b) — true for an edge the neighbouring
 // sub-mesh also uses; defaults to "both ends open".
 function safeSimplify(pos, idx, tol, open, flags, shared){
@@ -183,8 +186,8 @@ function safeSimplify(pos, idx, tol, open, flags, shared){
   var res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
   var retries=0, locked=0, before=shared?openEdgeCounts(idx, nV, shared):null;
   // Two kinds of problem: a tear (closed check) and a changed seam edge.
-  // A tear can come from a collapse a few edges away, so its lock grows to
-  // SAFE_SIMPLIFY_RINGS rings; a changed seam edge comes from a collapse next
+  // A tear can come from a collapse a few edges away, so its lock grows by
+  // SAFE_SIMPLIFY_RINGS; a changed seam edge comes from a collapse next
   // to it, so one ring is enough.
   function problems(r){
     var rep=meshClosedReport(pos, r, true, shared||null);
@@ -208,7 +211,7 @@ function safeSimplify(pos, idx, tol, open, flags, shared){
     if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, unsafe:false};
     // locks add up across retries: tears tend to move, so the next try only
     // has to catch the new ones
-    lockRings(pr.tear, Math.min(retries+1, SAFE_SIMPLIFY_RINGS));
+    lockRings(pr.tear, SAFE_SIMPLIFY_RINGS[Math.min(retries, SAFE_SIMPLIFY_RINGS.length-1)]);
     lockRings(pr.seam, 1);
     res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
   }

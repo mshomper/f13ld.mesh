@@ -52,6 +52,12 @@ function slabMeshLayers(fn, g, La, Lb, opts){
   var snap=(opts.snap!=null)?opts.snap:SLAB_SNAP;
   var snapIn=snap>0?Math.min(snap,SLAB_SNAP_IN):0;
   var tclamp=(opts.tclamp!=null)?opts.tclamp:SLAB_TCLAMP;
+  // Caps on the box faces: grid points on or outside the faces are clamped
+  // to ≤ 0. A crossing that lands exactly on such a point (its value was
+  // clamped to 0) is that point: all of them share one vertex there, which
+  // gives the box faces levelSet's clean cap. Interior points never merge.
+  var capMerge=opts.capMerge!==false;
+  function onBox(t,i,j,k){ return t ? (i===0||i===n0||j===0||j===n1||k===0||k===n2) : (i===0||i===n0+1||j===0||j===n1+1||k===0||k===n2+1); }
   var n0=g.n[0], n1=g.n[1], n2=g.n[2];
   var nx1=n0+1, ny1=n1+1, nx2=n0+2, ny2=n1+2;
   var mainCount=nx1*ny1*(n2+1);
@@ -155,6 +161,10 @@ function slabMeshLayers(fn, g, La, Lb, opts){
   // the crossing is always interpolated from it.
   function edgeVert(ta,ia,ja,ka,va, tb,ib,jb,kb,vb){
     var inA=va>0;
+    if(capMerge){
+      if(!inA && va===0 && onBox(ta,ia,ja,ka)) return pointVert(ta,ia,ja,ka);
+      if(inA && vb===0 && onBox(tb,ib,jb,kb)) return pointVert(tb,ib,jb,kb);
+    }
     // a snapped end takes the crossing; the outside end wins if both are
     if(!inA && snapped(ta,ia,ja,ka)) return pointVert(ta,ia,ja,ka);
     if(inA && snapped(tb,ib,jb,kb)) return pointVert(tb,ib,jb,kb);

@@ -353,8 +353,10 @@ const WELD_METRIC_FAMILIES={foam:true, beam:true, bundle:true};   // mirrors reg
 const WELD_POINT_US=0.2, WELD_MEMBER_US=0.1;   // per point: wrapper + each member's shape sample
 const WELD_MARCH_US=2.0;                       // Manifold level set per grid point in a lattice region
 const WELD_CAL_KEY='f13ld.mesh.weldCal.v1';
-function weldCal(){
-  try{ const v=parseFloat(localStorage.getItem(WELD_CAL_KEY)); return (v>=0.2&&v<=5)?v:1; }catch(_){ return 1; }
+// v0.16.0: the slab mesher learns its own factor (key …:slab).
+function weldCalKey(slab){ return WELD_CAL_KEY+(slab?':slab':''); }
+function weldCal(slab){
+  try{ const v=parseFloat(localStorage.getItem(weldCalKey(slab))); return (v>=0.2&&v<=5)?v:1; }catch(_){ return 1; }
 }
 // est: estimateWeldExport result made when the export started; wallMs: that
 // export's wall time up to the finished mesh. The factor moves halfway (in
@@ -363,7 +365,7 @@ function recordWeldTiming(est, wallMs){
   if(!est || !(est.rawMs>0) || !(wallMs>0)) return;
   const ratio=Math.min(5,Math.max(0.2,wallMs/est.rawMs));
   const next=Math.exp(0.5*Math.log(est.cal)+0.5*Math.log(ratio));
-  try{ localStorage.setItem(WELD_CAL_KEY, String(+next.toFixed(3))); }catch(_){}
+  try{ localStorage.setItem(weldCalKey(est.slab), String(+next.toFixed(3))); }catch(_){}
   console.log('[export][weld] estimate calibration', {estimatedMs:Math.round(est.rawMs*est.cal), actualMs:Math.round(wallMs), factor:+next.toFixed(3)});
 }
 function _boxVol(min,max){ return Math.max(0,max[0]-min[0])*Math.max(0,max[1]-min[1])*Math.max(0,max[2]-min[2]); }
@@ -404,7 +406,9 @@ function estimateWeldExport(gid, qual){
     if(pts>=WELD_BAKE_MIN_POINTS) workers=Math.max(workers, Math.min(weldBakeWorkerCount(), g.layers));
   }
   const bakeMs=evalUs/1000/(workers>1?workers*0.85:1);
-  const marchMs=points*WELD_MARCH_US/1000;
+  // v0.16.0: the slab mesher marches on every core (Auto starts classic).
+  const slab=(typeof exportMesherPref==='function') && exportMesherPref()==='slab';
+  const marchMs=points*WELD_MARCH_US/1000/(slab?Math.max(1,weldBakeWorkerCount()):1);
   // Members whose shape SDF is coarser than the export grid are re-baked first
   // (same model as updateExportEstimate: ~4 µs per voxel on the shape pool).
   const targetN=EXPORT_SHAPE_SDF_N_BY_QUAL[qual]||192;
@@ -422,8 +426,8 @@ function estimateWeldExport(gid, qual){
     else if(plan.solidOk[i]) tris+=sp.body.idxArr.length/3;
   });
   const rawMs=(bakeMs+marchMs)*1.25+sdfMs;
-  const cal=weldCal();
-  return {gid, edge, points, workers, members:mem.length, hybrid:plan.hybrid,
+  const cal=weldCal(slab);
+  return {gid, edge, slab, points, workers, members:mem.length, hybrid:plan.hybrid,
     exactSolids:plan.solidOk.filter(Boolean).length, tris:Math.round(tris),
     rawMs, cal, sdfSec:Math.round(sdfMs*cal/1000),
     totalSec:Math.max(1, Math.round(rawMs*cal/1000))};

@@ -10,7 +10,9 @@
 <style>
 /* F13LD.mesh regression bench (v0.11.0). Runs tests/recipes.json through a
    reference build and this build in your own browser, on your own cores, and
-   compares the meshes byte for byte. See tests/README.md. */
+   compares the meshes byte for byte. See tests/README.md.
+   v0.16.0: weld cases (boxes made in the page, welded in the app pane),
+   triangle quality (needles, 5th-percentile min angle), Auto mesher. */
 :root{
   --ground:#06080c; --panel:#0d1117; --panel-2:#121821; --line:rgba(255,255,255,0.08); --line-2:rgba(255,255,255,0.14);
   --ink:#e8ecf1; --ink-2:#a3adba; --ink-3:#6c7684;
@@ -94,7 +96,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">Reference build</label><input type="text" id="refUrl" spellcheck="false"></div>
       <div class="row"><label class="k">Time limit</label><input type="number" id="limit" min="30" max="1800" step="10" value="300"><span class="note" style="margin:0">seconds per export</span></div>
       <div class="row"><label class="k">This build mesher</label>
-        <div class="seg" id="mesherSeg"><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">reference always runs classic</span></div>
+        <div class="seg" id="mesherSeg"><button data-m="auto">Auto</button><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">Auto is the app's default; the reference always runs classic</span></div>
       <div class="row"><label class="k">Loose pieces</label>
         <div class="seg" id="looseSeg"><button data-f="keep">Keep all</button><button data-f="specks">Remove specks</button><button data-f="largest">Largest piece only</button></div><span class="note" style="margin:0">specks are pieces under 10 mesh cells; the reference keeps all</span></div>
       <div class="row"><label class="k">Extra run</label><label class="chk"><input type="checkbox" id="oneCore"> this build on one core as well</label></div>
@@ -104,9 +106,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <h2>Cases</h2>
       <div class="row" style="margin-top:0">
         <button class="btn ghost" id="allBtn">All</button><button class="btn ghost" id="noneBtn">None</button>
-        <button class="btn ghost" id="cubeBtn">Open cube only</button><button class="btn ghost" id="shapeBtn">Shape only</button>
+        <button class="btn ghost" id="cubeBtn">Open cube only</button><button class="btn ghost" id="shapeBtn">Shape only</button><button class="btn ghost" id="weldBtn">Welds only</button>
       </div>
       <div class="cases" id="cases"></div>
+      <h2 style="margin-top:14px">Weld cases</h2>
+      <div class="cases" id="weldCases"></div>
+      <p class="note">Each weld case imports boxes made in the page (solid parts stay solid, lattice parts get the named recipe at a 10 mm cell), welds them with a 0.4 mm fillet and catches the weld export job.</p>
     </div>
   </div>
 
@@ -155,7 +160,7 @@ $('cores').onchange=()=>store('cores', +$('cores').value);
 $('refUrl').value=load('ref', DEFAULT_REF);
 $('refUrl').onchange=()=>{ store('ref', $('refUrl').value.trim()); refBlobUrl=null; };
 $('limit').value=load('limit',300); $('limit').onchange=()=>store('limit', +$('limit').value);
-let MESHER=load('mesher','slab'); if(MESHER!=='classic') MESHER='slab';
+let MESHER=load('mesher','slab'); if(!['auto','slab','classic'].includes(MESHER)) MESHER='slab';
 let LOOSE=String(load('looseMode','keep')); if(!['keep','specks','largest'].includes(LOOSE)) LOOSE='keep';
 function bindSeg(id,key,cur,set){
   const bs=[...$(id).querySelectorAll('button')];
@@ -168,30 +173,57 @@ bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=String(v); store('looseMode',LOOSE);
 const looseLabel=()=>{ const b=$('looseSeg').querySelector('button.on'); return b?b.textContent:String(LOOSE); };
 $('oneCore').checked=load('oneCore',false); $('oneCore').onchange=()=>store('oneCore',$('oneCore').checked);
 
-async function init(){
-  try{
-    RECIPES=await (await fetch('recipes.json',{cache:'no-store'})).json();
-  }catch(e){ setStatus('Could not load recipes.json: '+e.message,'bad'); return; }
-  const chosen=load('cases',null);
-  const box=$('cases'); box.innerHTML='';
-  for(const name of Object.keys(RECIPES)){
+// ── weld cases: boxes made here, imported into the app pane and welded ──
+// Same set-up as tests/weldexport.js: solid parts stay solid (the import default),
+// lattice parts get the case's recipe at WELD_CELL_MM, then every part is welded
+// with a WELD_FILLET_MM fillet. Box: [x0,y0,z0, x1,y1,z1, lattice?] in mm.
+const WELD_CELL_MM=10, WELD_FILLET_MM=0.4;
+const WELD_HYBRID_BOXES=[[0,0,0,25,20,10,0],[23,0,0,43,20,10,1],[41,0,0,66,20,10,0]];
+const WELDS={
+  'weld-solid-gyroid-solid':{recipeCase:'tpms-gyroid-sheet', boxes:WELD_HYBRID_BOXES, desc:'solid + gyroid sheet + solid'},
+  'weld-solid-foam-solid':{recipeCase:'foam2-open-lloyd', boxes:WELD_HYBRID_BOXES, desc:'solid + open foam + solid'},
+  'weld-gyroid-gyroid':{recipeCase:'tpms-gyroid-sheet', boxes:[[0,0,0,25,20,10,1],[20,0,0,45,20,12,1]], desc:'two overlapping gyroid boxes, no solids (not hybrid)'},
+};
+const caseSpec=name=>WELDS[name]?Object.assign({weld:true},WELDS[name]):RECIPES[name];
+function boxStl(b){
+  const lo=b.slice(0,3), hi=b.slice(3,6), P=[];
+  for(let c=0;c<8;c++) P.push([c&1?hi[0]:lo[0], c&2?hi[1]:lo[1], c&4?hi[2]:lo[2]]);
+  const T=[[0,2,1],[1,2,3],[4,5,6],[5,7,6],[0,1,4],[1,5,4],[2,6,3],[3,6,7],[0,4,2],[2,4,6],[1,3,5],[3,7,5]];
+  let s='solid box\n';
+  for(const t of T){ s+=' facet normal 0 0 0\n  outer loop\n'; for(const i of t) s+='   vertex '+P[i].join(' ')+'\n'; s+='  endloop\n endfacet\n'; }
+  return s+'endsolid box\n';
+}
+
+function addCaseBoxes(boxId, names, chosen, title){
+  const box=$(boxId); box.innerHTML='';
+  for(const name of names){
     const l=document.createElement('label'); l.className='chk';
+    if(title&&title(name)) l.title=title(name);
     l.innerHTML='<input type="checkbox" value="'+esc(name)+'"'+((!chosen||chosen.includes(name))?' checked':'')+'> '+esc(name);
     box.appendChild(l);
   }
   box.onchange=saveCases;
+}
+async function init(){
+  try{
+    RECIPES=await (await fetch('recipes.json',{cache:'no-store'})).json();
+  }catch(e){ setStatus('Could not load recipes.json: '+e.message,'bad'); return; }
+  addCaseBoxes('cases', Object.keys(RECIPES), load('cases',null));
+  addCaseBoxes('weldCases', Object.keys(WELDS).filter(n=>RECIPES[WELDS[n].recipeCase]), load('weldCases',null), n=>WELDS[n].desc);
   try{
     const src=await (await fetch(TEST_BASE+'01-config.js',{cache:'no-store'})).text();
     const m=src.match(/F13LD_MESH_VERSION\s*=\s*'([^']+)'/);
     $('verLbl').textContent='this build v'+(m?m[1]:'?')+' · '+(navigator.hardwareConcurrency||'?')+' threads';
   }catch(_){ $('verLbl').textContent=''; }
 }
-function saveCases(){ store('cases', [...$('cases').querySelectorAll('input:checked')].map(i=>i.value)); }
-function pick(fn){ for(const i of $('cases').querySelectorAll('input')) i.checked=fn(i.value); saveCases(); }
+const ticked=id=>[...$(id).querySelectorAll('input:checked')].map(i=>i.value);
+function saveCases(){ store('cases', ticked('cases')); store('weldCases', ticked('weldCases')); }
+function pick(fn){ for(const i of document.querySelectorAll('#cases input, #weldCases input')) i.checked=fn(i.value); saveCases(); }
 $('allBtn').onclick=()=>pick(()=>true);
 $('noneBtn').onclick=()=>pick(()=>false);
-$('cubeBtn').onclick=()=>pick(n=>!RECIPES[n].shape);
-$('shapeBtn').onclick=()=>pick(n=>!!RECIPES[n].shape);
+$('cubeBtn').onclick=()=>pick(n=>!WELDS[n]&&!RECIPES[n].shape);
+$('shapeBtn').onclick=()=>pick(n=>!WELDS[n]&&!!RECIPES[n].shape);
+$('weldBtn').onclick=()=>pick(n=>!!WELDS[n]);
 
 // ── app pane: build the export job the tool would send its mesh worker ──
 async function waitFor(fn, ms){ const t0=Date.now(); while(Date.now()-t0<ms){ if(stopFlag) throw new Error('stopped'); try{ if(fn()) return true; }catch(_){ } await sleep(100); } return false; }
@@ -204,11 +236,45 @@ function loadApp(url){
     f.src=url;
   });
 }
+const UI_BODY='.rl-part[data-body-id], .shapeCard[data-body-id]';   // as in harness.js UI adapters
+// Weld case: import each box, give the lattice boxes the recipe and cell size,
+// weld them all. Mirrors tests/weldexport.js through the same app functions
+// the harness UI adapters call (assignRecipeToBody, cell size, F13LD_weld.all).
+async function setupWeld(win, spec, onStage){
+  const count=()=>win.document.querySelectorAll(UI_BODY).length;
+  for(let i=0;i<spec.boxes.length;i++){
+    onStage('importing box '+(i+1)+' of '+spec.boxes.length);
+    const n=count();
+    const file=new File([boxStl(spec.boxes[i])], 'weldbox'+(i+1)+'.stl', {type:'model/stl'});
+    if(typeof win.handleShapeFile==='function') win.handleShapeFile(file);
+    else { const inp=win.document.getElementById('shapeInput'); const dt=new DataTransfer(); dt.items.add(file); inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true})); }
+    if(!await waitFor(()=>count()>n, 180000)) throw new Error('box '+(i+1)+' did not import');
+    if(win.document.querySelector('.rl-pending.err, .sc-status.err')) throw new Error('box '+(i+1)+' failed to import');
+    await appIdle(win); await sleep(600);
+  }
+  if(!win.F13LD_weld) throw new Error('this build has no weld hook (F13LD_weld)');
+  const ids=win.F13LD_weld.bodyIds();
+  if(ids.length!==spec.boxes.length) throw new Error('expected '+spec.boxes.length+' parts, the app has '+ids.length);
+  for(let i=0;i<spec.boxes.length;i++){
+    if(!spec.boxes[i][6]) continue;
+    onStage('lattice on part '+(i+1));
+    // assignRecipeToBody also makes the part active, so the cell size lands on it
+    win.eval('assignRecipeToBody('+JSON.stringify(ids[i])+', recipeOrder[0])');
+    await sleep(800); await appIdle(win);
+    win.eval('(function(mm){ if(typeof railSetCellMm==="function") railSetCellMm(mm); else { const i=document.getElementById("shapeCellSizeMm"); if(i){ i.value=mm; window.onCellSizeInput&&window.onCellSizeInput(); } } })('+WELD_CELL_MM+')');
+    await sleep(800); await appIdle(win);
+  }
+  onStage('welding '+ids.length+' parts');
+  win.F13LD_weld.all(WELD_FILLET_MM);
+  await sleep(1500); await appIdle(win); await sleep(800);
+}
 async function captureJob(spec, onStage){
   onStage('loading the app');
-  const win=await loadApp(TEST_BASE+'index.html?r='+encodeURIComponent(JSON.stringify(spec.recipe)));
+  const recipe=spec.weld?RECIPES[spec.recipeCase].recipe:spec.recipe;
+  const win=await loadApp(TEST_BASE+'index.html?r='+encodeURIComponent(JSON.stringify(recipe)));
   await sleep(1500); await appIdle(win); await sleep(600);
-  if(spec.shape){
+  if(spec.weld) await setupWeld(win, spec, onStage);
+  else if(spec.shape){
     onStage('importing '+spec.shape);
     const buf=await (await fetch('fixtures/'+spec.shape)).arrayBuffer();
     const file=new File([buf], spec.shape, {type:'model/stl'});
@@ -239,7 +305,8 @@ async function captureJob(spec, onStage){
   win.Worker.prototype=RealWorker.prototype;
   const jobUrl=()=>{ try{ return win.getMeshWorkerUrl(); }catch(_){ return null; } };
   win.triggerExport();
-  const ok=await waitFor(()=>got||win.document.querySelector('.exp-err'), 180000);
+  // a weld re-bakes its parts and pre-bakes its regions before it sends the job
+  const ok=await waitFor(()=>got||win.document.querySelector('.exp-err'), spec.weld?600000:180000);
   win.Worker=RealWorker;
   const url=jobUrl();
   if(!got){
@@ -285,8 +352,15 @@ function runMesh(workerUrl, job, cores, onStage, extra){
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
     const msg=structuredClone(job); msg.cores=cores;
     if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; }
-    const tr=[]; if(msg.shapeSdfData) tr.push(msg.shapeSdfData); if(msg.huGridData) tr.push(msg.huGridData);
-    w.postMessage(msg,tr);
+    const tr=new Set(); const add=b=>{ if(b instanceof ArrayBuffer) tr.add(b); };
+    add(msg.shapeSdfData); add(msg.huGridData);
+    // weld job (msg.bodies + msg.weld): member grids, pre-baked regions, solid meshes
+    if(Array.isArray(msg.bodies)) for(const s of msg.bodies) if(s) add(s.shapeSdfData);
+    if(msg.weld){
+      for(const r of msg.weld.regions||[]) if(r){ add(r.main); add(r.off); }
+      for(const m of msg.weld.solidMeshes||[]) if(m){ add(m.pos); add(m.idx); }
+    }
+    w.postMessage(msg,[...tr]);
   });
 }
 function sameMesh(a,b){
@@ -390,6 +464,36 @@ function maxVertexDistance(ref, test, scale){
   }
   return {mm:Math.sqrt(maxD2)*(scale||1), sampled:count};
 }
+// Triangle quality in one pass: needles (height over the longest edge < 0.05,
+// height = 2 x area / longest edge) and the 5th-percentile minimum angle, from a
+// 0.01 degree histogram (the smallest angle of a triangle is at most 60 degrees).
+// Scale-free, so raw mesh units are fine.
+const NEEDLE_RATIO=0.05, ANG_BINS=6000;
+function triQuality(m){
+  const p=m.vp, t=m.tv, nT=t.length/3, hist=new Uint32Array(ANG_BINS+1);
+  let needles=0;
+  for(let i=0;i<t.length;i+=3){
+    const a=3*t[i], b=3*t[i+1], c=3*t[i+2];
+    const ux=p[b]-p[a], uy=p[b+1]-p[a+1], uz=p[b+2]-p[a+2], vx=p[c]-p[a], vy=p[c+1]-p[a+1], vz=p[c+2]-p[a+2];
+    const wx=p[c]-p[b], wy=p[c+1]-p[b+1], wz=p[c+2]-p[b+2];
+    const cx=uy*vz-uz*vy, cy=uz*vx-ux*vz, cz=ux*vy-uy*vx;
+    const A2=Math.sqrt(cx*cx+cy*cy+cz*cz);                       // twice the area
+    const e0=ux*ux+uy*uy+uz*uz, e1=vx*vx+vy*vy+vz*vz, e2=wx*wx+wy*wy+wz*wz;
+    const L2=Math.max(e0,e1,e2), S2=Math.min(e0,e1,e2), M2=e0+e1+e2-L2-S2;
+    let ang=0;
+    if(L2>0&&A2>0){
+      if(A2/L2<NEEDLE_RATIO) needles++;
+      // angle opposite the shortest edge: sin = 2A / (product of the two longer edges)
+      const s=A2/Math.sqrt(L2*M2); ang=Math.asin(s>1?1:s)*180/Math.PI;
+    } else needles++;
+    hist[Math.min(ANG_BINS, Math.floor(ang*100))]++;
+  }
+  let p5=null;
+  if(nT){ const want=Math.ceil(nT*0.05); let acc=0; for(let k=0;k<=ANG_BINS;k++){ acc+=hist[k]; if(acc>=want){ p5=k/100; break; } } }
+  return {needles, needlePct:nT?needles/nT:0, minAngP5:p5};
+}
+const qualTxt=q=>q?q.needles.toLocaleString()+' ('+(q.needlePct*100).toFixed(2)+' %)':'—';
+const angTxt=q=>q&&q.minAngP5!=null?q.minAngP5.toFixed(2)+'°':'—';
 function compareGeometry(ref, test, scale){
   const a=meshStats(ref), b=meshStats(test);
   const rel=(x,y)=>x?(y-x)/Math.abs(x):null;
@@ -442,6 +546,8 @@ function setCard(el, r){
     kv.push(['open edges, ref / this', g.openRef.toLocaleString()+' / '+g.openTest.toLocaleString()]);
     kv.push(['max vertex distance (approx.)', mmTxt(g.maxDistMm)]);
   }
+  if(r.ref&&r.ref.q) kv.push(['needles, ref / this', qualTxt(r.ref.q)+' / '+qualTxt(r.test&&r.test.q)]);
+  if(r.ref&&r.ref.q) kv.push(['min angle p5, ref / this', angTxt(r.ref.q)+' / '+angTxt(r.test&&r.test.q)]);
   if(r.reason) kv.push(['why it failed', r.reason]);
   el.querySelector('.kv').innerHTML=kv.map(([k,v])=>'<span>'+esc(k)+'</span><span>'+esc(v)+'</span>').join('');
   const bar=el.querySelector('.bar');
@@ -467,7 +573,7 @@ function summarize(rows){
 
 // ── run ────────────────────────────────────────────────────────────────
 async function run(){
-  const names=[...$('cases').querySelectorAll('input:checked')].map(i=>i.value);
+  const names=[...ticked('cases'), ...ticked('weldCases')];
   if(!names.length){ setStatus('Pick at least one case.','bad'); return; }
   running=true; stopFlag=false;
   $('runBtn').disabled=true; $('stopBtn').disabled=false; $('dlBtn').disabled=true;
@@ -481,8 +587,8 @@ async function run(){
   catch(e){ setStatus('Reference build not reachable: '+e.message,'bad'); finish(); return; }
   names.forEach(card);
   for(let i=0;i<names.length&&!stopFlag;i++){
-    const name=names[i], el=$('res-'+name), spec=RECIPES[name];
-    const r={name, state:'run', label:'running', shape:!!spec.shape};
+    const name=names[i], el=$('res-'+name), spec=caseSpec(name);
+    const r={name, state:'run', label:'running', shape:!!spec.shape, weld:!!spec.weld};
     rows.push(r);
     const stage=t=>{ r.stage=t; setCard(el,r); };
     setStatus('Case '+(i+1)+' of '+names.length+': '+name,'run');
@@ -492,6 +598,7 @@ async function run(){
       r.label='reference'; stage('reference build…');
       r.scale=job.scale||1;
       r.ref=await runMesh(refUrl, job, cores, t=>stage('reference: '+t), {mesher:'classic', looseMode:'keep'}); r.ref.scale=r.scale;
+      r.ref.q=triQuality(r.ref);
       r.tris=r.ref.tris; setCard(el,r);
       if($('oneCore').checked){
         r.label='1 core'; stage('this build, one core…');
@@ -500,6 +607,7 @@ async function run(){
       r.label=cores+' cores'; stage('this build, '+cores+' cores…');
       r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseMode:LOOSE}); r.test.scale=r.scale;
       r.trisTest=r.test.tris!=null?r.test.tris:r.test.tv.length/3;
+      r.test.q=triQuality(r.test);
       r.same=sameMesh(r.ref, r.test);
       r.oneSame=r.one?sameMesh(r.test, r.one):null;
       const why=[];
@@ -559,8 +667,8 @@ $('dlBtn').onclick=()=>{
   L.push('- Quality: '+R.quality+' · cores: '+R.cores+' · browser threads: '+R.threads);
   L.push('- This build mesher: '+R.mesher+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
   L.push('- Browser: '+R.ua,'');
-  L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Result |');
-  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Needles ref | Needles this | Min angle p5 ref / this | Result |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   const cell=v=>String(v).replace(/\|/g,'/');
   for(const r of R.rows){
     const g=r.geo;
@@ -569,9 +677,12 @@ $('dlBtn').onclick=()=>{
       ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0):'—')+
       ' | '+cell(mesherTxt(r.test))+' | '+cell(r.test?looseTxt(r.test.loose):'—')+
       ' | '+(g?pctTxt(g.volDiff):'—')+' | '+(g?pctTxt(g.areaDiff):'—')+' | '+(g?pctTxt(g.triDiff):'—')+' | '+(g?g.openRef+' / '+g.openTest:'—')+' | '+(g?mmTxt(g.maxDistMm):'—')+
+      ' | '+qualTxt(r.ref&&r.ref.q)+' | '+qualTxt(r.test&&r.test.q)+' | '+angTxt(r.ref&&r.ref.q)+' / '+angTxt(r.test&&r.test.q)+
       ' | '+cell(res)+' |');
   }
-  L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');
+  L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). Needles: triangles whose height over their longest edge is under '+NEEDLE_RATIO+', as a count and a share of all triangles. Min angle p5: the 5th percentile of each triangle\'s smallest angle. PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');
+  const welds=R.rows.filter(r=>r.weld);
+  if(welds.length){ L.push('','Weld cases (boxes made in the page, lattice cell '+WELD_CELL_MM+' mm, fillet '+WELD_FILLET_MM+' mm):',''); for(const r of welds){ const w=WELDS[r.name]; L.push('- '+r.name+': '+w.desc+', recipe '+w.recipeCase); } }
   const closedFixed=R.rows.filter(r=>r.test&&anyTxt(r.test.closedFix));
   if(closedFixed.length){ L.push('','Closed fix reported by this build:',''); for(const r of closedFixed) L.push('- '+r.name+': '+anyTxt(r.test.closedFix)); }
   if(R.rows.some(r=>r.one)){

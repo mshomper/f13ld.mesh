@@ -77,6 +77,35 @@ function makeWeldLookup(g, main, off, direct, stats){
     stats.miss++; return direct(p);
   };
 }
+// v0.16.0 slab welds: the same lookup over a slice of the baked layers —
+// main z-indices [kmA, kmA + main.length/plane) and offset [koA, …) — for a
+// slab worker that was handed only the layers its slab reads. A point outside
+// the slice (or not on the grid) is a bug in the slice range: it throws, and
+// the export falls back to the classic mesher.
+function makeWeldLookupSlice(g, main, off, kmA, koA){
+  var m0=g.min[0], m1=g.min[1], m2=g.min[2], s0=g.s[0], s1=g.s[1], s2=g.s[2];
+  var n0=g.n[0], n1=g.n[1];
+  var nx1=n0+1, ny1=n1+1, nx2=n0+2, ny2=n1+2;
+  var kmB=kmA+main.length/(nx1*ny1), koB=koA+off.length/(nx2*ny2);
+  return function(p){
+    var x=p[0], y=p[1], z=p[2];
+    var fx=(x-m0)/s0, fy=(y-m1)/s1, fz=(z-m2)/s2;
+    var i=Math.round(fx), j=Math.round(fy), k=Math.round(fz);
+    if(i>=0&&i<=n0&&j>=0&&j<=n1&&k>=kmA&&k<kmB && x===m0+s0*i && y===m1+s1*j && z===m2+s2*k)
+      return main[i+nx1*(j+ny1*(k-kmA))];
+    i=Math.round(fx+0.5); j=Math.round(fy+0.5); k=Math.round(fz+0.5);
+    if(i>=0&&i<=n0+1&&j>=0&&j<=n1+1&&k>=koA&&k<koB && x===m0+s0*(i-0.5) && y===m1+s1*(j-0.5) && z===m2+s2*(k-0.5))
+      return off[i+nx2*(j+ny2*(k-koA))];
+    throw new Error('weld slab lookup miss at '+x+','+y+','+z);
+  };
+}
+// Main / offset z-index ranges that hold layers [qa, qb) (same rule as
+// weldBakeLayers).
+function weldLayerKRange(g, qa, qb){
+  var kmA=Math.max(0,Math.ceil((qa-1)/2)), kmB=Math.min(g.n[2]+1,Math.ceil((qb-1)/2));
+  var koA=Math.max(0,Math.ceil(qa/2)),     koB=Math.min(g.n[2]+2,Math.ceil(qb/2));
+  return {kmA:kmA, kmB:Math.max(kmA,kmB), koA:koA, koB:Math.max(koA,koB)};
+}
 // The weld field in Manifold's convention (positive inside, NaN/Inf guarded).
 // Shared by the bake workers and the mesh worker so both evaluate the same
 // function.

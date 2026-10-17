@@ -57,15 +57,21 @@ async function _slabFinish(g, results, tol, post, t0, runBands){
     ms:{mesh:Math.round(tJ-t0), seam:msSeam, slowest:Math.round(slowest)}};
 }
 
-async function slabMeshExport(d, field, min, max, edge, tol, post){
+async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
+  opts=opts||{};
   const t0=performance.now();
+  // v0.16.0 weld regions: opts.lookup = {main, off} holds the field already
+  // baked at every grid point (14-weld-bake.js); each slab worker is sent only
+  // the layers its slab reads and builds no field. A weld region without a
+  // bake meshes in this thread (field = the weld field).
+  const lookup=opts.lookup||null;
   await slabMeshoptReady;
   const g=weldGridDims(min, max, edge);
   if(!g.ok) throw new Error('grid too small for the slab mesher');
   const total=g.mainCount+g.offCount;
   let nW=Math.min(fieldBakeCores(d), Math.max(1, Math.floor((g.layers-2)/SLAB_JOB_LAYERS)));
   let url=null;
-  if(nW>=2 && total>=SLAB_MIN_POINTS && typeof Worker!=='undefined'){
+  if(nW>=2 && total>=SLAB_MIN_POINTS && typeof Worker!=='undefined' && (lookup || !(d.bodies&&d.bodies.length))){
     try{ url=new URL('field-bake-worker.js'+self.location.search, self.F13LD_WORKER_BASE||self.location.href).href; }catch(_){ url=null; }
   }
   // ── this thread: one slab ──
@@ -82,9 +88,23 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
   }
   // ── pool ──
   const spec={};
-  for(const k of FIELD_BAKE_SPEC_KEYS) if(d[k]!==undefined) spec[k]=d[k];
-  const perWorker=(spec.shapeSdfData?spec.shapeSdfData.byteLength:0)+(spec.huGridData?spec.huGridData.byteLength:0);
-  nW=Math.min(nW, Math.max(2, Math.floor(FIELD_BAKE_COPY_BUDGET/Math.max(1,perWorker))));
+  if(!lookup){
+    for(const k of FIELD_BAKE_SPEC_KEYS) if(d[k]!==undefined) spec[k]=d[k];
+    const perWorker=(spec.shapeSdfData?spec.shapeSdfData.byteLength:0)+(spec.huGridData?spec.huGridData.byteLength:0);
+    nW=Math.min(nW, Math.max(2, Math.floor(FIELD_BAKE_COPY_BUDGET/Math.max(1,perWorker))));
+  }
+  // Layers a job [La, Lb) reads: its tets L..L+2 plus the neighbours' tets two
+  // layers each side (m34) → [La−2, Lb+4).
+  const plane1=(g.n[0]+1)*(g.n[1]+1), plane2=(g.n[0]+2)*(g.n[1]+2);
+  const jobMsg=j=>{
+    const m={type:'mesh', id:j.id, La:j.La, Lb:j.Lb, tol}, tr=[];
+    if(lookup){
+      const r=weldLayerKRange(g, Math.max(0,j.La-2), Math.min(g.layers,j.Lb+4));
+      m.main=lookup.main.slice(r.kmA*plane1, r.kmB*plane1); m.off=lookup.off.slice(r.koA*plane2, r.koB*plane2);
+      m.kmA=r.kmA; m.koA=r.koA; tr.push(m.main.buffer, m.off.buffer);
+    }
+    return [m, tr];
+  };
   const jobs=slabJobs(g, nW);
   nW=Math.min(nW, jobs.length);
   const results=new Array(jobs.length);
@@ -98,13 +118,13 @@ async function slabMeshExport(d, field, min, max, edge, tol, post){
     const finish=(err)=>{ if(settled) return; settled=true; if(watchdog){ clearTimeout(watchdog); watchdog=null; } err?reject(err):resolve(); };
     const kick=()=>{ if(watchdog) clearTimeout(watchdog); watchdog=setTimeout(()=>finish(new Error('slab mesher stalled')), SLAB_STALL_MS); };
     kick();
-    const initMsg={type:'init', spec, edge, grid:{min, max, edge}, f32:false};
+    const initMsg=lookup ? {type:'init', lookupOnly:true, edge, grid:{min, max, edge}} : {type:'init', spec, edge, grid:{min, max, edge}, f32:false};
     if(post) post({type:'progress', stage:'meshing '+jobs.length+' slabs on '+nW+' cores...'});
     for(let i=0;i<nW;i++){
       let w;
       try{ w=new Worker(url); }catch(err){ finish(err); return; }
       workers.push(w);
-      const dispatch=()=>{ if(next<jobs.length){ const j=jobs[next++]; w.postMessage({type:'mesh', id:j.id, La:j.La, Lb:j.Lb, tol}); } };
+      const dispatch=()=>{ if(next<jobs.length){ const [m,tr]=jobMsg(jobs[next++]); w.postMessage(m, tr); } };
       w.onmessage=e=>{
         const m=e.data;
         if(m.type==='band'){ if(onBand) onBand(w, m); return; }

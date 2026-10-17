@@ -117,7 +117,7 @@ async function _exportWeldGroup(gid){
       bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
       relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0,
       weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes},
-      mesher:'classic', looseMode:exportLooseMode()   // v0.15.0: welds stay on the classic mesher
+      mesher:exportMesherPref(), looseMode:exportLooseMode()   // v0.16.0: welds use the Mesher setting too
     };
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
@@ -148,7 +148,7 @@ async function _exportWeldGroup(gid){
     // Self-calibrate the weld estimate against this export's wall time —
     // unless the worker had to drop the plan (rejected solid mesh), which the
     // estimate didn't model.
-    if(est && !(plan.hybrid && weldDiag && !weldDiag.hybrid)) recordWeldTiming(est, performance.now()-tExport);
+    if(est && !(plan.hybrid && weldDiag && !weldDiag.hybrid) && (result.mesher==='slab')===!!est.slab) recordWeldTiming(est, performance.now()-tExport);
     btn.textContent='building 3MF...';
     const vertProps=new Float32Array(result.vertProperties);
     const triVerts=new Uint32Array(result.triVerts);
@@ -166,7 +166,8 @@ async function _exportWeldGroup(gid){
       expChip('triangles',result.triCount.toLocaleString())+
       expChip('edge',relEdgeMm.toFixed(2)+'mm')+
       (plan.hybrid?expChip('exact solids',plan.solidOk.filter(Boolean).length):'')+
-      expChip('cores',bakeWorkers||1)+
+      expChip('cores',Math.max(bakeWorkers||1, result.cores||1))+
+      expMesherChip(result)+
       expLooseChip(result.loose)+
       expOpenChip(result.closedFix)+
       expChip('file',(blob.size/1024).toFixed(1)+' KB')+

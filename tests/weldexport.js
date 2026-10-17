@@ -75,6 +75,8 @@ async function run(site, root, qual) {
     return route.abort();
   });
   await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), CORES);
+  // v0.16.0: MESHER=auto|slab|classic picks the Export mesher setting (older builds ignore it)
+  if (process.env.MESHER) await ctx.addInitScript(m => { try { localStorage.setItem('f13ld.mesh.mesher', m); } catch (e) {} }, process.env.MESHER);
   const page = await ctx.newPage();
   const errors = [], weldLogs = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));

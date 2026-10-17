@@ -1,8 +1,8 @@
 // Weld colour, in the browser: a gyroid weld of parts A + B and a solid part C.
-// Selecting the weld shows a 17-button colour row (16 swatches + reset);
-// picking a swatch sets the weld colour, every member's part-list swatch and
+// Selecting the weld shows the hue strip + Light/Mid/Deep + reset (v0.15.1);
+// moving the strip / picking a shade sets the weld colour, every member's part-list swatch and
 // the weld preview's base colour follow; a member's part editor shows the
-// "Shown in Weld X's colour" hint instead of swatches; with C selected the
+// "Shown in Weld X's colour" hint instead of the strip; with C selected the
 // members' shells take the weld colour; reset restores the default; a part that
 // leaves the weld gets its own colour row back.
 //
@@ -89,8 +89,9 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
     const gm = {}; const scd = F13LD_scene.scene(); if (scd) for (const m of scd.members) if (m.bodyId) gm[m.bodyId] = Array.from(m.color || []);
     const g = weldGroups.get(gid);
     return { wc: g ? weldGroupColor(gid) : null, hex: g ? g.colorHex : undefined, letter: g ? weldGroupLetter(gid) : '',
-      nW: ed.querySelectorAll('[data-act="wcolor"]').length, nP: ed.querySelectorAll('[data-act="color"]').length,
-      onHex: (ed.querySelector('[data-act="wcolor"].on, [data-act="color"].on') || {}).dataset?.hex,
+      nW: ed.querySelectorAll('.rl-hue-w[data-colour="wcolor"]').length, nP: ed.querySelectorAll('.rl-hue-w[data-colour="color"]').length,
+      onHex: (r => r ? (r.querySelector('.rl-hrst.on') ? '' : r.dataset.cur) : undefined)(ed.querySelector('.rl-hue-w')),
+      nHue: ed.querySelectorAll('.rl-hue').length, nShade: ed.querySelectorAll('.rl-hseg button').length,
       text: ed.innerText, goWeld: ed.querySelectorAll('[data-act="goWeld"]').length,
       swA: sw(a), swB: sw(b), swC: sw(c), tile: (() => { const e = document.querySelector('.rl-whead[data-gid="' + gid + '"] .rl-wtile i'); return e ? getComputedStyle(e).backgroundColor : null; })(),
       base: gm[a] || null, asm: true, ghosts: gm, selW: railSelWeld };
@@ -100,15 +101,31 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   check(/^#[0-9a-f]{6}$/i.test(def) && (await page.evaluate(gid => weldGroups.get(gid).colorHex, gid)) === null, 'new weld: colorHex null, default colour ' + def);
   await page.evaluate(gid => railSelectWeld(gid), gid); await idle();
   let s = await ui();
-  check(s.nW === 17 && s.nP === 0, 'weld editor: 17 colour buttons', s.nW + ' / ' + s.nP);
+  check(s.nW === 1 && s.nP === 0 && s.nHue === 1 && s.nShade === 3, 'weld editor: one hue strip, three shades', s.nW + ' / ' + s.nP + ' / ' + s.nHue + ' / ' + s.nShade);
   check(s.onHex === '', 'weld editor: reset marked when no colour set', String(s.onHex));
   check(!/[←-⯿\u{1F300}-\u{1FAFF}]/u.test(s.text), 'weld editor: no glyph icons');
 
-  const PICK = '#ef4444';
-  await page.click('#railEditor [data-act="wcolor"][data-hex="' + PICK + '"]'); await idle();
+  // Hue strip: Home puts the hue at 0; the Mid shade button then carries its colour.
+  await page.focus('#railEditor .rl-hue'); await page.keyboard.press('Home'); await idle();
   s = await ui();
-  check(s.wc === PICK && s.hex === PICK, 'swatch sets the weld colour', s.wc);
-  check(s.nW === 17 && s.onHex === PICK, 'weld editor redraws with the picked swatch on', String(s.onHex));
+  const PICK = await page.evaluate(() => document.querySelector('#railEditor .rl-hseg button[data-shade="1"]').dataset.hex);
+  check(/^#[0-9a-f]{6}$/i.test(PICK) && s.hex === PICK, 'hue key sets the weld colour', s.hex + ' vs ' + PICK);
+  // Drag across the strip: the slider node survives, colour follows live, final value is committed.
+  const box = await page.evaluate(() => { const r = document.querySelector('#railEditor .rl-hue').getBoundingClientRect(); return { x: r.left, y: r.top + r.height / 2, w: r.width }; });
+  await page.evaluate(() => { window.__hueNode = document.querySelector('#railEditor .rl-hue'); window.__nSet = 0; const o = window.setWeldColor; window.setWeldColor = (g, h) => { window.__nSet++; return o(g, h); }; });
+  await page.mouse.move(box.x + 14, box.y); await page.mouse.down();
+  for (let i = 1; i <= 20; i++) { await page.mouse.move(box.x + 14 + (box.w - 28) * i / 20 * 0.5, box.y); await new Promise(r => setTimeout(r, 15)); }
+  await page.mouse.up(); await idle();
+  const dr = await page.evaluate(gid => ({ same: window.__hueNode === document.querySelector('#railEditor .rl-hue'), n: window.__nSet, hex: weldGroups.get(gid).colorHex, cur: document.querySelector('#railEditor .rl-hue-w').dataset.cur, valuenow: +document.querySelector('#railEditor .rl-hue').getAttribute('aria-valuenow') }), gid);
+  check(dr.same, 'dragging does not rebuild the slider');
+  check(dr.n >= 2 && dr.n <= 22, 'drag updates the viewport live, throttled', String(dr.n));
+  check(dr.hex === dr.cur && dr.valuenow > 150 && dr.valuenow < 210, 'drag commits the final colour', JSON.stringify(dr));
+  await page.evaluate(() => { delete window.setWeldColor; });
+  await page.focus('#railEditor .rl-hue'); await page.keyboard.press('Home'); await idle();
+  await page.click('#railEditor .rl-hseg button[data-shade="1"]'); await idle();
+  s = await ui();
+  check(s.wc === PICK && s.hex === PICK, 'shade button sets the weld colour', s.wc);
+  check(s.nW === 1 && s.onHex === PICK, 'weld editor shows the picked colour', String(s.onHex));
   check(s.swA === rgb(PICK) && s.swB === rgb(PICK), 'member part-list swatches show the weld colour', s.swA + ' ' + s.swB);
   check(s.tile === rgb(PICK), 'weld card tile shows the weld colour', s.tile);
   check(s.swC !== rgb(PICK), 'loose part C keeps its own colour', s.swC);
@@ -116,23 +133,23 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
 
   await sel(page, A); await idle();
   s = await ui();
-  check(s.nW === 0 && s.nP === 0, 'member part editor: no swatches', s.nW + ' / ' + s.nP);
+  check(s.nW === 0 && s.nP === 0, 'member part editor: no colour strip', s.nW + ' / ' + s.nP);
   check(s.text.includes("Shown in Weld " + s.letter + "'s colour"), 'member part editor: "Shown in Weld ' + s.letter + '\'s colour" hint');
   check(s.goWeld === 2, 'member part editor: Edit weld button on the colour row', String(s.goWeld));
   check(s.asm && nearC(s.base, PICK), 'member selected: weld still drawn in its colour', JSON.stringify(s.base));
   await page.click('#railEditor .rl-erow:has(.rl-fsw-dot) [data-act="goWeld"]'); await idle();
   s = await ui();
-  check(s.selW === gid && s.nW === 17, 'Edit weld opens the weld editor');
+  check(s.selW === gid && s.nW === 1, 'Edit weld opens the weld editor');
 
   await sel(page, C); await idle();
   s = await ui();
   check(nearC(s.ghosts[A], PICK) && nearC(s.ghosts[B], PICK), 'C selected: member shells in the weld colour', JSON.stringify([s.ghosts[A], s.ghosts[B]]));
 
   await page.evaluate(gid => railSelectWeld(gid), gid); await idle();
-  await page.click('#railEditor [data-act="wcolor"][data-hex=""]'); await idle();
+  await page.click('#railEditor .rl-hrst'); await idle();
   s = await ui();
   check(s.wc === def && s.hex === null, 'reset restores the default colour', s.wc);
-  check(s.swA === rgb(def) && s.swB === rgb(def) && s.onHex === '', 'reset: swatches back to default, reset marked');
+  check(s.swA === rgb(def) && s.swB === rgb(def) && s.onHex === '', 'reset: part-list swatches back to default, reset marked');
   check(s.asm && nearC(s.base, def), 'reset: weld preview base colour back to default', JSON.stringify(s.base));
 
   // A member's own colour is kept and returns when it leaves the weld.
@@ -142,7 +159,7 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   check(s.swA === rgb(def), 'own colour of a member is overridden by the weld', s.swA);
   await page.evaluate(a => { railSelectPart(a); weldDetach(a); }, A); await idle();
   s = await ui();
-  check(s.nP === 17 && s.onHex === OWN && s.swA === rgb(OWN), 'left the weld: own colour row and colour return', s.nP + ' ' + s.onHex + ' ' + s.swA);
+  check(s.nP === 1 && s.onHex === OWN && s.swA === rgb(OWN), 'left the weld: own colour row and colour return', s.nP + ' ' + s.onHex + ' ' + s.swA);
 
   check(errors.length === 0, 'no console errors', errors.slice(0, 4).join(' | '));
   await browser.close();

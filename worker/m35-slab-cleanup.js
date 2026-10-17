@@ -260,15 +260,18 @@ function safeSimplify(pos, idx, tol, open, flags, shared){
 // Loose-piece clean-up (v0.15.0). Splits the mesh into connected pieces
 // (shared vertices). mode:
 //   'specks'  drop solid pieces smaller than cell·10 (cell = one mesh cell's
-//             volume); woven or disconnected design regions are far larger
+//             volume) — unless together they are more than LOOSE_SPECK_CAP of
+//             the solid volume: then they are real geometry broken up by a
+//             coarse quality, and nothing is dropped (capped)
 //   'largest' keep only the largest solid piece and the cavities inside it
-//   'keep'    nothing (returns null)
+//   'keep'    drop nothing
 // A piece with negative volume is a sealed cavity — real geometry — and is
 // kept unless it is smaller than one cell (or, for 'largest', not inside the
-// kept piece). Pieces go whole, so the rest stays closed. Returns null when
-// nothing was dropped, else
-//   {vertProperties, triVerts, dropped, pieces, droppedVol, keptVol}.
-var LOOSE_SPECK_CELLS=10;
+// kept piece). Pieces go whole, so the rest stays closed. Always returns
+//   {dropped, pieces, solidPieces, bigPieces, droppedVol, keptVol, capped,
+//    vertProperties?, triVerts?}   (the arrays only when dropped > 0)
+// bigPieces = solid pieces of at least 10 cells (counted for the warning).
+var LOOSE_SPECK_CELLS=10, LOOSE_SPECK_CAP=0.02, LOOSE_WARN_PIECES=20;
 function _pointInMesh(px,py,pz, vp, tv, tris){
   // ray along +x with a slight tilt; count crossings
   var dy=1e-7, dz=1.3e-7, hits=0;
@@ -287,9 +290,9 @@ function _pointInMesh(px,py,pz, vp, tv, tris){
   return (hits&1)===1;
 }
 function removeLoosePieces(vp, tv, mode, cell){
-  if(mode==='keep') return null;
   var nV=vp.length/3, nT=tv.length/3, i, t;
-  if(nT===0) return null;
+  var none={dropped:0, pieces:nT?1:0, solidPieces:nT?1:0, bigPieces:nT?1:0, droppedVol:0, keptVol:0, capped:false};
+  if(nT===0) return none;
   var parent=new Int32Array(nV); for(i=0;i<nV;i++) parent[i]=i;
   function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
   for(t=0;t<nT;t++){
@@ -305,16 +308,20 @@ function removeLoosePieces(vp, tv, mode, cell){
     used[k]=1;
     vol[k]+=(vp[A]*(vp[B+1]*vp[C+2]-vp[B+2]*vp[C+1])+vp[A+1]*(vp[B+2]*vp[C]-vp[B]*vp[C+2])+vp[A+2]*(vp[B]*vp[C+1]-vp[B+1]*vp[C]))/6;
   }
-  var pieces=0, big=-1;
-  for(i=0;i<nC;i++){ if(!used[i]) continue; pieces++; if(big<0||vol[i]>vol[big]) big=i; }
-  if(pieces<2) return null;
+  var pieces=0, big=-1, solidPieces=0, bigPieces=0, solidVol=0, speckVol=0;
   cell=cell||0;
+  for(i=0;i<nC;i++){ if(!used[i]) continue; pieces++; if(big<0||vol[i]>vol[big]) big=i;
+    if(vol[i]>=0){ solidPieces++; solidVol+=vol[i]; if(vol[i]>=LOOSE_SPECK_CELLS*cell) bigPieces++; else speckVol+=vol[i]; } }
+  var info={dropped:0, pieces:pieces, solidPieces:solidPieces, bigPieces:bigPieces, droppedVol:0, keptVol:solidVol, capped:false};
+  if(pieces<2 || mode==='keep') return info;
+  var capped = mode==='specks' && speckVol>LOOSE_SPECK_CAP*solidVol;
+  info.capped=capped;
   var drop=new Uint8Array(nC), nDrop=0, dropVol=0, keptVol=0, bigTris=null;
   for(i=0;i<nC;i++){ if(!used[i]) continue;
     var gone;
     if(vol[i]<0) gone = -vol[i]<cell;                      // cavity: only if under one cell
     else if(mode==='largest') gone = i!==big;
-    else gone = vol[i]<LOOSE_SPECK_CELLS*cell;
+    else gone = !capped && vol[i]<LOOSE_SPECK_CELLS*cell;
     if(!gone && vol[i]<0 && mode==='largest'){
       // keep a cavity only if it lies inside the kept piece
       if(!bigTris){ bigTris=[]; for(t=0;t<nT;t++) if(root[tv[3*t]]===big) bigTris.push(t); }
@@ -322,7 +329,7 @@ function removeLoosePieces(vp, tv, mode, cell){
       gone = !_pointInMesh(vp[3*v0],vp[3*v0+1],vp[3*v0+2], vp, tv, bigTris);
     }
     if(gone){ drop[i]=1; nDrop++; dropVol+=Math.abs(vol[i]); } else keptVol+=vol[i]; }
-  if(!nDrop) return null;
+  if(!nDrop) return info;
   var keepT=0; for(t=0;t<nT;t++) if(!drop[root[tv[3*t]]]) keepT++;
   var map=new Int32Array(nV).fill(-1), nv=0, otv=new Uint32Array(keepT*3), o=0;
   for(t=0;t<nT;t++){
@@ -331,5 +338,6 @@ function removeLoosePieces(vp, tv, mode, cell){
   }
   var ovp=new Float32Array(nv*3);
   for(i=0;i<nV;i++){ var m=map[i]; if(m>=0){ ovp[3*m]=vp[3*i]; ovp[3*m+1]=vp[3*i+1]; ovp[3*m+2]=vp[3*i+2]; } }
-  return {vertProperties:ovp, triVerts:otv, dropped:nDrop, pieces:pieces, droppedVol:dropVol, keptVol:keptVol};
+  info.vertProperties=ovp; info.triVerts=otv; info.dropped=nDrop; info.droppedVol=dropVol; info.keptVol=keptVol;
+  return info;
 }

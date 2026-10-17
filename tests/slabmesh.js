@@ -101,9 +101,16 @@ function simplifiedSlabs(F,g,nS,tol){
     const R=simplifiedSlabs({fn},g,4,0.003);
     const cell=0.02**3, r1=ctx.removeLoosePieces(R.pos,R.idx,'largest',cell), r0=ctx.removeLoosePieces(R.pos,R.idx,'keep',cell), rs=ctx.removeLoosePieces(R.pos,R.idx,'specks',cell);
     // speck: 0.06 radius sphere = 9e-4 mm³ = 113 cells → not a speck; largest drops it and keeps the cavity
-    const okL=r1&&r1.dropped===1&&r1.pieces===3&&ctx.meshClosedReport(r1.vertProperties,r1.triVerts).ok&&r0===null&&rs===null;
+    const okL=r1.dropped===1&&r1.pieces===3&&ctx.meshClosedReport(r1.vertProperties,r1.triVerts).ok&&r0.dropped===0&&rs.dropped===0;
     if(!okL) fail++;
-    console.log('loose pieces', okL?'ok':'FAIL', r1?('dropped '+r1.dropped+' of '+r1.pieces+', '+r1.droppedVol.toExponential(2)+' vs kept '+r1.keptVol.toFixed(3)):'nothing dropped', '| keep: nothing dropped', r0===null, '| specks: nothing dropped (113 cells)', rs===null);
+    console.log('loose pieces', okL?'ok':'FAIL', 'largest: dropped '+r1.dropped+' of '+r1.pieces+', '+r1.droppedVol.toExponential(2)+' vs kept '+r1.keptVol.toFixed(3), '| keep: nothing dropped', r0.dropped===0, '| specks: nothing dropped (113 cells)', rs.dropped===0);
+    // cap: many small beads that add up to the part are kept, and flagged
+    const beads=p=>{ const q=[p[0]-Math.round(p[0]/0.2)*0.2,p[1]-Math.round(p[1]/0.2)*0.2,p[2]-Math.round(p[2]/0.2)*0.2]; return 0.05-Math.hypot(q[0],q[1],q[2]); };
+    const gB=ctx.weldGridDims([-0.5,-0.5,-0.5],[0.5,0.5,0.5],0.02), RB=simplifiedSlabs({fn:beads},gB,2,0.003);
+    const rb=ctx.removeLoosePieces(RB.pos,RB.idx,'specks',1e-4);   // a bead (5e-4) is under 10 cells of 1e-4
+    const okB=rb.dropped===0&&rb.capped===true;
+    if(!okB) fail++;
+    console.log('speck cap', okB?'ok':'FAIL', 'pieces', rb.pieces, 'kept all', rb.dropped===0, 'capped', rb.capped);
   }
   console.log(fail?('FAIL '+fail):'all slab meshes closed; raw meshes identical across slab counts');
   process.exit(fail?1:0);

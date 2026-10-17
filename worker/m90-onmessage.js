@@ -369,14 +369,15 @@ self.onmessage=async function(e){
     // 'specks' (default) | 'largest' | 'keep'.
     let loose=null;
     const looseMode=(d.looseMode==='keep'||d.looseMode==='largest')?d.looseMode:'specks';
-    if(looseMode!=='keep'){
-      lastStage='removing loose pieces';
+    {
+      lastStage='checking loose pieces';
       const eV=d.edgeWorld||d.relEdgeMm||0;               // mesh cell edge, vertex units
       const r=removeLoosePieces(vertProperties, triVerts, looseMode, eV*eV*eV);
-      if(r){
+      const s3=Math.pow(d.scale||1,3);
+      loose={mode:looseMode, dropped:r.dropped, pieces:r.pieces, bigPieces:r.bigPieces, droppedMm3:r.droppedVol*s3, capped:r.capped,
+        manyPieces:r.bigPieces>LOOSE_WARN_PIECES || r.capped};
+      if(r.dropped){
         vertProperties=r.vertProperties; triVerts=r.triVerts;
-        const s3=Math.pow(d.scale||1,3);
-        loose={mode:looseMode, dropped:r.dropped, pieces:r.pieces, droppedMm3:r.droppedVol*s3};
         self.postMessage({type:'progress',stage:'removed '+r.dropped+' loose piece'+(r.dropped===1?'':'s')+'...'});
       }
     }

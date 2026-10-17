@@ -773,9 +773,21 @@ function expMesherChip(r){
 }
 // v0.15.0: loose pieces removed by the clean-up (worker/m35 removeLoosePieces).
 function expLooseChip(l){
-  if(!l||!l.dropped) return '';
-  const v=l.droppedMm3, vs=v<0.01?v.toExponential(1):v.toFixed(v<1?3:1);
-  return expChip(l.mode==='largest'?'pieces removed (largest kept)':'specks removed', l.dropped+' \u00b7 '+vs+' mm\u00b3');
+  if(!l) return '';
+  let h='';
+  if(l.dropped){
+    const v=l.droppedMm3, vs=v<0.01?v.toExponential(1):v.toFixed(v<1?3:1);
+    h+=expChip(l.mode==='largest'?'pieces removed (largest kept)':'specks removed', l.dropped+' \u00b7 '+vs+' mm\u00b3');
+  }
+  // Many separate pieces usually means features thinner than the mesh edge
+  // at this quality (the mesh breaks into beads). Shown on every setting.
+  if(l.manyPieces){
+    const why=l.capped?'The small pieces add up to more than 2 % of the part, so they were kept. ':'';
+    h+='<div class="exp-chip exp-chip-warn" title="'+why+'Features may be thinner than the mesh edge at this quality. A finer quality usually joins them up.">'+
+      'separate pieces <b>'+(l.bigPieces||l.pieces).toLocaleString()+'</b></div>'+
+      '<div class="exp-note">The part came out in '+(l.bigPieces||l.pieces).toLocaleString()+' separate pieces'+(l.capped?' (the small ones add up to more than 2 % of the part, so they were kept)':'')+'. Features may be thinner than the mesh edge at this quality; try a finer quality.</div>';
+  }
+  return h;
 }
 // v0.15.0: a classic result that isn't closed (worker/m90 counts its open edges).
 function expOpenChip(c){

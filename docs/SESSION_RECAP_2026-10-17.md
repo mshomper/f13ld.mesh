@@ -34,8 +34,17 @@ Branch `slab-welds`. Matt's decisions this session: slab welds keep the imported
 - Checks: `slabmesh.js`, `flipedges.js`, `weldtest.js` pass; `GEOM=1 MESHER=slab QUAL=low CORES=3` harness on gyroid sheet, open foam, shape gyroid, wet foam: closed, volume within 0.01 % of v0.15.0.
 - If the rows pass shows up as the big stage on Matt's bench, it can be split per row onto the pool next.
 
+## Matt's v0.16.1 bench (High, 15 cores) and v0.16.2
+
+- v0.16.1: solid + gyroid + solid 7.02 s vs classic 20.2 s; foam weld 15.0 s vs 11.9 s (v0.16.0: 19.5 s); two gyroids 9.44 s vs 27.4 s; all closed (classic 25 / 195 / 119 open edges). Foam weld stages: slabs 3.88, round A 2.12, round B 1.28, rows 2.97 (one core), flips 1.60 s, and ~3 s unaccounted — the union: Manifold evaluates booleans lazily, so the work happens in `isEmpty` / `getMesh`, outside the timed call.
+- Decisions: build v0.16.2 now; merge v0.16.1 and v0.16.2 together after his next bench.
+- v0.16.2 (same branch):
+  - Rows pass on the pool: `m35 rowsJobs` splits the free set into connected pieces (triangles joined through free vertices) and packs them into about 2 jobs per worker; a piece is never cut, so a flat face crossing several slabs stays one piece and still collapses (box: 12 triangles). Splitting by height instead (nearest row) brought the box strips back (1,106 triangles). Rows jobs lock only their outer vertices (`noRing`), non-free vertices through `seed`. `simplifyRows` removed.
+  - Welds: regions skip their own flip (`opts.noFlip` → `_slabFinish`) and the weld flips once after the union; no separate closed checks (the Manifold constructor throws on a non-manifold region → classic; `checkedFlip` checks itself; the union is closed by construction); a lone region with no exact solids skips Manifold entirely (closed check instead). The union is timed through `getMesh`, including building the Manifolds (`stages.union`).
+  - Node: box caps 12, gyroid solid 0.2: 6,820 triangles / 31 needles (as v0.16.1); slabmesh / flipedges / weldtest pass. In the browser on this VM weld jobs run on one slab (its workers see 2 real cores), so the pool path is checked through the bench page with cores set.
+
 ## Open / next
 
-- Matt: bench v0.16.1 from `parallel-final` (weld cases, foam), check the stage table.
+- Matt: bench v0.16.2 from `parallel-final` (weld cases, foam), check the stage table; then merge v0.16.1 + v0.16.2.
 - (done in v0.16.1) final pass in parallel — re-cut the joined mesh at the middle of each original slab so every old seam lies inside a piece, simplify + flip each piece on the pool with only its cut edges locked; stage times (slab mesh / bands / final pass + redos / union / clean-up) on the bench cards.
 - Then P3 (exact-math GLSL sources), P4 (empty-space skipping, adaptive resolution, bench preview tab), P5 (WebGPU, IndexedDB).

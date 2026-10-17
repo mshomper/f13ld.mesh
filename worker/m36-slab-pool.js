@@ -35,7 +35,7 @@ function slabJobs(g, nW){
 
 // Join the slabs, tidy each seam band (on the pool when runBands is given,
 // else here), compact.
-async function _slabFinish(g, results, tol, post, t0, runBands){
+async function _slabFinish(g, results, tol, post, t0, runBands, nWorkers, noFlip){
   const tJ=performance.now();
   const J=joinSlabs(results);
   let idx=J.idx, seam=null;
@@ -67,16 +67,25 @@ async function _slabFinish(g, results, tol, post, t0, runBands){
       idx=joinSeamBands(cut.rest, cut.jobs, res);
       const st=bandStats(cut, res, idx); st.round=r?'B':'A'; st.ms=Math.round(performance.now()-tRound); rounds.push(st);
     }
+    // v0.16.2: the rows pass as jobs on the pool, one per group of connected
+    // pieces (m35 rowsJobs) — never cuts a piece, so flat faces still collapse
     if(post) post({type:'progress', stage:'final pass, rows...'});
     const tR=performance.now();
-    rows=simplifyRows(J.pos, idx, tol, free, seedJ);
-    idx=rows.idx; rows={free:rows.free, retries:rows.retries, gaveUp:rows.gaveUp, ms:Math.round(performance.now()-tR)};
+    const rc=rowsJobs(J.pos, idx, free, seedJ, Math.max(1, nWorkers||1)*2);
+    let rr=[];
+    if(rc.jobs.length){
+      rr=runBands ? await runBands(rc.jobs, tol) : rc.jobs.map(j=>simplifyBandJob(j, tol));
+      idx=joinSeamBands(rc.rest, rc.jobs, rr);
+    }
+    let biggest=0; for(const j of rc.jobs) biggest=Math.max(biggest, j.idx.length/3);
+    rows={free:rc.free, pieces:rc.pieces, jobs:rc.jobs.length, tris:rc.bandTris, biggest, retries:rr.reduce((a,x)=>a+(x.retries||0),0), gaveUp:rr.some(x=>x.gaveUp), ms:Math.round(performance.now()-tR)};
   }
   seam=rounds.length?rounds[rounds.length-1]:null;
   const C=compactIndexed(J.pos, idx);
   let finalFlip=null;
   const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF)};
-  if(tol>0){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
+  // v0.16.2: weld regions skip this flip — the weld flips once after its union
+  if(tol>0 && !noFlip){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);
   let raw=0, retries=0, locked=0, gaveUp=0, evals=0, slowest=0;
   for(const r of results){ raw+=r.rawTris||0; retries+=r.retries||0; locked+=r.locked||0; if(r.gaveUp) gaveUp++; evals+=r.evals||0; slowest=Math.max(slowest, r._ms||0); }
@@ -120,7 +129,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     if(tol>0){ if(post) post({type:'progress', stage:'simplifying '+(r.idx.length/3/1e6).toFixed(2)+'M tris...'}); r=simplifySlab(r, tol); }
     else r.rawTris=r.idx.length/3;
     r._La=0; r._ms=performance.now()-ts;
-    const out=await _slabFinish(g, [r], tol, post, t0, null);
+    const out=await _slabFinish(g, [r], tol, post, t0, null, 1, !!opts.noFlip);
     out.workers=1;
     return out;
   }
@@ -196,13 +205,13 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     const bkick=()=>{ if(bdog) clearTimeout(bdog); bdog=setTimeout(()=>end(new Error('seam bands stalled')), SLAB_STALL_MS); };
     const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice(), sd=j.seed?j.seed.slice():null;
       const tr=[p.buffer, ix.buffer, o.buffer]; if(sd) tr.push(sd.buffer);
-      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, tol:btol}, tr); } };
+      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, noRing:!!j.noRing, tol:btol}, tr); } };
     onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), tearV:m.tearV?new Uint32Array(m.tearV):null, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
     bkick();
     if(post) post({type:'progress', stage:'tidying '+bjobs.length+' seam band'+(bjobs.length===1?'':'s')+' on '+Math.min(workers.length,bjobs.length)+' cores...'});
     for(const w of workers) send(w);
   });
-  const out=await _slabFinish(g, results, tol, post, t0, runBands);
+  const out=await _slabFinish(g, results, tol, post, t0, runBands, workers.length, !!opts.noFlip);
   out.workers=nW;
   return out;
   } finally { stopAll(); }

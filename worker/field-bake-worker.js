@@ -70,7 +70,7 @@ self.onmessage=async function(e){
     if(d.type==='band'){
       await slabMeshoptReady;
       const t0=performance.now();
-      const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer), seed:d.seed?new Uint8Array(d.seed):null}, d.tol);
+      const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer), seed:d.seed?new Uint8Array(d.seed):null, noRing:!!d.noRing}, d.tol);
       const idx=new Uint32Array(r.idx), tv=r.tearV||new Uint32Array(0);
       self.postMessage({type:'band', id:d.id, idx:idx.buffer, tearV:tv.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0}, [idx.buffer, tv.buffer]);
       return;

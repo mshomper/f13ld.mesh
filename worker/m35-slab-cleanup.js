@@ -134,7 +134,7 @@ function seamBandJobs(pos, idx, seamZ, bandW){
   return {jobs:jobs, rest:rest, bandTris:nT-nRest};
 }
 function simplifyBandJob(job, tol, flip){
-  var ss=safeSimplify(job.pos, job.idx, tol, job.outer, ['Sparse'], null, job.seed||null);
+  var ss=safeSimplify(job.pos, job.idx, tol, job.outer, ['Sparse'], null, job.seed||null, !!job.noRing);
   // v0.16.0: edge flips, outer edges (both ends outer) kept as they are
   var fr=flip===false?{idx:ss.idx, flips:0, ms:0}:checkedFlip(job.pos, ss.idx, job.outer, job.outer);
   return {idx:fr.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected, tearV:tearVerts(ss.tearLock, null)};
@@ -162,11 +162,11 @@ function simplifySeamBands(pos, idx, seamZ, bandW, tol, flip){
 //    seams (the other round's), so a round's bands only meet — and lock — at
 //    seams the other round frees. The heavy work (and foam's tears, which make
 //    safeSimplify redo its mesh) stays local to one band.
-// 2. Rows pass, one thread: on a flat face crossing several slabs the bands
-//    still leave strips of thin triangles between the rows round B had to
-//    lock. One simplify of the whole mesh with every vertex locked except
-//    those rows collapses them (a box: back to 12 triangles) and costs little,
-//    since almost nothing can move.
+// 2. Rows pass: on a flat face crossing several slabs the bands still leave
+//    strips of thin triangles between the rows round B had to lock. A simplify
+//    with every vertex locked except those rows (+ SLAB_ROWS_RINGS rings)
+//    collapses them (a box: back to 12 triangles). v0.16.2: split into
+//    connected pieces on the pool (rowsJobs).
 // finalBandRounds(seamZ) → [zA, zB, bandW]
 function finalBandRounds(seamZ){
   var zs=Array.from(seamZ).sort(function(a,b){return a-b;}), A=[], B=[], gap=0, i;
@@ -184,22 +184,62 @@ function markBandRows(jobs, res, free, seed){
     if(seed&&tv) for(i=0;i<tv.length;i++) seed[gv[tv[i]]]=1;
   }
 }
-// The rows pass: lock everything except free (and except seed, which stays
-// locked); tear-safe like the rest.
-var SLAB_ROWS_RINGS=2;   // rings around round B's rows that the rows pass also frees
-function simplifyRows(pos, idx, tol, free, seed, rings){
-  var nV=pos.length/3, lock=new Uint8Array(nV), n=0;
+// v0.16.2: the rows pass split into jobs for the pool. The free set (round
+// B's band-edge rows + SLAB_ROWS_RINGS rings) falls apart into
+// connected pieces (triangles joined through free vertices). A piece is never
+// cut — on a flat face crossing several slabs the strips between rows all
+// connect, so the face stays one piece and collapses fully; on a lattice the
+// rows at different heights are separate pieces. Pieces are packed into
+// about nJobs jobs of similar size; vertices shared with the rest (never free)
+// are outer (locked, edges kept); non-free vertices inside a job stay locked
+// through job.seed. Same job shape as seamBandJobs, so it runs on the band
+// workers and joins with joinSeamBands.
+function rowsJobs(pos, idx, free, seed, nJobs, rings){
+  var nV=pos.length/3, nT=idx.length/3, t, i, k;
   rings=(rings==null)?SLAB_ROWS_RINGS:rings;
   for(var rg=0; rg<rings; rg++){
     var nx=free.slice();
-    for(var t=0;t<idx.length;t+=3){ var a=idx[t], b=idx[t+1], c=idx[t+2]; if(free[a]||free[b]||free[c]){ nx[a]=1; nx[b]=1; nx[c]=1; } }
+    for(t=0;t<idx.length;t+=3){ var a=idx[t], b=idx[t+1], c=idx[t+2]; if(free[a]||free[b]||free[c]){ nx[a]=1; nx[b]=1; nx[c]=1; } }
     free=nx;
   }
-  for(var i=0;i<nV;i++){ if(!free[i]||(seed&&seed[i])) lock[i]=1; else n++; }
-  if(!n) return {idx:idx, retries:0, free:0};
-  var ss=safeSimplify(pos, idx, tol, null, null, null, lock);
-  return {idx:ss.idx, retries:ss.retries, gaveUp:!!ss.gaveUp, free:n};
+  if(seed) for(i=0;i<nV;i++) if(seed[i]) free[i]=0;     // tear locks never move
+  // pieces: union-find over free vertices, joined through triangles
+  var par=new Int32Array(nV); for(i=0;i<nV;i++) par[i]=i;
+  function find(x){ while(par[x]!==x){ par[x]=par[par[x]]; x=par[x]; } return x; }
+  var tf=new Int32Array(nT).fill(-1);
+  for(t=0;t<nT;t++){
+    var f=-1;
+    for(k=0;k<3;k++){ var v=idx[3*t+k]; if(!free[v]) continue; if(f<0) f=v; else { var ra=find(f), rb=find(v); if(ra!==rb) par[ra]=rb; } }
+    tf[t]=f;
+  }
+  // piece sizes, then greedy packing (largest first into the lightest job)
+  var size=new Map(), roots=[];
+  for(t=0;t<nT;t++) if(tf[t]>=0){ var r=find(tf[t]); if(!size.has(r)){ size.set(r,0); roots.push(r); } size.set(r, size.get(r)+1); }
+  roots.sort(function(x,y){ return size.get(y)-size.get(x) || x-y; });
+  var nJ=Math.max(1, Math.min(nJobs||1, roots.length)), load=new Float64Array(nJ), jobOf=new Map();
+  for(i=0;i<roots.length;i++){ var best=0; for(k=1;k<nJ;k++) if(load[k]<load[best]) best=k; jobOf.set(roots[i], best); load[best]+=size.get(roots[i]); }
+  var tb=new Int32Array(nT).fill(-1);
+  for(t=0;t<nT;t++) if(tf[t]>=0) tb[t]=jobOf.get(find(tf[t]));
+  var own=new Int32Array(nV).fill(-2), mixed=new Uint8Array(nV);
+  for(t=0;t<nT;t++) for(k=0;k<3;k++){ var w=idx[3*t+k]; if(own[w]===-2) own[w]=tb[t]; else if(own[w]!==tb[t]) mixed[w]=1; }
+  var cnt=new Int32Array(nJ), nRest=0;
+  for(t=0;t<nT;t++){ if(tb[t]>=0) cnt[tb[t]]++; else nRest++; }
+  var rest=new Uint32Array(nRest*3), or=0, tris=[], fill=new Int32Array(nJ);
+  for(k=0;k<nJ;k++) tris.push(new Uint32Array(cnt[k]));
+  for(t=0;t<nT;t++){ if(tb[t]<0){ rest[or++]=idx[3*t]; rest[or++]=idx[3*t+1]; rest[or++]=idx[3*t+2]; } else tris[tb[t]][fill[tb[t]]++]=t; }
+  var map=new Int32Array(nV).fill(-1), jobs=[], nFree=0;
+  for(k=0;k<nJ;k++){
+    var T=tris[k]; if(!T.length) continue;
+    var gv=[], li=new Uint32Array(T.length*3);
+    for(i=0;i<T.length;i++) for(var e=0;e<3;e++){ var g=idx[3*T[i]+e]; if(map[g]<0){ map[g]=gv.length; gv.push(g); } li[3*i+e]=map[g]; }
+    var lp=new Float32Array(gv.length*3), outer=new Uint8Array(gv.length), sd=new Uint8Array(gv.length);
+    for(i=0;i<gv.length;i++){ var gi=gv[i]; lp[3*i]=pos[3*gi]; lp[3*i+1]=pos[3*gi+1]; lp[3*i+2]=pos[3*gi+2]; outer[i]=mixed[gi];
+      if(!free[gi]) sd[i]=1; else nFree++; map[gi]=-1; }
+    jobs.push({k:k, pos:lp, idx:li, outer:outer, gv:Uint32Array.from(gv), seed:sd, noRing:true});
+  }
+  return {jobs:jobs, rest:rest, bandTris:nT-nRest, free:nFree, pieces:roots.length};
 }
+var SLAB_ROWS_RINGS=2;   // rings around round B's rows that the rows pass also frees
 // One thread: the whole final pass here (tests, small meshes).
 function simplifyFinalRounds(pos, idx, seamZ, tol, flip){
   var S=slabMeshopt();
@@ -215,8 +255,12 @@ function simplifyFinalRounds(pos, idx, seamZ, tol, flip){
     idx=joinSeamBands(cut.rest, cut.jobs, res);
     st.push(bandStats(cut, res, idx));
   }
-  var rows=simplifyRows(pos, idx, tol, free, seed);
-  idx=rows.idx; st.push({rows:rows.free, retries:rows.retries});
+  var rc=rowsJobs(pos, idx, free, seed, 4);
+  if(rc.jobs.length){
+    var rr=rc.jobs.map(function(j){ return simplifyBandJob(j, tol, flip); });
+    idx=joinSeamBands(rc.rest, rc.jobs, rr);
+    st.push({rows:rc.free, jobs:rc.jobs.length, retries:rr.reduce(function(a,x){ return a+x.retries; },0)});
+  }
   simplifyFinalRounds.last=st;
   return idx;
 }
@@ -307,10 +351,13 @@ var SAFE_SIMPLIFY_RINGS=[1,1,2,2,3,3,4,6,8,10,12,12];
 // return them as tearV), so the final pass doesn't tear and redo there.
 // The result's tearLock marks every vertex locked because of a tear (seed
 // included).
-function safeSimplify(pos, idx, tol, open, flags, shared, seed){
+function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
   var lock0=null;
   if(open && !shared) shared=function(a,b){ return open[a]===1 && open[b]===1; };
-  if(open){ lock0=new Uint8Array(open); ringLock(idx, open.length, shared, lock0); }   // open vertices themselves stay put too
+  // open vertices themselves stay put too; noRing (v0.16.2 rows jobs) skips
+  // the extra lock on the triangles along the open edges — the tear checks
+  // below still keep every open edge as it was
+  if(open){ lock0=new Uint8Array(open); if(!noRing) ringLock(idx, open.length, shared, lock0); }
   var S=slabMeshopt();
   if(!S || !(tol>0) || idx.length<3) return {idx:idx, retries:0, locked:0, unsafe:false};
   var nV=pos.length/3, nT=idx.length/3;

@@ -160,7 +160,7 @@ self.onmessage=async function(e){
         // again (the imported solids come through exactly as imported).
         // Resolves the slab result, or null (classic then meshes the group).
         const weldSlab=async()=>{
-          const pieces=[];
+          const pieces=[]; let lone=null;
           try{
             const agg={slabs:0, workers:0, raw:0, retries:0, locked:0, gaveUp:0, evals:0, seam:null, ms:{mesh:0, seam:0, union:0}, regions:regionData.length};
             for(let ri=0;ri<regionData.length;ri++){
@@ -168,26 +168,44 @@ self.onmessage=async function(e){
               lastStage='weld slab mesher'+(regionData.length>1?' '+(ri+1)+'/'+regionData.length:'')+' ('+edge.toFixed(3)+'mm'+(rd.M?', pre-baked':'')+')';
               self.postMessage({type:'progress',stage:lastStage+'...'});
               const fn=rd.M ? makeWeldLookup(rd.g, rd.M, rd.O, field, {}) : field;
-              const sm=await slabMeshExport(d, fn, rd.r.min, rd.r.max, edge, d.simplifyTol||0, post, rd.M?{lookup:{main:rd.M, off:rd.O}}:null);
+              // noFlip: the region isn't flipped on its own — the weld flips once after the union
+              const sm=await slabMeshExport(d, fn, rd.r.min, rd.r.max, edge, d.simplifyTol||0, post, {lookup:rd.M?{main:rd.M, off:rd.O}:null, noFlip:true});
               agg.slabs+=sm.slabs; agg.workers=Math.max(agg.workers, sm.workers||1); agg.raw+=sm.raw||0; agg.retries+=sm.retries||0;
               agg.locked+=sm.locked||0; agg.gaveUp+=sm.gaveUp||0; agg.evals+=sm.evals||0; agg.seam=sm.seam||agg.seam;
               agg.ms.mesh+=sm.ms.mesh; agg.ms.seam+=sm.ms.seam;
+              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]+=st[k]; }
               if(!sm.idx.length) continue;
-              const cr=meshClosedReport(sm.pos, sm.idx);
-              if(!cr.ok) throw new Error('region '+(ri+1)+' not closed ('+cr.bad+' edges)');
+              // v0.16.2: one region and no exact solids — nothing to union, so
+              // the slab mesh is the result (checked closed below)
+              if(regionData.length===1 && !hybrid){ lone=sm; continue; }
+              // v0.16.2: no separate closed check — the Manifold constructor
+              // throws on a mesh that isn't a closed manifold (→ classic)
+              const tM=performance.now();
               const mesh=new ManifoldAPI.Mesh({numProp:3, vertProperties:sm.pos, triVerts:sm.idx});
               mesh.merge();
               pieces.push(new ManifoldAPI.Manifold(mesh));
+              agg.msManifold=(agg.msManifold||0)+Math.round(performance.now()-tM);
             }
+            let pos, idx, U={ms:0};
+            if(lone){
+              const crl=meshClosedReport(lone.pos, lone.idx);
+              if(!crl.ok) throw new Error('weld mesh not closed ('+crl.bad+' edges)');
+              pos=lone.pos; idx=lone.idx;
+            } else {
             const parts=pieces.concat(solidsFresh());
             pieces.length=0;
             if(!parts.length) throw new Error('Empty weld mesh — check group overlap.');
-            const U=unionAll(parts, 'union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es'));
-            agg.ms.union=U.ms;
+            // Manifold evaluates booleans lazily: the union's work happens in
+            // isEmpty / getMesh, so those are timed as the union (v0.16.2)
+            const tU0=performance.now();
+            U=unionAll(parts, 'union with '+solidMf.length+' solid mesh'+(solidMf.length===1?'':'es'));
             if(U.m.isEmpty()){ U.m.delete(); throw new Error('Empty weld mesh — check group overlap.'); }
             const em=U.m.getMesh();
-            let pos=new Float32Array(em.vertProperties), idx=new Uint32Array(em.triVerts);
+            pos=new Float32Array(em.vertProperties); idx=new Uint32Array(em.triVerts);
             U.m.delete();
+            U.ms=Math.round(performance.now()-tU0)+(agg.msManifold||0);
+            }
+            agg.ms.union=U.ms;
             if(hybrid){
               const r=dropTinyShells(pos, idx, 0.1*edge*edge*edge);
               if(r){ pos=r.vertProperties; idx=r.triVerts;
@@ -196,10 +214,11 @@ self.onmessage=async function(e){
             // The union cuts the exact solids' flat faces into long thin
             // triangles; flip them (near-flat only, no vertex moves, so the
             // solids keep their exact shape).
+            // checkedFlip keeps the unflipped mesh unless the flipped one is
+            // closed, and the union is closed by construction — no extra check
             const ff=checkedFlip(pos, idx, null);
             idx=ff.idx; agg.finalFlips=(agg.finalFlips||0)+ff.flips;
-            const cr=meshClosedReport(pos, idx);
-            if(!cr.ok) throw new Error('weld result not closed ('+cr.bad+' edges)');
+            agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; agg.stages.flip+=Math.round(ff.ms); agg.stages.union=U.ms;
             agg.pos=pos; agg.idx=idx; agg.ms.seam+=U.ms;
             self.postMessage({type:'diag',diag:{weld:true, slab:true, hybrid, solids:solidMf.length, regions:regionData.length, slabs:agg.slabs, workers:agg.workers, retries:agg.retries, gaveUp:agg.gaveUp, msMesh:agg.ms.mesh, msSeam:agg.ms.seam-U.ms, msUnion:U.ms}});
             return agg;
@@ -463,7 +482,9 @@ self.onmessage=async function(e){
     {
       lastStage='checking loose pieces';
       const eV=d.edgeWorld||d.relEdgeMm||0;               // mesh cell edge, vertex units
+      var tLoose=performance.now();
       const r=removeLoosePieces(vertProperties, triVerts, looseMode, eV*eV*eV);
+      var msLoose=Math.round(performance.now()-tLoose);
       const s3=Math.pow(d.scale||1,3);
       loose={mode:looseMode, dropped:r.dropped, pieces:r.pieces, bigPieces:r.bigPieces, droppedMm3:r.droppedVol*s3, capped:r.capped,
         manyPieces:r.bigPieces>LOOSE_WARN_PIECES || r.capped};
@@ -481,7 +502,9 @@ self.onmessage=async function(e){
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
       mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
-      msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms}},[vertProperties.buffer,triVerts.buffer]);
+      msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
+      // v0.16.1: where the slab mesher's time went (ms)
+      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}):null},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

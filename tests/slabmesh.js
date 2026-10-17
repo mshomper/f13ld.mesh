@@ -50,7 +50,8 @@ function simplifiedSlabs(F,g,nS,tol,flip){
   let finalMs=0;
   if(flip!==false && tol>0 && seamZ.length){
     const tf=performance.now();
-    if(process.env.FINALSIMP!=='0'){ const ss=ctx.safeSimplify(C.pos,C.idx,tol); const C2=ctx.compactIndexed(C.pos,ss.idx); C.pos=C2.pos; C.idx=C2.idx; }
+    if(process.env.FINAL==='global'){ const ss=ctx.safeSimplify(C.pos,C.idx,tol); const C2=ctx.compactIndexed(C.pos,ss.idx); C.pos=C2.pos; C.idx=C2.idx; }
+    else if(process.env.FINAL!=='0'){ const ix=ctx.simplifyFinalRounds(C.pos,C.idx,seamZ,tol,flip); const C2=ctx.compactIndexed(C.pos,ix); C.pos=C2.pos; C.idx=C2.idx; if(process.env.VERBOSE) console.log('   rounds',JSON.stringify(ctx.simplifyFinalRounds.last)); }
     const f=ctx.checkedFlip(C.pos,C.idx,null); C.idx=f.idx; bandFlips+=f.flips; if(f.rejected) rejected++;
     finalMs=performance.now()-tf;
     if(process.env.VERBOSE) console.log('   final pass ms',Math.round(finalMs));

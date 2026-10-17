@@ -17,11 +17,13 @@
      {type:'init', lookupOnly:true, edge, grid}   v0.16.0 weld region: no
         field is built; each mesh job then carries main, off, kmA, koA — the
         pre-baked values of the layers it reads (makeWeldLookupSlice, m31)
-     {type:'band', id, pos, idx, outer, tol}   v0.15.0 seam band simplify
+     {type:'band', id, pos, idx, outer, seed, tol}   v0.15.0 seam band simplify
+        (v0.16.1: also the final-pass rounds; seed = tear locks found earlier)
    Messages out:
      {type:'ready', n}
      {type:'slab', id, main, off, kmA, kmB, koA, koB, ms}   (buffers transferred)
-     {type:'meshslab', id, pos, idx, seamV, seamK, rawTris, retries, locked, gaveUp, evals, ms}
+     {type:'meshslab', id, pos, idx, seamV, seamK, tearV, rawTris, retries, locked, gaveUp, evals, ms}
+        tearV (v0.16.1): vertices simplify locked for tears (seeds the final pass)
      {type:'error', message}
    ============================================================ */
 importScripts(
@@ -59,17 +61,18 @@ self.onmessage=async function(e){
       let r=slabMeshLayers(fn, _grid, d.La, d.Lb);
       if(d.tol>0){ await slabMeshoptReady; r=simplifySlab(r, d.tol); }
       else r.rawTris=r.idx.length/3;
-      self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer,
+      const tearV=r.tearV||new Uint32Array(0);
+      self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer, tearV:tearV.buffer,
         rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, ms:performance.now()-t0},
-        [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer]);
+        [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer, tearV.buffer]);
       return;
     }
     if(d.type==='band'){
       await slabMeshoptReady;
       const t0=performance.now();
-      const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer)}, d.tol);
-      const idx=new Uint32Array(r.idx);
-      self.postMessage({type:'band', id:d.id, idx:idx.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0}, [idx.buffer]);
+      const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer), seed:d.seed?new Uint8Array(d.seed):null, noRing:!!d.noRing}, d.tol);
+      const idx=new Uint32Array(r.idx), tv=r.tearV||new Uint32Array(0);
+      self.postMessage({type:'band', id:d.id, idx:idx.buffer, tearV:tv.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0}, [idx.buffer, tv.buffer]);
       return;
     }
     if(d.type==='job'){

@@ -346,7 +346,7 @@ function runMesh(workerUrl, job, cores, onStage, extra){
       const m=e.data;
       if(m.type==='progress') onStage(m.stage);
       else if(m.type==='diag'&&m.diag&&m.diag.fieldBake) field=m.diag.fieldBake;
-      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix}); }
+      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
       else if(m.type==='error'){ end(); rej(new Error(m.message)); }
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
@@ -534,6 +534,7 @@ function setCard(el, r){
   if(r.test&&r.test.field) kv.push(['points from cache', r.test.field.cached.toLocaleString()+(r.test.field.direct?' (+'+r.test.field.direct+' direct)':'')]);
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);
+    if(r.test && r.test.stages) kv.push(['slab stages (this build)', stagesTxt(r.test.stages)]);
     kv.push(['loose pieces removed', looseTxt(r.test.loose)]);
     const cf=anyTxt(r.test.closedFix); if(cf) kv.push(['closed fix', cf]);
   }
@@ -639,6 +640,14 @@ async function run(){
   }
   finish();
 }
+// v0.16.1: where the slab mesher's time went — mesh (slabs, with their
+// simplify), final pass rounds A and B, rows pass, flips, union (welds),
+// loose-piece clean-up
+const STAGE_KEYS=[['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
+function stagesTxt(st){
+  if(!st) return '\u2014';
+  return STAGE_KEYS.filter(([k])=>st[k]>0).map(([k,l])=>l+' '+fmtS(st[k])).join(' \u00b7 ')||'\u2014';
+}
 function finish(){
   running=false;
   $('runBtn').disabled=false; $('stopBtn').disabled=true; $('dlBtn').disabled=!report||!report.rows.length;
@@ -679,6 +688,11 @@ $('dlBtn').onclick=()=>{
       ' | '+(g?pctTxt(g.volDiff):'—')+' | '+(g?pctTxt(g.areaDiff):'—')+' | '+(g?pctTxt(g.triDiff):'—')+' | '+(g?g.openRef+' / '+g.openTest:'—')+' | '+(g?mmTxt(g.maxDistMm):'—')+
       ' | '+qualTxt(r.ref&&r.ref.q)+' | '+qualTxt(r.test&&r.test.q)+' | '+angTxt(r.ref&&r.ref.q)+' / '+angTxt(r.test&&r.test.q)+
       ' | '+cell(res)+' |');
+  }
+  const withStages=R.rows.filter(r=>r.test&&r.test.stages);
+  if(withStages.length){
+    L.push('','Slab mesher stage times (this build):','','| Case | '+STAGE_KEYS.map(([,l])=>l).join(' | ')+' |','|---|'+STAGE_KEYS.map(()=>'---|').join(''));
+    for(const r of withStages){ const st=r.test.stages; L.push('| '+r.name+' | '+STAGE_KEYS.map(([k])=>st[k]>0?fmtS(st[k]):'\u2014').join(' | ')+' |'); }
   }
   L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). Needles: triangles whose height over their longest edge is under '+NEEDLE_RATIO+', as a count and a share of all triangles. Min angle p5: the 5th percentile of each triangle\'s smallest angle. PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');
   const welds=R.rows.filter(r=>r.weld);

@@ -43,8 +43,15 @@ Branch `slab-welds`. Matt's decisions this session: slab welds keep the imported
   - Welds: regions skip their own flip (`opts.noFlip` → `_slabFinish`) and the weld flips once after the union; no separate closed checks (the Manifold constructor throws on a non-manifold region → classic; `checkedFlip` checks itself; the union is closed by construction); a lone region with no exact solids skips Manifold entirely (closed check instead). The union is timed through `getMesh`, including building the Manifolds (`stages.union`).
   - Node: box caps 12, gyroid solid 0.2: 6,820 triangles / 31 needles (as v0.16.1); slabmesh / flipedges / weldtest pass. In the browser on this VM weld jobs run on one slab (its workers see 2 real cores), so the pool path is checked through the bench page with cores set.
 
+## Matt's v0.16.2 bench (High, 15 cores)
+
+- solid + gyroid + solid 6.21 s vs classic 20.0 s (3.2×); solid + foam + solid 10.7 s vs 11.9 s (1.11×, was 15.0 s in v0.16.1, 19.5 s in v0.16.0); two gyroids 8.77 s vs 27.2 s (3.1×). All closed (classic 25 / 195 / 119 open edges), volumes within 0.02 %, 2–18 % fewer triangles.
+- Foam weld stages: slabs 3.77, round A 2.10, round B 1.29, rows 0.24 (was 2.97), flips 0.62 (was 1.60), union 2.15 s (now measured).
+- v0.16.1 + v0.16.2 merged to main together, as Matt asked, after the classic byte-identical harness.
+
 ## Open / next
 
-- Matt: bench v0.16.2 from `parallel-final` (weld cases, foam), check the stage table; then merge v0.16.1 + v0.16.2.
+- Remaining big stages on the foam weld: the slabs themselves, round A, the union. Possible later work: shrink what goes into the union (only lattice near the solids), fewer tear redos in round A.
+- Then P3 (exact-math GLSL sources), P4, P5.
 - (done in v0.16.1) final pass in parallel — re-cut the joined mesh at the middle of each original slab so every old seam lies inside a piece, simplify + flip each piece on the pool with only its cut edges locked; stage times (slab mesh / bands / final pass + redos / union / clean-up) on the bench cards.
 - Then P3 (exact-math GLSL sources), P4 (empty-space skipping, adaptive resolution, bench preview tab), P5 (WebGPU, IndexedDB).

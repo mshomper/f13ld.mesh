@@ -1,4 +1,4 @@
-// WebGPU marching-tetrahedra mesher. WRITTEN BUT NOT EXECUTED by the expedition (no GPU there): expect to fix
+// WebGPU marching-tetrahedra mesher. Not run on a real GPU (checked on a software GPU): expect to fix
 // small things on first run. All constant tables come from tables.mjs through wgslTables().
 //
 // Pipeline (every phase is its own submit so each can be timed):

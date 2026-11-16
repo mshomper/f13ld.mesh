@@ -1,4 +1,4 @@
-// Page glue. WRITTEN BUT NOT EXECUTED by the expedition.
+// Page glue. Not run on a real GPU (checked on a software GPU).
 // gpu-mesher.mjs and viewer.mjs are loaded with dynamic import() inside start(), only after the navigator.gpu check.
 import { meshCpu, meshField } from './cpu-mesher.mjs';
 import { closedCheck, signedVolume, nonManifoldVertexCount } from './meshcheck.mjs';

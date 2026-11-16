@@ -1,6 +1,6 @@
 // WebGPU render view: orthographic camera, wheel = zoom (forward = in), right-drag = orbit,
 // middle-drag or shift+right-drag = pan, left-drag does nothing, two-finger pinch = zoom. Flat shading from derivatives.
-// WRITTEN BUT NOT EXECUTED by the expedition.
+// Not run on a real GPU (checked on a software GPU).
 
 const SHADER = `
 struct U { view: mat4x4<f32>, cam: vec4<f32> }

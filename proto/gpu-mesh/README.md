@@ -1,6 +1,6 @@
 # GPU mesh prototype (expedition spike)
 
-**GPU path written but not executed by the expedition.** The expedition had no GPU. The CPU reference and its selftest were run; the WebGPU page was only read and syntax-checked, so it may need fixes on first run. No GPU speed number exists yet.
+**GPU path not run on a real GPU.** The CPU reference and its selftest were run in Node. The Verifier ran the page on a software GPU (SwiftShader in headless Chrome): every shader compiles, Compare passes at 64 and 128, and Bench, STL and re-meshing work. Real-GPU behaviour and every speed number are still Matt's to run.
 
 ## What it is
 A small standalone page that meshes a TPMS wall (gyroid, Schwarz-P, diamond) with **marching tetrahedra in WebGPU compute shaders**: field evaluation, per-point/per-cell counts, a multi-level exclusive prefix-sum (stream compaction), then emit of **shared vertices** (one per crossed grid edge) and **indexed triangles**. It draws the result (orthographic, wheel zoom, right-drag orbit, middle-drag or shift+right-drag pan, left-drag does nothing, pinch zooms). It does not touch any existing F13LD.mesh file.

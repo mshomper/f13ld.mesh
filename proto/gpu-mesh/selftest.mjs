@@ -1,5 +1,5 @@
 // Run from the worktree root: node proto/gpu-mesh/selftest.mjs [--break]
-import { TETS, TET_SIGN, TRI_COUNT, KINDS, CORNER_OFF } from './tables.mjs';
+import { TETS, TET_SIGN, TRI_COUNT, KINDS, CORNER_OFF, wgslTables } from './tables.mjs';
 import { meshCpu } from './cpu-mesher.mjs';
 import { closedCheck, signedVolume, zeroAreaCount, nonManifoldVertexCount } from './meshcheck.mjs';
 
@@ -16,6 +16,25 @@ for (let t = 0; t < 6; t++) {
 }
 console.log(`tables: 6 tets, volume sum ${vol.toFixed(6)} (want 1), tri counts per case ${Array.from(TRI_COUNT).join('')}, tet handedness ${TET_SIGN.join(',')}`);
 if (Math.abs(vol - 1) > 1e-12) bad('tet volumes do not sum to 1');
+
+// generated WGSL text: every declaration on its own line, every table name declared outside a comment, sizes match
+{
+  const lines = wgslTables().split('\n').filter(l => l.trim() !== '');
+  const want = { CORNER_OFF: 24, EDGE_DIR: 21, TET_CORNER: 24, TRI_COUNT: 16, EDGE_CODE: 576 };
+  const seen = new Set(); let ok = true;
+  for (const l of lines) {
+    if (l.startsWith('//')) { if (/\bconst\b/.test(l)) { ok = false; bad('WGSL tables: declaration inside a comment line: ' + l.slice(0, 60)); } continue; }
+    const m = /^const (\w+): (array<u32, (\d+)>|f32) = (.*);$/.exec(l);
+    if (!m || (l.match(/\bconst\b/g) || []).length !== 1) { ok = false; bad('WGSL tables: line is not exactly one declaration: ' + l.slice(0, 60)); continue; }
+    seen.add(m[1]);
+    if (m[3] !== undefined) {
+      const n = m[4].replace(/^array<u32, \d+>\(/, '').replace(/\)$/, '').split(',').length;
+      if (n !== +m[3] || want[m[1]] !== n) { ok = false; bad(`WGSL tables: ${m[1]} has ${n} entries, declared ${m[3]}, expected ${want[m[1]]}`); }
+    }
+  }
+  for (const k of [...Object.keys(want), 'CROSS_EPS']) if (!seen.has(k)) { ok = false; bad('WGSL tables: ' + k + ' not declared outside a comment'); }
+  console.log(`wgslTables(): ${lines.length} lines, declarations ${[...seen].join(', ')}: ${ok ? 'ok' : 'PROBLEM'}`);
+}
 
 const cases = [
   ['gyroid', KINDS.gyroid, 2, 0.4, 32], ['gyroid', KINDS.gyroid, 2, 0.4, 64],

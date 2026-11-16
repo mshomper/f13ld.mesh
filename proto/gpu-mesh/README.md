@@ -14,11 +14,11 @@ From the repository (or worktree) root: `node proto/gpu-mesh/selftest.mjs`. Exit
 
 ## Run the GPU page on your PC (no install)
 1. Open a terminal in the worktree root (`.claude/worktrees/exp-20261116-which-gpu-mesh-techniques-are-worth-adop-2`).
-2. `node proto/gpu-mesh/serve.mjs` (Node is already installed; if you prefer Python: `python -m http.server 8090` and open `/proto/gpu-mesh/`).
+2. `node proto/gpu-mesh/serve.mjs` (Node is already installed). Use this server rather than `python -m http.server`: some Python installs on Windows serve `.mjs` files with a wrong type and Chrome then refuses to load the modules.
 3. Open `http://localhost:8090/` in Chrome or Edge (modules do not load from `file://`).
 4. It meshes a 64 gyroid once on load. Look at the log panel (right side): shader compile messages and GPU errors appear there as text.
-5. Press **Compare with CPU** (two-rectangles icon). Expect PASS lines for triangle count, vertex count, vertex positions (tolerance 1e-3 of a cell), identical index lists and closed mesh. The GPU field is float32 while the CPU reference computes in float64, so small position differences are expected and a rare count difference near zero-field points is possible.
-6. Press **Bench** (stopwatch icon): runs N=64 and 128 (1 warm-up + 5 repeats, median), and 256 only if buffer limits allow, otherwise it prints `skipped: buffer limits`.
+5. Press **Compare with CPU** (two-rectangles icon). The PASS/FAIL lines run the CPU mesher on the GPU's own float32 field (read back from the GPU), so they test the meshing kernels: expect PASS for triangle count, vertex count, identical index lists, vertex positions within 1e-3 of a cell (only float32 rounding is left) and a closed GPU mesh. A separate info line (not PASS/FAIL) compares against the CPU's float64 field: the GPU field is float32, so a small position difference (max and 99th percentile in cells) is expected there.
+6. Press **Bench** (stopwatch icon): runs N=64, 128 and 256 (1 warm-up + 5 repeats, median). The design keeps per-point masks of about 68 MB at 256, so 256 normally runs; it prints `skipped: buffer limits` only if the adapter's limits are too small. Bench uses its own buffers and leaves the view alone.
 7. Press the **copy** icon (or select the log) and paste the whole log back, especially the block between `=== F13LD.mesh GPU mesh bench` and `=== end ===`.
 8. Optional: the download icon saves a binary STL (box scaled to 20 mm) for inspection.
 

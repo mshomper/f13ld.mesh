@@ -12,7 +12,7 @@ import { wgslTables, KINDS } from './tables.mjs';
 
 const MAXX = 16384; // workgroups per dispatch x; the rest goes to y, so N=256 stays under 65535 per dimension
 function dims(wgCount) { const w = Math.max(1, wgCount), x = Math.min(w, MAXX), y = Math.ceil(w / x); return { x, y }; }
-const U = GPUBufferUsage;
+const U = globalThis.GPUBufferUsage || {}; // module must load even where WebGPU is missing (main.mjs shows the plain message)
 
 const PRELUDE = () => `
 struct P { n: u32, kind: u32, nx: u32, count: u32, cells: f32, thick: f32, pad0: u32, pad1: u32 }
@@ -245,16 +245,20 @@ export class GpuMesher {
   }
 
   static async create(log) {
-    if (!navigator.gpu) throw new Error('navigator.gpu is missing');
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter) throw new Error('no WebGPU adapter');
-    const info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
+    const noGpu = (msg) => Object.assign(new Error(msg), { noGpu: true }); // main.mjs shows the plain message for these
+    if (!navigator.gpu) throw noGpu('navigator.gpu is missing');
+    let adapter, device, info;
+    try { adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }); } catch (e) { throw noGpu('requestAdapter failed: ' + e.message); }
+    if (!adapter) throw noGpu('no WebGPU adapter was found');
+    info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
     const L = adapter.limits;
     const requiredFeatures = adapter.features.has('timestamp-query') ? ['timestamp-query'] : [];
-    const device = await adapter.requestDevice({
-      requiredFeatures,
-      requiredLimits: { maxStorageBufferBindingSize: L.maxStorageBufferBindingSize, maxBufferSize: L.maxBufferSize },
-    });
+    try {
+      device = await adapter.requestDevice({
+        requiredFeatures,
+        requiredLimits: { maxStorageBufferBindingSize: L.maxStorageBufferBindingSize, maxBufferSize: L.maxBufferSize },
+      });
+    } catch (e) { throw noGpu('requestDevice failed: ' + e.message); }
     device.lost.then(l => log('DEVICE LOST: ' + l.reason + ' ' + l.message, 'err'));
     device.addEventListener('uncapturederror', e => log('UNCAPTURED GPU ERROR: ' + e.error.message, 'err'));
     const g = new GpuMesher(device, adapter, info, log);
@@ -263,12 +267,15 @@ export class GpuMesher {
   }
 
   async module(label, code) {
+    this.device.pushErrorScope('validation');
     const mod = this.device.createShaderModule({ label, code });
     const ci = await mod.getCompilationInfo();
+    await this.device.popErrorScope(); // same problems are listed below through getCompilationInfo
     let errs = 0;
+    const lines = code.split('\n');
     for (const m of ci.messages) {
       if (m.type === 'error') errs++;
-      this.log(`shader ${label} ${m.type} line ${m.lineNum}:${m.linePos}: ${m.message}`, m.type === 'error' ? 'err' : 'warn');
+      this.log(`shader ${label} ${m.type} line ${m.lineNum}:${m.linePos}: ${m.message}\n    > ${(lines[m.lineNum - 1] || '').trim().slice(0, 160)}`, m.type === 'error' ? 'err' : 'warn');
     }
     if (errs) throw new Error(`shader ${label} failed to compile (${errs} errors, listed above)`);
     this.log(`shader ${label}: compiled, ${ci.messages.length} messages`);
@@ -351,7 +358,9 @@ export class GpuMesher {
   }
 
   // Run the whole pipeline. Returns { N, nV, nT, verts, idx, times }.
-  async mesh(N, kind, cells, thick) {
+  // The caller owns the returned verts/idx buffers and must call release(result) when nothing draws or reads them
+  // any more. mesh() never destroys a previous result. transient=true (bench) frees its own outputs before returning.
+  async mesh(N, kind, cells, thick, transient = false) {
     const d = this.device, L = this.limits, maxB = Math.min(L.maxStorageBufferBindingSize, L.maxBufferSize);
     if ((N + 1) ** 3 * 4 > maxB) throw new Error(`skipped: buffer limits (field needs ${(N + 1) ** 3 * 4} bytes, limit ${maxB})`);
     d.pushErrorScope('validation'); d.pushErrorScope('out-of-memory');
@@ -387,9 +396,7 @@ export class GpuMesher {
       const nV = tot[0], nT = tot[1];
       if (nV === 0 || nT === 0) throw new Error(`empty mesh (verts ${nV}, tris ${nT}): check thickness / cells`);
       if (nV * 12 > maxB || nT * 12 > maxB) throw new Error(`skipped: buffer limits (output ${nV * 12} / ${nT * 12} bytes, limit ${maxB})`);
-      if (this.out) { this.out.verts.destroy(); this.out.idx.destroy(); }
       const verts = this.buf(nV * 12, U.VERTEX | U.STORAGE | U.COPY_SRC, 'verts'), idx = this.buf(nT * 12, U.INDEX | U.STORAGE | U.COPY_SRC, 'idx');
-      this.out = { verts, idx };
       const bg = (pl, entries) => d.createBindGroup({ layout: pl.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
       const bgV = bg(this.pl.emitVerts, [r.uPoints, r.field, r.masks, r.vcount, verts]);
       const bgT = bg(this.pl.emitTris, [r.uCells, r.field, r.masks, r.vcount, r.tcount, idx]);
@@ -407,6 +414,7 @@ export class GpuMesher {
         times.gpu = { field: ms(0), count: ms(1), scan: ms(2), emit: ms(3) };
       }
       result = { N, nV, nT, verts, idx, times, kind, cells, thick };
+      if (transient) { verts.destroy(); idx.destroy(); result.verts = result.idx = null; } // bench: all work is already awaited
     } finally {
       const oom = await d.popErrorScope(), val = await d.popErrorScope();
       if (oom) this.log('GPU out-of-memory: ' + oom.message, 'err');
@@ -415,6 +423,11 @@ export class GpuMesher {
     }
     return result;
   }
+
+  release(res) { if (res && res.verts) { res.verts.destroy(); res.idx.destroy(); res.verts = res.idx = null; } }
+
+  // The float32 field the GPU just evaluated (valid for the N of the last mesh() call).
+  async readField(N) { return new Float32Array(await this.readBuffer(this.ensure(N).field, (N + 1) ** 3 * 4)); }
 
   async readBuffer(buffer, bytes) {
     const d = this.device, st = this.buf(bytes, U.MAP_READ | U.COPY_DST, 'staging');
@@ -435,11 +448,11 @@ export class GpuMesher {
     for (const N of sizes) {
       if ((N + 1) ** 3 * 4 > maxB) { this.log(`bench N=${N}: skipped: buffer limits`, 'warn'); rows.push({ N, skipped: 'buffer limits' }); continue; }
       try {
-        await this.mesh(N, kind, cells, thick); // warm-up
+        await this.mesh(N, kind, cells, thick, true); // warm-up
         const acc = { field: [], count: [], scan: [], readback: [], emit: [], total: [] }, gacc = { field: [], count: [], scan: [], emit: [] };
         let last;
         for (let i = 0; i < repeats; i++) {
-          last = await this.mesh(N, kind, cells, thick);
+          last = await this.mesh(N, kind, cells, thick, true);
           for (const k in acc) acc[k].push(last.times[k]);
           if (last.times.gpu) for (const k in gacc) gacc[k].push(last.times.gpu[k]);
         }

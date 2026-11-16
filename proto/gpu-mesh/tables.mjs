@@ -99,12 +99,12 @@ export function fieldAt(kind, cells, thick, ux, uy, uz) {
 
 // ---- WGSL generation -----------------------------------------------------------------------------------------
 function arr(name, type, vals, suffix) {
-  return `var<private> ${name}: array<${type}, ${vals.length}> = array<${type}, ${vals.length}>(${Array.from(vals).map(v => v + suffix).join(', ')});\n`;
+  return `const ${name}: array<${type}, ${vals.length}> = array<${type}, ${vals.length}>(${Array.from(vals).map(v => v + suffix).join(', ')});\n`;
 }
 export function wgslTables() {
   const flat = a => a.flat();
   return [
-    '// generated from tables.mjs by wgslTables(); do not edit',
+    '// generated from tables.mjs by wgslTables(); do not edit\n',
     arr('CORNER_OFF', 'u32', flat(CORNER_OFF), 'u'),
     arr('EDGE_DIR', 'u32', flat(EDGE_DIRS), 'u'),
     arr('TET_CORNER', 'u32', flat(TETS), 'u'),

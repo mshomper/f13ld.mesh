@@ -5,7 +5,9 @@
   "date": "2026-11-16",
   "mode": "quick",
   "lenses": ["solver", "architecture"],
-  "status": "open",
+  "status": "parked",
+  "revisit": { "trigger": "when export time becomes a priority again, or a bench shows meshing is a bigger share of export time than the 3.8 s of 10.7 s foam-weld case" },
+  "reason": "Not sure the effort is worth 3.8 s; the expedition itself was well vetted.",
   "lead": "Pick how GPU meshing reaches every recipe. I recommend A: the CPU keeps building the field exactly as today for every family, and the GPU only cuts the surface out of it, so every recipe gets GPU meshing at once and files stay the same on any PC. Confidence: lean.",
   "for_you": [
     "A new Mesher choice, GPU, that Auto picks when your browser has WebGPU; slab and classic stay as fallbacks",
@@ -74,7 +76,6 @@
   "recommendation": "A gives GPU meshing to every recipe at once without touching any field code, and the raw mesh can be proved equal to today's slab mesher, so exports stay exact. C is A plus a later door; it needs no separate pick now.",
   "confidence": "lean",
   "chosen": null,
-  "reason": null,
   "decided_on": null,
   "superseded_by": null,
   "challenge": null,

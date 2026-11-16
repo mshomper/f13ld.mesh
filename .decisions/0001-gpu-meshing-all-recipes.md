@@ -1,8 +1,9 @@
 # 0001 How should F13LD.mesh mesh on the GPU for every recipe?
 
-- Status: open
+- Status: parked
 - Date: 2026-11-16
 - Lenses: solver, architecture
+- Revisit: when export time becomes a priority again, or a bench shows meshing is a bigger share of export time than the 3.8 s of 10.7 s foam-weld case
 
 ## In short
 

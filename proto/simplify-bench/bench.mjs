@@ -87,9 +87,10 @@ async function tuneMethod(name, file, todayRow, opts) {
 export async function main() {
   quick = has('quick'); check = has('check'); tune = has('tune');
   const quals = (arg('quals', quick ? 'draft' : 'draft,med')).split(','), only = arg('only', '') ? arg('only').split(',') : CASES, methods = arg('methods', 'today,A,B1a,B1b').split(',');
-  const opts = quick ? { siSample: 6000, devSamples: 1500, reps: 2 } : { siSample: 0, devSamples: 5000, reps: 3 };
+  const sampled = quick || has('sample');   // --sample: the quick sampling on any quality (Med meshes have 600k+ triangles)
+  const opts = sampled ? { siSample: 6000, devSamples: 1500, reps: 2 } : { siSample: 0, devSamples: 5000, reps: 3 };
   const t0 = performance.now(), fails = [], report = { quick, opts, cases: [] };
-  console.log(`simplify bench (${quick ? 'quick: self-intersections on a seeded sample of 6000 triangles per mesh, deviation from 1500 points per side' : 'full: all triangles, 5000 deviation points per side'}); one thread; Node-built jobs`);
+  console.log(`simplify bench (${sampled ? 'quick: self-intersections on a seeded sample of 6000 triangles per mesh, deviation from 1500 points per side' : 'full: all triangles, 5000 deviation points per side'}); one thread; Node-built jobs`);
 
   if (check) {
     const st = selfTest();

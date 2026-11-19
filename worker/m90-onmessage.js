@@ -54,10 +54,11 @@ self.onmessage=async function(e){
     // and 'classic' force one.
     const meshMode=(d.mesher==='slab'||d.mesher==='classic')?d.mesher:'auto';
     const useSlab=meshMode==='slab', autoMode=meshMode==='auto';
-    // v0.16.5: d.fastChecks === true → the slab mesher's simplify uses the fast
-    // closed-mesh checks (m35 safeSimplifyFast; same result). Set on every
-    // export, so a standard export after a fast one runs today's checks.
-    setSlabFastChecks(d.fastChecks===true);
+    // v0.16.5: the slab mesher's simplify uses the fast closed-mesh checks (m35
+    // safeSimplifyFast; same result). v0.16.6: on unless the job says
+    // fastChecks:false (Export tab Simplify: Standard). Set on every export, so
+    // a standard export after a fast one runs the standard checks.
+    setSlabFastChecks(d.fastChecks!==false);
     let slabOut=null, slabFallback=null, autoReason=null, autoCtx=null;
     const isOOM=err=>/ran out of working memory/.test((err&&err.message)||'');
     const post=m=>self.postMessage(m);

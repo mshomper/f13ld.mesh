@@ -59,10 +59,10 @@ function simplifiedSlabs(F,g,nS,tol,flip){
   return {pos:C.pos, idx:C.idx, slowest, joinMs:performance.now()-t0, flips, bandFlips, flipMs, rejected};
 }
 (async()=>{
-  const {MeshoptSimplifier:S}=await import(path.join(__dirname,'node_modules/meshoptimizer/index.js')); await S.ready;
+  const {MeshoptSimplifier:S}=await import(require('url').pathToFileURL(path.join(__dirname,'node_modules/meshoptimizer/index.js')).href); await S.ready;
   ctx.MeshoptSimplifier=S;
 
-  const Module=(await import(path.join(__dirname,'node_modules/manifold-3d/manifold.js'))).default;
+  const Module=(await import(require('url').pathToFileURL(path.join(__dirname,'node_modules/manifold-3d/manifold.js')).href)).default;
   const w=await Module(); w.setup();
   const {Manifold, Mesh}=w;
   const sc=Math.PI/2;

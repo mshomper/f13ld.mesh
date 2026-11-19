@@ -87,9 +87,9 @@ async function _slabFinish(g, results, tol, post, t0, runBands, nWorkers, noFlip
   // v0.16.2: weld regions skip this flip — the weld flips once after its union
   if(tol>0 && !noFlip){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);
-  let raw=0, retries=0, locked=0, gaveUp=0, evals=0, slowest=0;
-  for(const r of results){ raw+=r.rawTris||0; retries+=r.retries||0; locked+=r.locked||0; if(r.gaveUp) gaveUp++; evals+=r.evals||0; slowest=Math.max(slowest, r._ms||0); }
-  return {pos:C.pos, idx:C.idx, slabs:results.length, raw, retries, locked, gaveUp, evals, seam,
+  let raw=0, retries=0, locked=0, gaveUp=0, evals=0, slowest=0, fieldCpu=0, jobCpu=0, simpCpu=0;
+  for(const r of results){ raw+=r.rawTris||0; retries+=r.retries||0; locked+=r.locked||0; if(r.gaveUp) gaveUp++; evals+=r.evals||0; slowest=Math.max(slowest, r._ms||0); fieldCpu+=r.fieldMs||0; jobCpu+=r._ms||0; simpCpu+=r.simpMs||0; }
+  return {pos:C.pos, idx:C.idx, slabs:results.length, raw, retries, locked, gaveUp, evals, seam, fieldCpu:Math.round(fieldCpu), jobCpu:Math.round(jobCpu), simpCpu:Math.round(simpCpu),
     finalFlips:finalFlip?finalFlip.flips:0, finalFlipMs:finalFlip?Math.round(finalFlip.ms):0, finalSimp,
     ms:{mesh:Math.round(tJ-t0), seam:msSeam, slowest:Math.round(slowest)}};
 }
@@ -100,6 +100,14 @@ function slabStageTimes(out){
   const t={mesh:0, roundA:0, roundB:0, rows:0, flip:0};
   if(!out) return t;
   t.mesh=(out.ms&&out.ms.mesh)||0; t.flip=out.finalFlipMs||0;
+  // v0.16.3: `mesh` (= the "slabs" stage) split into field bake and marching.
+  // Jobs interleave the two, so the wall split is the slabs stage scaled by the
+  // field share of the summed per-job CPU time; fieldCpu / jobCpu are those sums.
+  const fc=out.fieldCpu||0, jc=out.jobCpu||0;
+  // simp = the per-slab simplify inside each job; march = marching tets, the rest
+  const sc=out.simpCpu||0;
+  t.field=jc>0?Math.round(t.mesh*Math.min(1,fc/jc)):0; t.simp=jc>0?Math.round(t.mesh*Math.min(1,sc/jc)):0; t.march=Math.max(0,t.mesh-t.field-t.simp);
+  t.fieldCpu=fc; t.simpCpu=sc; t.jobCpu=jc; t.workers=out.workers||1;
   const f=out.finalSimp;
   if(f){ for(const r of (f.rounds||[])){ if(r.round==='A') t.roundA+=r.ms||0; else t.roundB+=r.ms||0; } if(f.rows) t.rows+=f.rows.ms||0; }
   return t;
@@ -126,7 +134,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     if(post) post({type:'progress', stage:'slab mesher on 1 core ('+(total/1e6).toFixed(1)+'M points)...'});
     const ts=performance.now();
     let r=slabMeshLayers(field, g, 0, g.layers-2);
-    if(tol>0){ if(post) post({type:'progress', stage:'simplifying '+(r.idx.length/3/1e6).toFixed(2)+'M tris...'}); r=simplifySlab(r, tol); }
+    if(tol>0){ if(post) post({type:'progress', stage:'simplifying '+(r.idx.length/3/1e6).toFixed(2)+'M tris...'}); const tS=performance.now(); r=simplifySlab(r, tol); r.simpMs=performance.now()-tS; }
     else r.rawTris=r.idx.length/3;
     r._La=0; r._ms=performance.now()-ts;
     const out=await _slabFinish(g, [r], tol, post, t0, null, 1, !!opts.noFlip);
@@ -186,7 +194,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
           kick();
           const j=jobs[m.id];
           results[m.id]={pos:new Float32Array(m.pos), idx:new Uint32Array(m.idx), seamV:new Uint32Array(m.seamV), seamK:new Float64Array(m.seamK), tearV:m.tearV?new Uint32Array(m.tearV):null,
-            rawTris:m.rawTris, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, evals:m.evals, _La:j.La, _ms:m.ms};
+            rawTris:m.rawTris, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, evals:m.evals, fieldMs:m.fieldMs||0, simpMs:m.simpMs||0, _La:j.La, _ms:m.ms};
           done++;
           const now=performance.now();
           if(post && now-lastPost>250){ lastPost=now; post({type:'progress', stage:'meshing on '+nW+' cores — '+Math.round(100*done/jobs.length)+'%...'}); }

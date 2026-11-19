@@ -77,7 +77,7 @@ function simplifySlab(r, tol, flip){
   var c=compactIndexed(r.pos, fr.idx);
   var sv=[], sk=[];
   for(i=0;i<r.seamV.length;i++){ var m=c.remap[r.seamV[i]]; if(m>=0){ sv.push(m); sk.push(r.seamK[i]); } }
-  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), tearV:tearVerts(ss.tearLock, c.remap), rawTris:r.idx.length/3, evals:r.evals, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected};
+  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), tearV:tearVerts(ss.tearLock, c.remap), rawTris:r.idx.length/3, evals:r.evals, fieldMs:r.fieldMs, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected};
 }
 // flipEdges opts for the slab / band passes: 'edge' locking lets seam
 // vertices take part (their edges to each other and their positions stay),

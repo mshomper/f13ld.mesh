@@ -346,7 +346,10 @@ function runMesh(workerUrl, job, cores, onStage, extra){
       const m=e.data;
       if(m.type==='progress') onStage(m.stage);
       else if(m.type==='diag'&&m.diag&&m.diag.fieldBake) field=m.diag.fieldBake;
-      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
+      else if(m.type==='done'){ const ms=performance.now()-t0; end();
+        // v0.16.3: bench wall time minus the worker's own clock (started when it got the job) = loading the worker's scripts and WASM; not part of the export itself
+        if(m.stages && m.ms>0) m.stages.startup=Math.max(0,Math.round(ms-m.ms));
+        res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
       else if(m.type==='error'){ end(); rej(new Error(m.message)); }
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
@@ -528,9 +531,10 @@ function setCard(el, r){
   if(r.tris!=null) kv.push(['triangles', r.tris.toLocaleString()]);
   if(r.ref) kv.push(['reference', fmtS(r.ref.ms)]);
   if(r.one) kv.push(['this build, 1 core', fmtS(r.one.ms)]);
-  if(r.test) kv.push(['this build, '+(r.test.cores)+' cores', fmtS(r.test.ms)]);
+  if(r.test) kv.push(['this build, '+(r.test.cores)+' workers used', fmtS(r.test.ms)]);
   if(r.ref&&r.test) kv.push(['speed-up', (r.ref.ms/r.test.ms).toFixed(2)+'×']);
-  if(r.test) kv.push(['field / level set', fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0)]);
+  if(r.test) kv.push(['field / level set', fieldLsTxt(r.test)]);
+  if(r.test&&r.test.stages&&r.test.stages.jobCpu>0){ const st=r.test.stages; kv.push(['slab field bake', fmtS(st.field)+' of '+fmtS(st.mesh)+' slabs stage (CPU '+fmtS(st.fieldCpu)+' of '+fmtS(st.jobCpu)+', '+st.workers+' workers)'+', simplify in slabs '+fmtS(st.simp||0)+(st.shapeCoarse>0?', + shape coarse pass '+fmtS(st.shapeCoarse):'')+(st.weldField>0?', + weld main-thread bake '+fmtS(st.weldField):'')]); }
   if(r.test&&r.test.field) kv.push(['points from cache', r.test.field.cached.toLocaleString()+(r.test.field.direct?' (+'+r.test.field.direct+' direct)':'')]);
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);
@@ -553,7 +557,7 @@ function setCard(el, r){
   el.querySelector('.kv').innerHTML=kv.map(([k,v])=>'<span>'+esc(k)+'</span><span>'+esc(v)+'</span>').join('');
   const bar=el.querySelector('.bar');
   if(r.test&&r.test.bd&&r.test.bd.total){
-    const b=r.test.bd, tot=Math.max(1,r.test.ms), f=(b.field||0)/tot, l=(b.levelSet||0)/tot, s=(b.simplify||0)/tot;
+    const b=r.test.bd, tot=Math.max(1,r.test.ms), f=fieldMsOf(r.test)/tot, l=(b.levelSet||0)/tot, s=(b.simplify||0)/tot;
     bar.innerHTML='<i style="width:'+(f*100)+'%;background:#E0A84A" title="field"></i><i style="width:'+(l*100)+'%;background:#E46BB0" title="level set"></i><i style="width:'+(s*100)+'%;background:#7c6ff7" title="simplify"></i>';
   } else bar.innerHTML='';
   el.querySelector('.stage').textContent=r.stage||'';
@@ -643,7 +647,13 @@ async function run(){
 // v0.16.1: where the slab mesher's time went — mesh (slabs, with their
 // simplify), final pass rounds A and B, rows pass, flips, union (welds),
 // loose-piece clean-up
-const STAGE_KEYS=[['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
+// v0.16.3: slab runs report their field bake in stages (classic: msBreakdown.field).
+// Field = per-job field wall share of the slabs stage (+ the weld's main-thread bake);
+// the second number is the level set (classic) or the marching part of the slabs (slab).
+// Shape-clipped runs also evaluate the field in the coarse pass before the slabs (stages.shapeCoarse), counted here.
+function fieldMsOf(t){ const st=t.stages; return st&&st.jobCpu>0 ? (st.field||0)+(st.weldField||0)+(st.shapeCoarse||0) : ((t.bd&&t.bd.field)||0)+((st&&st.weldField)||0); }
+function fieldLsTxt(t){ const st=t.stages; return fmtS(fieldMsOf(t))+' / '+(st&&st.jobCpu>0 ? fmtS(st.march||0)+' march' : fmtS((t.bd&&t.bd.levelSet)||0)); }
+const STAGE_KEYS=[['startup','worker start-up (before the job)'],['field','field (in slabs)'],['march','march (in slabs)'],['simp','simplify (in slabs)'],['shapeCoarse','shape coarse pass'],['weldField','weld field'],['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
 function stagesTxt(st){
   if(!st) return '\u2014';
   return STAGE_KEYS.filter(([k])=>st[k]>0).map(([k,l])=>l+' '+fmtS(st[k])).join(' \u00b7 ')||'\u2014';
@@ -682,8 +692,8 @@ $('dlBtn').onclick=()=>{
   for(const r of R.rows){
     const g=r.geo;
     const res=r.error?('error: '+r.error):(r.state==='ok'?(r.same?'PASS (identical)':'PASS'):'FAIL'+(r.reason?': '+r.reason:''));
-    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString()+(g?' / '+r.trisTest.toLocaleString():''):'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' cores)':'—')+
-      ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fmtS(r.test.bd.field||0)+' / '+fmtS(r.test.bd.levelSet||0):'—')+
+    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString()+(g?' / '+r.trisTest.toLocaleString():''):'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' workers)':'—')+
+      ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fieldLsTxt(r.test):'—')+
       ' | '+cell(mesherTxt(r.test))+' | '+cell(r.test?looseTxt(r.test.loose):'—')+
       ' | '+(g?pctTxt(g.volDiff):'—')+' | '+(g?pctTxt(g.areaDiff):'—')+' | '+(g?pctTxt(g.triDiff):'—')+' | '+(g?g.openRef+' / '+g.openTest:'—')+' | '+(g?mmTxt(g.maxDistMm):'—')+
       ' | '+qualTxt(r.ref&&r.ref.q)+' | '+qualTxt(r.test&&r.test.q)+' | '+angTxt(r.ref&&r.ref.q)+' / '+angTxt(r.test&&r.test.q)+

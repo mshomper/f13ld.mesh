@@ -69,10 +69,11 @@ function slabMeshLayers(fn, g, La, Lb, opts){
   var s0=g.s[0], s1=g.s[1], s2=g.s[2];
   var halo=snap>0?SLAB_HALO:0;
   var vals=[], snapL=[];
-  var evals=0;
+  var evals=0, fieldMs=0;   // v0.16.3: fieldMs = time spent building value layers (one clock read per layer)
   // ── field values, per layer, boundary-clamped (computed on first use) ──
   function ensureVals(q){
     if(vals[q]||q<0||q>=Lq) return;
+    var tF0=performance.now();
     var x,y,z,i,j,k,o=0,v;
     if(q&1){ k=(q-1)>>1; z=mn2+s2*k;
       var a=new Float64Array(nx1*ny1);
@@ -94,6 +95,7 @@ function slabMeshLayers(fn, g, La, Lb, opts){
       vals[q]=b;
     }
     evals+=vals[q].length;
+    fieldMs+=performance.now()-tF0;
   }
   function val(t,i,j,k){ return t? vals[2*k+1][i+nx1*j] : vals[2*k][i+nx2*j]; }
   // ── snap decision: an outside point snaps if any crossing on its 14
@@ -307,7 +309,7 @@ function slabMeshLayers(fn, g, La, Lb, opts){
     np=npMark; seamV.length=svMark; seamK.length=svMark;
   }
   return {pos:pos.slice(0,np), idx:idx.slice(0,ni),
-    seamV:Uint32Array.from(seamV), seamK:Float64Array.from(seamK), evals:evals,
+    seamV:Uint32Array.from(seamV), seamK:Float64Array.from(seamK), evals:evals, fieldMs:fieldMs,
     nbrA:Float64Array.from(nbrA), nbrB:Float64Array.from(nbrB)};
 }
 

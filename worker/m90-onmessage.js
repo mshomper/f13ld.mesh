@@ -43,6 +43,7 @@ self.onmessage=async function(e){
     let setupMs=performance.now()-tSetup0;   // v0.11.0: field pool sizing (m33)
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
+    let msShapeCoarse=0; // v0.16.3: shape setup + coarse pass on this thread, before the slabs (report only)
     let fieldBake=null; // v0.11.0: {workers, ms, f32, stats} when the single-body field was pre-baked
     let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
     // v0.15.0 slab mesher (m34–m36): open-cube and shape-clipped parts mesh in
@@ -173,7 +174,7 @@ self.onmessage=async function(e){
               agg.slabs+=sm.slabs; agg.workers=Math.max(agg.workers, sm.workers||1); agg.raw+=sm.raw||0; agg.retries+=sm.retries||0;
               agg.locked+=sm.locked||0; agg.gaveUp+=sm.gaveUp||0; agg.evals+=sm.evals||0; agg.seam=sm.seam||agg.seam;
               agg.ms.mesh+=sm.ms.mesh; agg.ms.seam+=sm.ms.seam;
-              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]+=st[k]; }
+              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]=k==='workers'?Math.max(agg.stages[k]||0, st[k]):(agg.stages[k]||0)+st[k]; }
               if(!sm.idx.length) continue;
               // v0.16.2: one region and no exact solids — nothing to union, so
               // the slab mesh is the result (checked closed below)
@@ -331,6 +332,7 @@ self.onmessage=async function(e){
           mnz:Math.max(bbox.mnz,emnz-ePad),mxz:Math.min(bbox.mxz,emxz+ePad)
         };
       }
+      msShapeCoarse=Math.round(performance.now()-tShape0);
       const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
       shapeField.setEdge(relEdgeMm); // v0.5.0-rc19: short-circuit threshold tracks pass edge
@@ -504,7 +506,8 @@ self.onmessage=async function(e){
       mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
       // v0.16.1: where the slab mesher's time went (ms)
-      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}):null},[vertProperties.buffer,triVerts.buffer]);
+      // v0.16.3: + field / march split of the slabs stage (fieldCpu, jobCpu, workers) and, for welds, the main thread's field bake (weldField)
+      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}, (d.weld&&d.weld.bakeMs>0)?{weldField:d.weld.bakeMs}:null, msShapeCoarse>0?{shapeCoarse:msShapeCoarse}:null):null},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

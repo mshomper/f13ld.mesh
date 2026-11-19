@@ -178,6 +178,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
         if(m.type==='error'){ if(onBand){ failBands(new Error('seam band worker: '+m.message)); return; } finish(new Error('slab worker: '+m.message)); return; }
         if(settled) return;
         if(m.type==='ready'){
+          w._ready=true;
           if(!m.n || m.n.join(',')!==g.n.join(',')){ finish(new Error('grid mismatch '+m.n+' vs '+g.n)); return; }
           dispatch(); return;
         }
@@ -193,7 +194,10 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
           dispatch();
         }
       };
-      w.onerror=ev=>{ if(ev&&ev.preventDefault) ev.preventDefault(); const err=new Error('slab worker failed'+(ev&&ev.message?': '+ev.message:'')); if(onBand) failBands(err); else finish(err); };
+      // An error with no message before the worker ever answered means its
+      // script never loaded (offline, blocked, wrong address): say so, so the
+      // report's reason for skipping the slab mesher is readable.
+      w.onerror=ev=>{ if(ev&&ev.preventDefault) ev.preventDefault(); const err=new Error(ev&&ev.message ? 'slab worker failed: '+ev.message : (w._ready ? 'slab worker failed' : 'slab worker could not load (field-bake-worker.js)')); if(onBand) failBands(err); else finish(err); };
       w.postMessage(initMsg);
     }
   });

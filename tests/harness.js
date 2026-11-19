@@ -1,7 +1,8 @@
 // Side-by-side harness: original single-file F13LD.mesh vs split v0.8.0.
 // Usage: node harness.js <origDir> <newDir> [filter]
-// Both sites are served from disk under fake origins; CDN URLs are fulfilled
-// from locally installed npm packages at the exact pinned versions.
+// Each site is served from disk by its own local server (tests/serve.js); CDN
+// URLs are answered from locally installed npm packages at the exact pinned
+// versions. MESHER=slab|classic also checks that mesher is the one that ran.
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const { unzipSync, strFromU8 } = require('fflate');
@@ -97,23 +98,20 @@ async function uiSetXform(page, key, v) {
 }
 // UI-ADAPTERS-END
 
+const { serveBuild } = require('./serve.js');
+// The mesher an export report names: 'slab', 'classic', 'auto · slab', … ('' when
+// the build's report has no mesher chip, i.e. before v0.15.0).
+function reportMesher(report) {
+  const m = /\bmesher (auto · )?(slab|classic)( \(slab skipped\))?/.exec(report || '');
+  return m ? { used: m[2], skipped: !!m[3], text: m[0] } : null;
+}
 async function run(site, root, recipe, opts) {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ acceptDownloads: true });
   const misses = [];
-  await ctx.route('**/*', async route => {
-    const url = route.request().url(); const u = new URL(url);
-    if (u.host === site) {
-      let p = decodeURIComponent(u.pathname); if (p === '/') p = '/index.html';
-      const f = path.join(root, p);
-      if (fs.existsSync(f)) return route.fulfill({ body: fs.readFileSync(f), contentType: mime(f) });
-      misses.push(url); return route.fulfill({ status: 404, body: '' });
-    }
-    if (u.host === 'fonts.googleapis.com' || u.host === 'fonts.gstatic.com') return route.fulfill({ body: '', contentType: 'text/css' });
-    const hit = cdn(url);
-    if (hit) return route.fulfill({ body: hit.body, contentType: hit.type, headers: { 'access-control-allow-origin': '*' } });
-    misses.push(url); return route.abort();
-  });
+  // A real local server per run (tests/serve.js): workers started from the mesh
+  // worker (field pool, slab mesher) can't load from a made-up routed host.
+  const srv = await serveBuild(ctx, root, cdn, mime, misses);
   if (opts.cores) await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), opts.cores);
   // v0.15.0: MESHER=slab|classic, LOOSE=<fraction> pick the Export settings (older builds ignore them)
   if (opts.mesher || opts.loose != null) await ctx.addInitScript(([m, l]) => { try { if (m) localStorage.setItem('f13ld.mesh.mesher', m); if (l != null) localStorage.setItem('f13ld.mesh.loose', l === '0' || l === 0 ? 'keep' : String(l)); } catch (e) {} }, [opts.mesher || null, opts.loose != null ? opts.loose : null]);
@@ -125,7 +123,7 @@ async function run(site, root, recipe, opts) {
   page.on('console', m => { const t = m.text(); if (m.type() === 'error') errors.push('console: ' + t); else logs.push(t); });
   page.on('worker', w => w.on('console', m => { if (m.type() === 'error') errors.push('worker: ' + m.text()); else logs.push('worker: ' + m.text()); }));
   const q = recipe ? '?r=' + encodeURIComponent(JSON.stringify(recipe)) : '';
-  await page.goto(`http://${site}/index.html${q}`);
+  await page.goto(`${srv.origin}/index.html${q}`);
   await page.waitForTimeout(1500);
   const result = { errors, misses, logs };
   if (opts.shape) {
@@ -172,6 +170,7 @@ async function run(site, root, recipe, opts) {
     }
   }
   await browser.close();
+  await srv.close();
   return result;
 }
 
@@ -202,8 +201,17 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
     if (FILTER && !name.includes(FILTER)) continue;
     const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export,
       mesher: process.env.MESHER, loose: process.env.LOOSE != null ? process.env.LOOSE : undefined };
-    const a = await run('orig.test', ORIG, spec.recipe, opts);
+    // REFMESHER=<mesher>: the old build's mesher when it should differ from MESHER
+    // (e.g. REFMESHER=classic MESHER=slab compares slab against classic)
+    const a = await run('orig.test', ORIG, spec.recipe, process.env.REFMESHER ? Object.assign({}, opts, { mesher: process.env.REFMESHER }) : opts);
     const b = await run('new.test', NEW, spec.recipe, opts);
+    // The mesher asked for must be the one that ran: a slab run that fell back
+    // to classic ("slab skipped") is not a slab result, whatever its shape.
+    let wrongMesher = '';
+    if (opts.mesher === 'slab' || opts.mesher === 'classic') {
+      const rm = reportMesher(b.report);
+      if (rm && (rm.used !== opts.mesher || rm.skipped)) wrongMesher = `asked for the ${opts.mesher} mesher, the report says "${rm.text}"`;
+    }
     if (process.env.DUMP) { for (const [lbl, r] of [['orig', a], ['new', b]]) if (r.model) fs.writeFileSync(path.join(process.env.DUMP, name + '.' + lbl + '.model'), r.model); }
     const same = a.model !== undefined && a.model === b.model;
     let ok = same && !b.errors.length && !b.misses.length && a.errors.length === b.errors.length;
@@ -211,11 +219,16 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
     if (GEOM && a.model !== undefined && b.model !== undefined) {
       // slab vs classic: same shape within GEOM_TOL % volume, new one closed
       const ga = geom(a.model), gb = geom(b.model), dv = 100 * (gb.vol / ga.vol - 1), da = 100 * (gb.area / ga.area - 1);
-      ok = !b.errors.length && !b.misses.length && gb.open === 0 && Math.abs(dv) <= GEOM_TOL;
-      gline = `  vol ${dv >= 0 ? '+' : ''}${dv.toFixed(2)}%  area ${da >= 0 ? '+' : ''}${da.toFixed(2)}%  open edges ${ga.open}/${gb.open}`;
+      // A reference with open edges has no sound volume: the limit is not
+      // applied then, and the change is printed as information only.
+      const refOpen = ga.open > 0;
+      ok = !b.errors.length && !b.misses.length && gb.open === 0 && (refOpen || Math.abs(dv) <= GEOM_TOL);
+      gline = `  vol ${dv >= 0 ? '+' : ''}${dv.toFixed(2)}%${refOpen ? ' (info only: the reference is not closed)' : ''}  area ${da >= 0 ? '+' : ''}${da.toFixed(2)}%  open edges ${ga.open}/${gb.open}`;
     }
+    if (wrongMesher) ok = false;
     if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(22)} tris ${a.tris}/${b.tris}  verts ${a.verts}/${b.verts}  identical=${same}${gline}`);
+    if (wrongMesher) console.log(`   new mesher: ${wrongMesher}`);
     for (const [lbl, r] of [['orig', a], ['new', b]]) {
       if (r.errors.length) console.log(`   ${lbl} errors:`, r.errors.slice(0, 4));
       if (r.misses.length) console.log(`   ${lbl} unserved:`, r.misses.slice(0, 4));

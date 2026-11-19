@@ -19,6 +19,7 @@
         pre-baked values of the layers it reads (makeWeldLookupSlice, m31)
      {type:'band', id, pos, idx, outer, seed, tol}   v0.15.0 seam band simplify
         (v0.16.1: also the final-pass rounds; seed = tear locks found earlier)
+     mesh and band jobs: fast:true (v0.16.5) = Checks: Fast (m35 safeSimplifyFast)
    Messages out:
      {type:'ready', n}
      {type:'slab', id, main, off, kmA, kmB, koA, koB, ms}   (buffers transferred)
@@ -60,6 +61,7 @@ self.onmessage=async function(e){
       if(!fn) throw new Error('mesh job without a field');
       let r=slabMeshLayers(fn, _grid, d.La, d.Lb);
       let simpMs=0;   // v0.16.3: per-slab simplify time, so the marching share isn't inflated by it
+      setSlabFastChecks(d.fast===true);   // v0.16.5 Checks: Fast (m35); absent = standard
       if(d.tol>0){ await slabMeshoptReady; const tS=performance.now(); const fm=r.fieldMs; r=simplifySlab(r, d.tol); simpMs=performance.now()-tS; r.fieldMs=fm; }
       else r.rawTris=r.idx.length/3;
       const tearV=r.tearV||new Uint32Array(0);
@@ -70,6 +72,7 @@ self.onmessage=async function(e){
     }
     if(d.type==='band'){
       await slabMeshoptReady;
+      setSlabFastChecks(d.fast===true);   // v0.16.5
       const t0=performance.now();
       const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer), seed:d.seed?new Uint8Array(d.seed):null, noRing:!!d.noRing}, d.tol);
       const idx=new Uint32Array(r.idx), tv=r.tearV||new Uint32Array(0);

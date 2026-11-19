@@ -35,6 +35,7 @@ function dkIcon(name,size,cls){
 }
 function _dkMesher(){ return (typeof exportMesherPref==='function')?exportMesherPref():'auto'; }
 function _dkLoose(){ return (typeof exportLooseMode==='function')?exportLooseMode():'specks'; }
+function _dkChecks(){ return (typeof exportChecksPref==='function')?exportChecksPref():'standard'; }
 function _dkEl(id){ return document.getElementById(id); }
 function _dkSet(id,t){ const e=_dkEl(id); if(e && e.textContent!==t) e.textContent=t; }
 
@@ -103,6 +104,10 @@ function dockEnsure(){
           '<div class="dr-f"><label for="expLoose">Loose pieces</label><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
             [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
           '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+
+          // v0.16.5: Checks (60-export-ui.js exportChecksPref); helper text in the hover tooltip
+          '<div class="dr-f" title="While the slab mesher simplifies, it keeps checking that the mesh stays closed. Fast does the same checks a quicker way and gives the same mesh; on test parts simplify took about a fifth to a half less time. Standard is the check used so far. The classic mesher is not affected."><label for="expChecks">Checks</label><select id="expChecks" class="dr-sel" onchange="setExportChecks(this.value)">'+
+            [['standard','Standard'],['fast','Fast']].map(o=>'<option value="'+o[0]+'"'+(_dkChecks()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+          '</select></div>'+
           '<div class="dr-f dr-wide"><label>Estimate</label><div class="dr-est" id="expEstimate"></div></div>'+
         '</div>'+
       '</section>'+

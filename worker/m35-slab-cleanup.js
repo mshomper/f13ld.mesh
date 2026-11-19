@@ -15,7 +15,10 @@
    safeSimplify(...)       simplify, and wherever that tears the closed mesh
                            (meshoptimizer can, where walls are thinner than
                            its tolerance) lock the points around the tear and
-                           redo it; the classic mesher uses it too
+                           redo it (slab mesher only; classic shares only
+                           meshClosedReport, for its open-edge count)
+   safeSimplifyFast(...)   v0.16.5 Checks: Fast — same result, faster checks
+                           (SLAB_FAST_CHECKS, off by default)
    removeLoosePieces(...)  split into connected pieces and drop the small ones
    flipEdges(...)          edge flips on nearly flat areas for better triangles
                            (v0.16.0); run after each slab / band simplify
@@ -91,7 +94,7 @@ var SLAB_FLIP_OPTS={lockMode:'edge'};
 function checkedFlip(pos, idx, lockV, ignore){
   var t0=(typeof performance!=='undefined')?performance.now():0;
   var out=flipEdges(pos, idx, lockV, SLAB_FLIP_OPTS), n=flipEdges.last.flips, rej=false;
-  if(n && !meshClosedReport(pos, out, false, ignore||null).ok){ out=idx; n=0; rej=true; }
+  if(n && !(SLAB_FAST_CHECKS ? closedEdgesFast(pos, out, false, ignore||null) : meshClosedReport(pos, out, false, ignore||null)).ok){ out=idx; n=0; rej=true; }
   return {idx:out, flips:n, rejected:rej, ms:((typeof performance!=='undefined')?performance.now():0)-t0};
 }
 
@@ -367,6 +370,8 @@ var SAFE_SIMPLIFY_RINGS=[1,1,2,2,3,3,4,6,8,10,12,12];
 // after each try, lockRings}.
 function _nowMs(){ return (typeof performance!=='undefined')?performance.now():0; }
 function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
+  // v0.16.5: Checks: Fast (off by default) — same result, faster checks
+  if(SLAB_FAST_CHECKS) return safeSimplifyFast(pos, idx, tol, open, flags, shared, seed, noRing);
   var tm={ring:0, closed0:0, seam0:0, first:0, retryMeshopt:0, closedChk:0, seamChk:0, lockRings:0, calls:0}, tq=_nowMs();
   var lock0=null;
   if(open && !shared) shared=function(a,b){ return open[a]===1 && open[b]===1; };
@@ -425,6 +430,182 @@ function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
     if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock, t:tm};
     // locks add up across retries: tears tend to move, so the next try only
     // has to catch the new ones
+    isTear=true; lockRings(pr.tear, SAFE_SIMPLIFY_RINGS[Math.min(retries, SAFE_SIMPLIFY_RINGS.length-1)]);
+    isTear=false; lockRings(pr.seam, 1);
+    tq=_nowMs();
+    res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
+    tm.retryMeshopt+=_nowMs()-tq; tm.calls++;
+  }
+  var last=problems(res);
+  if(!last.tear.length && !last.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock, t:tm};
+  return {idx:idx, retries:retries, locked:locked, seeded:seeded, unsafe:false, gaveUp:true, tearLock:tearLock, t:tm};
+}
+
+// ── v0.16.5 fast checks (simplification expedition 2026-11-19, candidate
+// "B1a + lazy input check"). Off by default: SLAB_FAST_CHECKS is set per
+// export from the job's d.fastChecks (Export tab "Checks", localStorage
+// f13ld.mesh.fastchecks) in the mesh worker (m90) and from the job message's
+// `fast` in the slab / band workers (field-bake-worker.js). With it off,
+// safeSimplify and checkedFlip run exactly the code above.
+// Same meshopt calls with the same locks, so the same triangles come out:
+//   closedEdgesFast   gives meshClosedReport's ok and failing-vertex set from
+//                     a per-vertex list of outgoing half-edges instead of
+//                     sorting every edge (only `bad` counts differently;
+//                     nothing here reads it). meshClosedReport stays as it is
+//                     for the classic mesher's report, the export's closed
+//                     check and the tests.
+//   ringLockFast / openEdgeCountsFast / openEdgeChangesFast
+//                     visit only triangles with two or more open corners.
+//                     INVARIANT: shared(a,b) implies open[a] && open[b] (both
+//                     simplifySlab's shared and safeSimplify's default return
+//                     false otherwise), so no other triangle holds a shared
+//                     edge. Keep it if either shared() ever changes.
+//   lockRings         grows from the ring frontier over a vertex→triangle
+//                     list (same rings as the full scan).
+//   lazy input check  (SLAB_FAST_LAZY) meshopt runs first; the input is
+//                     checked only when the result shows a tear or a changed
+//                     seam edge. Same result whenever the input is closed (raw
+//                     slabs and the bands cut from a closed join always are).
+//                     An open input is NOT always returned as is: meshopt can
+//                     close a small hole (tests/slabmesh.js plants one), and
+//                     then the clean result is kept where standard checks
+//                     return the input unsafe. SLAB_FAST_LAZY=false checks the
+//                     input first (closedEdgesFast), identical on every input.
+var SLAB_FAST_CHECKS=false, SLAB_FAST_LAZY=true;
+function setSlabFastChecks(on){ SLAB_FAST_CHECKS=on===true; }
+function closedEdgesFast(pos, idx, wantVerts, ignore){
+  // edge a→b is fine when b occurs once among a's targets and a once among b's
+  var nV=pos.length/3, nI=idx.length, t, q, i, a, b;
+  var keep=new Uint8Array(nI), off=new Uint32Array(nV+1), isFn=typeof ignore==='function';
+  for(t=0;t<nI;t+=3) for(q=0;q<3;q++){
+    a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+    if(ignore && (isFn ? ignore(a,b) : (ignore[a] && ignore[b]))) continue;
+    keep[t+q]=1; off[a+1]++;
+  }
+  for(i=0;i<nV;i++) off[i+1]+=off[i];
+  var fill=off.slice(0,nV), to=new Uint32Array(off[nV]);
+  for(t=0;t<nI;t+=3) for(q=0;q<3;q++){ if(!keep[t+q]) continue; to[fill[idx[t+q]]++]=idx[t+(q===2?0:q+1)]; }
+  var bad=0, vs=null;
+  for(t=0;t<nI;t+=3) for(q=0;q<3;q++){
+    if(!keep[t+q]) continue;
+    a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+    var c1=0, c2=0, p, e;
+    for(p=off[a], e=off[a+1]; p<e; p++) if(to[p]===b) c1++;
+    for(p=off[b], e=off[b+1]; p<e; p++) if(to[p]===a) c2++;
+    if(c1!==1 || c2!==1){ bad++; if(wantVerts){ if(!vs) vs=new Set(); vs.add(a); vs.add(b); } }
+  }
+  var out={ok:bad===0, bad:bad};
+  if(bad && wantVerts) out.verts=Uint32Array.from(vs);
+  return out;
+}
+function openEdgeCountsFast(idx, nV, shared, open){
+  var m=new Map(), t, q, a, b, k;
+  for(t=0;t<idx.length;t+=3){
+    if(open[idx[t]]+open[idx[t+1]]+open[idx[t+2]]<2) continue;
+    for(q=0;q<3;q++){
+      a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+      if(!shared(a,b)) continue;
+      k=a*nV+b; m.set(k,(m.get(k)||0)+1);
+    }
+  }
+  return m;
+}
+function openEdgeChangesFast(before, idx, nV, shared, open){
+  var after=openEdgeCountsFast(idx, nV, shared, open), vs=[];
+  function add(k){ var a=Math.floor(k/nV); vs.push(a, k-a*nV); }
+  before.forEach(function(c,k){ if(after.get(k)!==c) add(k); });
+  after.forEach(function(c,k){ if(!before.has(k)) add(k); });
+  return vs;
+}
+function ringLockFast(idx, nV, shared, lock, open){
+  var cnt=new Map(), t, q, a, b, k;
+  for(t=0;t<idx.length;t+=3){
+    if(open[idx[t]]+open[idx[t+1]]+open[idx[t+2]]<2) continue;
+    for(q=0;q<3;q++){
+      a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+      if(!shared(a,b)) continue;
+      k=a<b?a*nV+b:b*nV+a; cnt.set(k,(cnt.get(k)||0)+1);
+    }
+  }
+  for(t=0;t<idx.length;t+=3){
+    if(open[idx[t]]+open[idx[t+1]]+open[idx[t+2]]<2) continue;
+    var hit=false;
+    for(q=0;q<3&&!hit;q++){ a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+      if(shared(a,b)){ k=a<b?a*nV+b:b*nV+a; if(cnt.get(k)===1) hit=true; } }
+    if(hit){ lock[idx[t]]=1; lock[idx[t+1]]=1; lock[idx[t+2]]=1; }
+  }
+}
+function vertexTriCSR(idx, nV){
+  var off=new Uint32Array(nV+1), t, i, nT=idx.length/3;
+  for(i=0;i<idx.length;i++) off[idx[i]+1]++;
+  for(i=0;i<nV;i++) off[i+1]+=off[i];
+  var fill=off.slice(0,nV), tri=new Uint32Array(idx.length);
+  for(t=0;t<nT;t++) for(i=0;i<3;i++){ var v=idx[3*t+i]; tri[fill[v]++]=t; }
+  return {off:off, tri:tri};
+}
+// `list` grown by `rings` rings of triangles → Uint8Array of reached vertices
+function growRings(idx, csr, nV, list, rings){
+  var hit=new Uint8Array(nV), front=[], k;
+  for(k=0;k<list.length;k++){ var v=list[k]; if(!hit[v]){ hit[v]=1; front.push(v); } }
+  for(var ring=0; ring<rings; ring++){
+    var next=[];
+    for(var f=0; f<front.length; f++){
+      var u=front[f];
+      for(var p=csr.off[u]; p<csr.off[u+1]; p++){ var t=csr.tri[p];
+        for(var c=0;c<3;c++){ var w=idx[3*t+c]; if(!hit[w]){ hit[w]=1; next.push(w); } } }
+    }
+    front=next;
+  }
+  return hit;
+}
+function safeSimplifyFast(pos, idx, tol, open, flags, shared, seed, noRing){
+  var tm={ring:0, closed0:0, seam0:0, first:0, retryMeshopt:0, closedChk:0, seamChk:0, lockRings:0, calls:0}, tq=_nowMs();
+  var lock0=null;
+  if(open && !shared) shared=function(a,b){ return open[a]===1 && open[b]===1; };
+  if(open){ lock0=new Uint8Array(open); if(!noRing) ringLockFast(idx, open.length, shared, lock0, open); }
+  tm.ring=_nowMs()-tq;
+  var S=slabMeshopt();
+  if(!S || !(tol>0) || idx.length<3) return {idx:idx, retries:0, locked:0, unsafe:false};
+  var nV=pos.length/3;
+  var lock=new Uint8Array(nV); if(lock0) lock.set(lock0);
+  var tearLock=new Uint8Array(nV), seeded=0;
+  if(seed){ for(var si=0;si<nV;si++) if(seed[si]){ tearLock[si]=1; if(!lock[si]){ lock[si]=1; seeded++; } } }
+  var attr=new Float32Array(nV), fl=['ErrorAbsolute'].concat(flags||[]);
+  var inputChecked=!SLAB_FAST_LAZY;
+  tq=_nowMs();
+  if(inputChecked && !closedEdgesFast(pos, idx, false, shared||null).ok) return {idx:idx, retries:0, locked:0, unsafe:true};
+  tm.closed0=_nowMs()-tq; tq=_nowMs();
+  var res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
+  tm.first=_nowMs()-tq; tm.calls=1; tq=_nowMs();
+  var retries=0, locked=0, before=shared?(open?openEdgeCountsFast(idx, nV, shared, open):openEdgeCounts(idx, nV, shared)):null;
+  tm.seam0=_nowMs()-tq;
+  function problems(r){
+    var t1=_nowMs();
+    var rep=closedEdgesFast(pos, r, true, shared||null);
+    var tr=rep.verts?Array.from(rep.verts):[];
+    var t2=_nowMs(); tm.closedChk+=t2-t1;
+    var sm=before?(open?openEdgeChangesFast(before, r, nV, shared, open):openEdgeChanges(before, r, nV, shared)):[];
+    tm.seamChk+=_nowMs()-t2;
+    return {tear:tr, seam:sm};
+  }
+  var csr=null, isTear=false;
+  function lockRings(list, rings){
+    if(!list.length) return;
+    var tl=_nowMs();
+    if(!csr) csr=vertexTriCSR(idx, nV);
+    var hit=growRings(idx, csr, nV, list, rings);
+    for(var k=0;k<nV;k++) if(hit[k]&&!lock[k]){ lock[k]=1; locked++; if(isTear) tearLock[k]=1; }
+    tm.lockRings+=_nowMs()-tl;
+  }
+  for(; retries<SAFE_SIMPLIFY_RETRIES; retries++){
+    var pr=problems(res);
+    if(retries===0){ safeSimplify.first={tear:pr.tear.length, seam:pr.seam.length}; }
+    if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock, t:tm};
+    if(!inputChecked){   // first sign of trouble: check the input now (standard checks do it before simplifying)
+      inputChecked=true; var tc=_nowMs();
+      var inOk=closedEdgesFast(pos, idx, false, shared||null).ok; tm.closed0=_nowMs()-tc;
+      if(!inOk) return {idx:idx, retries:0, locked:0, unsafe:true};
+    }
     isTear=true; lockRings(pr.tear, SAFE_SIMPLIFY_RINGS[Math.min(retries, SAFE_SIMPLIFY_RINGS.length-1)]);
     isTear=false; lockRings(pr.seam, 1);
     tq=_nowMs();

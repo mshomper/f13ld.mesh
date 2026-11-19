@@ -115,6 +115,52 @@ function simplifiedSlabs(F,g,nS,tol,flip){
       console.log(''.padEnd(13),'  flips',R.flips+'+'+R.bandFlips+' band','in',Math.round(R.flipMs)+' ms'+(R.rejected?' ('+R.rejected+' passes not closed, kept unflipped)':''),'| needles',q0.needles,'->',q.needles,'(classic',cq.needles+')','| min angle p5',q0.minAngleP5.toFixed(1),'->',q.minAngleP5.toFixed(1),'(classic',cq.minAngleP5.toFixed(1)+')','| mean',q0.meanMinAngle.toFixed(1),'->',q.meanMinAngle.toFixed(1),'(classic',cq.meanMinAngle.toFixed(1)+')');
     }
   }
+  // v0.16.5 Checks: Fast (m35 safeSimplifyFast) must give byte-identical slab
+  // output: each field at 1 and 8 slabs, at the export tolerance and at 25x
+  // (forces tear retries); planted defects (closedEdgesFast vs meshClosedReport);
+  // an open input (returned as is, unsafe, both ways)
+  {
+    const same=(A,B)=>A.length===B.length&&Buffer.compare(Buffer.from(A.buffer,A.byteOffset,A.byteLength),Buffer.from(B.buffer,B.byteOffset,B.byteLength))===0;
+    const bad=[]; let n=0, retried=0;
+    for(const F of fields){
+      const e=F.box[1]>2?0.4:0.1, b={min:[F.box[0],F.box[0],F.box[0]],max:[F.box[1],F.box[1],F.box[1]]}, g=ctx.weldGridDims(b.min,b.max,e);
+      for(const mult of [1,25]) for(const nS of [1,8]){
+        const tol=0.15*e*mult;
+        ctx.setSlabFastChecks(false); const A=simplifiedSlabs(F,g,nS,tol);
+        ctx.setSlabFastChecks(true); const B=simplifiedSlabs(F,g,nS,tol);
+        ctx.setSlabFastChecks(false);
+        n++; if(!same(A.pos,B.pos)||!same(A.idx,B.idx)) bad.push(F.name+' tol x'+mult+' '+nS+' slabs');
+      }
+      // retries happen? (the 25x runs are there to force them)
+      const r=ctx.slabMeshLayers(F.fn,g,0,g.layers-2); const ss=ctx.safeSimplify(r.pos,r.idx,0.15*e*25); if(ss.retries) retried++;
+    }
+    // planted: tetrahedron closed / one face gone / a face doubled / a face flipped
+    const tp=new Float32Array([0,0,0, 1,0,0, 0,1,0, 0,0,1]), tet=[0,2,1, 0,1,3, 1,2,3, 0,3,2];
+    const plants=[['closed',tet],['face gone',tet.slice(3)],['face doubled',tet.concat([0,2,1])],['face flipped',[0,1,2].concat(tet.slice(3))]];
+    for(const [nm,ix] of plants){
+      const I=new Uint32Array(ix), a=ctx.meshClosedReport(tp,I,true), f=ctx.closedEdgesFast(tp,I,true);
+      const va=a.verts?Array.from(a.verts).sort().join(','):'', vf=f.verts?Array.from(f.verts).sort().join(','):'';
+      n++; if(a.ok!==f.ok||va!==vf) bad.push('planted '+nm+': ok '+a.ok+'/'+f.ok+' verts '+va+' / '+vf);
+    }
+    // open input: one triangle gone from a closed sphere. Standard checks return
+    // it as is (unsafe). With the lazy input check (m35 SLAB_FAST_LAZY) meshopt
+    // runs first and may close the hole; the result must then be closed.
+    let openNote='';
+    for(const lazy of [false,true]){
+      const g=ctx.weldGridDims([-1,-1,-1],[1,1,1],0.1), r=ctx.slabMeshLayers(fields[0].fn,g,0,g.layers-2), I=r.idx.slice(3), lazy0=ctx.SLAB_FAST_LAZY;
+      vm.runInContext('SLAB_FAST_LAZY='+lazy, ctx);
+      ctx.setSlabFastChecks(false); const A=ctx.safeSimplify(r.pos,I,0.015); ctx.setSlabFastChecks(true); const B=ctx.safeSimplify(r.pos,I,0.015); ctx.setSlabFastChecks(false);
+      vm.runInContext('SLAB_FAST_LAZY='+lazy0, ctx);
+      if(!lazy||B.unsafe) n++;
+      if(!A.unsafe) bad.push('open input: standard checks did not flag it');
+      else if(!lazy){ if(!B.unsafe||!same(A.idx,B.idx)) bad.push('open input, input checked first: unsafe '+A.unsafe+'/'+B.unsafe); }
+      else if(B.unsafe){ if(!same(A.idx,B.idx)) bad.push('open input, lazy: unsafe but not returned as is'); }
+      else if(!ctx.meshClosedReport(r.pos,B.idx).ok) bad.push('open input, lazy: result not closed');
+      else openNote=' | open input with the lazy input check'+(lazy0?' (on)':'')+': meshopt closed the hole, '+(I.length/3)+' -> '+(B.idx.length/3)+' tris (standard: returned as is)';
+    }
+    if(bad.length) fail+=bad.length;
+    console.log('fast checks', bad.length?'FAIL '+bad.join('; '):'ok', '| '+n+' cases identical to standard checks ('+retried+' of '+fields.length+' fields retried at 25x tolerance)'+openNote);
+  }
   // loose-piece clean-up: big sphere + a small detached speck
   {
     // big sphere with a sealed cavity (r 0.1, kept) + a small detached speck (dropped)

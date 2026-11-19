@@ -164,6 +164,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
   const plane1=(g.n[0]+1)*(g.n[1]+1), plane2=(g.n[0]+2)*(g.n[1]+2);
   const jobMsg=j=>{
     const m={type:'mesh', id:j.id, La:j.La, Lb:j.Lb, tol}, tr=[];
+    if(SLAB_FAST_CHECKS) m.fast=true;      // v0.16.5 Checks: Fast (m35); absent = standard
     if(lookup){
       const r=weldLayerKRange(g, Math.max(0,j.La-2), Math.min(g.layers,j.Lb+4));
       m.main=lookup.main.slice(r.kmA*plane1, r.kmB*plane1); m.off=lookup.off.slice(r.koA*plane2, r.koB*plane2);
@@ -228,7 +229,9 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     const bkick=()=>{ if(bdog) clearTimeout(bdog); bdog=setTimeout(()=>end(new Error('seam bands stalled')), SLAB_STALL_MS); };
     const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice(), sd=j.seed?j.seed.slice():null;
       const tr=[p.buffer, ix.buffer, o.buffer]; if(sd) tr.push(sd.buffer);
-      w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, noRing:!!j.noRing, tol:btol}, tr); } };
+      const bm={type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, noRing:!!j.noRing, tol:btol};
+      if(SLAB_FAST_CHECKS) bm.fast=true;   // v0.16.5
+      w.postMessage(bm, tr); } };
     onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), tearV:m.tearV?new Uint32Array(m.tearV):null, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe, simpT:m.simpT||null, flipMs:m.flipMs||0}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
     bkick();
     if(post) post({type:'progress', stage:'tidying '+bjobs.length+' seam band'+(bjobs.length===1?'':'s')+' on '+Math.min(workers.length,bjobs.length)+' cores...'});

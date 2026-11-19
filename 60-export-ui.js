@@ -227,6 +227,13 @@ function exportMesherPref(){ try{ const v=localStorage.getItem(EXPORT_MESHER_KEY
 function setExportMesher(v){ try{ localStorage.setItem(EXPORT_MESHER_KEY, EXPORT_MESHERS.indexOf(v)>=0?v:'auto'); }catch(_){} if(typeof updateExportEstimate==='function') updateExportEstimate(); }
 function exportLooseMode(){ try{ const v=localStorage.getItem(EXPORT_LOOSE_KEY); return EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'; }catch(_){ return 'specks'; } }
 function setExportLoose(v){ try{ localStorage.setItem(EXPORT_LOOSE_KEY, EXPORT_LOOSE_MODES.indexOf(v)>=0?v:'specks'); }catch(_){} }
+// v0.16.5: Checks — 'standard' (default) or 'fast' (worker/m35 safeSimplifyFast:
+// same mesh, faster closed-mesh checks in the slab mesher's simplify). The job
+// carries fastChecks:true only when 'fast'.
+const EXPORT_CHECKS_KEY='f13ld.mesh.fastchecks', EXPORT_CHECKS=['standard','fast'];
+function exportChecksPref(){ try{ const v=localStorage.getItem(EXPORT_CHECKS_KEY); return EXPORT_CHECKS.indexOf(v)>=0?v:'standard'; }catch(_){ return 'standard'; } }
+function exportFastChecks(){ return exportChecksPref()==='fast'; }
+function setExportChecks(v){ try{ localStorage.setItem(EXPORT_CHECKS_KEY, EXPORT_CHECKS.indexOf(v)>=0?v:'standard'); }catch(_){} }
 const EXPORT_CAL_KEY='f13ld.mesh.exportCal.v1';  // {"<family>:<cube|shape>": {t, n}}
 function _exportCalAll(){ try{ const o=JSON.parse(localStorage.getItem(EXPORT_CAL_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; } }
 function exportCal(key){

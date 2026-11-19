@@ -66,14 +66,9 @@ function meshStats(xml) {
 async function run(site, root, qual) {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ acceptDownloads: true });
-  await ctx.route('**/*', async route => {
-    const u = new URL(route.request().url());
-    if (u.host === site) { let p = decodeURIComponent(u.pathname); if (p === '/') p = '/index.html'; const f = path.join(root, p);
-      return fs.existsSync(f) ? route.fulfill({ body: fs.readFileSync(f), contentType: mime(f) }) : route.fulfill({ status: 404, body: '' }); }
-    if (u.host.startsWith('fonts.')) return route.fulfill({ body: '', contentType: 'text/css' });
-    const hit = cdn(route.request().url()); if (hit) return route.fulfill({ body: hit.body, contentType: hit.type, headers: { 'access-control-allow-origin': '*' } });
-    return route.abort();
-  });
+  // a real local server (tests/serve.js): the slab workers are started from the
+  // mesh worker and can't load from a made-up routed host
+  const srv = await require('./serve.js').serveBuild(ctx, root, cdn, mime);
   await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), CORES);
   // v0.16.0: MESHER=auto|slab|classic picks the Export mesher setting (older builds ignore it)
   if (process.env.MESHER) await ctx.addInitScript(m => { try { localStorage.setItem('f13ld.mesh.mesher', m); } catch (e) {} }, process.env.MESHER);
@@ -82,7 +77,7 @@ async function run(site, root, qual) {
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('console', m => { const t = m.text(); if (m.type() === 'error') errors.push(t); else if (t.startsWith('[export][weld]')) weldLogs.push(t); });
   page.on('worker', w => w.on('console', m => { if (m.type() === 'error') errors.push('worker: ' + m.text()); }));
-  await page.goto(`http://${site}/index.html?r=` + encodeURIComponent(JSON.stringify(RECIPE)));
+  await page.goto(`${srv.origin}/index.html?r=` + encodeURIComponent(JSON.stringify(RECIPE)));
   await page.waitForTimeout(1500);
   const idle = () => page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 300000 }).catch(() => {});
   const nCards = () => uiBodyCount(page);
@@ -113,6 +108,7 @@ async function run(site, root, qual) {
     out.report = await page.evaluate(() => (document.getElementById('expReport') || {}).innerText || '');
   } catch (e) { out.err = String(e.message || e).slice(0, 300); }
   await browser.close();
+  await srv.close();
   return out;
 }
 

@@ -32,19 +32,14 @@ function cdn(url) {
   const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8'));
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await browser.newContext({ acceptDownloads: true });
-  await ctx.route('**/*', async route => {
-    const u = new URL(route.request().url());
-    if (u.host === 'build.test') { let p = decodeURIComponent(u.pathname); if (p === '/') p = '/index.html'; const f = path.join(BUILD, p);
-      return fs.existsSync(f) ? route.fulfill({ body: fs.readFileSync(f), contentType: mime(f) }) : route.fulfill({ status: 404, body: '' }); }
-    if (u.host.startsWith('fonts.')) return route.fulfill({ body: '', contentType: 'text/css' });
-    const hit = cdn(route.request().url());
-    return hit ? route.fulfill({ body: hit.body, contentType: hit.type, headers: { 'access-control-allow-origin': '*' } }) : route.abort();
-  });
+  // a real local server (tests/serve.js): the bake workers are started from the
+  // mesh worker and can't load from a made-up routed host
+  const srv = await require('./serve.js').serveBuild(ctx, BUILD, cdn, mime);
   await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), CORES);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  await page.goto('http://build.test/index.html?r=' + encodeURIComponent(JSON.stringify(R[CASE].recipe)));
+  await page.goto(srv.origin + '/index.html?r=' + encodeURIComponent(JSON.stringify(R[CASE].recipe)));
   await page.waitForTimeout(1500);
   await page.waitForFunction(() => document.getElementById('computeOverlay').classList.contains('hidden'), null, { timeout: 120000 }).catch(() => {});
   await page.evaluate(q => window.setQual(q), QUAL);
@@ -65,4 +60,5 @@ function cdn(url) {
   console.log(`export again: ${d ? 'downloaded' : 'NO FILE'}  report: ${rep}`);
   console.log(`page errors: ${errors.length ? errors.slice(0, 3).join(' | ') : 'none'}`);
   await browser.close();
+  await srv.close();
 })();

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F13LD.mesh simplify bench</title>
+<style>
+  :root { --bg:#06080c; --panel:#0d1218; --line:#1d2630; --ink:#d7e0e8; --dim:#7f8c99; --jade:#1D9E75; --lime:#c8f542; --bad:#e0a030; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.4 "Exo 2", "Segoe UI", system-ui, sans-serif; overflow-x:hidden; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:nowrap; min-width:0; }
+  header h1 { font-size:15px; font-weight:600; margin:0; color:var(--jade); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto; }
+  #meshName { color:var(--dim); font-family:"IBM Plex Mono", Consolas, monospace; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 0; min-width:0; }
+  button.icon { width:34px; height:34px; flex:0 0 auto; display:grid; place-items:center; background:transparent; border:1px solid var(--line); border-radius:6px; color:var(--ink); cursor:pointer; position:relative; }
+  button.icon:hover:not(:disabled) { border-color:var(--jade); color:var(--lime); }
+  button.icon:disabled { opacity:.35; cursor:default; }
+  button.icon svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  button.icon[data-tip]:hover::after { content:attr(data-tip); position:absolute; top:40px; right:0; background:#000; color:var(--ink); border:1px solid var(--line); padding:3px 8px; border-radius:4px; font-size:12px; white-space:nowrap; z-index:5; }
+  .bar { display:flex; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); align-items:center; flex-wrap:wrap; }
+  select { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 8px; max-width:100%; }
+  input[type=number] { width:70px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px; }
+  #methods { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { cursor:pointer; }
+  .chip input { display:none; }
+  .chip span { display:inline-block; padding:4px 10px; border:1px solid var(--line); border-radius:14px; color:var(--dim); }
+  .chip input:checked + span { border-color:var(--jade); color:var(--lime); background:#0f1a17; }
+  .tick { color:var(--dim); display:inline-flex; gap:6px; align-items:center; cursor:pointer; }
+  main { flex:1; overflow-y:auto; overflow-x:hidden; padding:12px; display:flex; flex-direction:column; gap:12px; min-height:0; }
+  #cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; min-width:0; }
+  .card.bad { border-color:var(--bad); }
+  .card h3 { margin:0 0 6px; font-size:13px; color:var(--lime); font-weight:600; }
+  .kv { display:flex; justify-content:space-between; gap:10px; padding:2px 0; border-bottom:1px dashed #161e27; }
+  .kv span { color:var(--dim); flex:0 0 auto; }
+  .kv b { font-weight:500; text-align:right; min-width:0; overflow-wrap:anywhere; }
+  .kv small { display:block; color:var(--dim); font-weight:400; }
+  #log { background:#04060a; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:12px/1.5 "IBM Plex Mono", Consolas, monospace; color:#9fb0bf; white-space:pre-wrap; overflow-wrap:anywhere; overflow-y:auto; max-height:34vh; min-height:60px; }
+  body.busy header { opacity:.7; }
+  body.drop::before { content:"drop a mesh (.slb, .stl, .obj)"; position:fixed; inset:0; background:rgba(6,8,12,.88); display:grid; place-items:center; color:var(--lime); font-size:20px; z-index:10; border:2px dashed var(--jade); }
+  .hint { color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Simplify bench</h1>
+  <span id="meshName"></span>
+  <button class="icon" id="run" data-tip="Run the bench on this mesh" disabled><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+  <button class="icon" id="test" data-tip="Check the checkers (self-test)"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.500-1-8-4-8-9V6z"/><path d="M8.500 12l2.500 2.500 4.500-5"/></svg></button>
+  <button class="icon" id="open" data-tip="Open a mesh file (or drop one here)"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg></button>
+  <input type="file" id="file" accept=".slb,.stl,.obj" hidden>
+</header>
+<div class="bar">
+  <select id="meshes" title="Bundled Draft meshes (Node-built slab jobs)"></select>
+  <label class="tick" title="Dropped STL / OBJ files: the voxel edge in the file's own units; the simplify tolerance is 0.15 of it"><span class="hint">edge</span><input type="number" id="edge" value="0.1" step="0.01" min="0.001"></label>
+  <label class="tick" title="Check every triangle for self-intersections and use 5000 deviation points per side (slower)"><input type="checkbox" id="full"><span class="hint">full checks</span></label>
+</div>
+<div class="bar"><div id="methods"></div></div>
+<main>
+  <div id="cards"></div>
+  <div id="log"></div>
+</main>
+<script type="module" src="./page.mjs"></script>
+</body>
+</html>

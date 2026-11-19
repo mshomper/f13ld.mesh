@@ -36,6 +36,23 @@ export function hashRun(run) {
 // raw slabs joined by the same code the export uses (m34 joinSlabs)
 export function rawJoined(ctx, slabs) { const J = ctx.joinSlabs(slabs.map(slabInput)); return { pos: J.pos, idx: J.idx }; }
 
+// The shared bench loop (Node bench and page): for each method name, build its ctx (makeCtx(patches) -> ctx),
+// warm up once, take the best of opts.reps timed runs, measure. defs[name] = {label, patches}.
+// Returns { raw: {tris}, rows }. onRow(row) is called as each method finishes.
+export async function benchMesh(makeCtx, meta, slabs, names, defs, opts = {}, onRow = null) {
+  const base = await makeCtx([]), raw = rawJoined(base, slabs), rawBvh = new BVH(raw.pos, raw.idx), rows = [];
+  for (const name of names) {
+    const ctx = await makeCtx(defs[name].patches);
+    await runPipeline(ctx, meta, slabs);
+    let best = null, lo = Infinity, hi = 0;
+    for (let i = 0; i < (opts.reps || 2); i++) { const r = await runPipeline(ctx, meta, slabs); lo = Math.min(lo, r.totalMs); hi = Math.max(hi, r.totalMs); if (!best || r.totalMs < best.totalMs) best = r; }
+    const row = { method: name, label: defs[name].label, ...measureRun(ctx, meta, slabs, best, raw, rawBvh, opts), reps: opts.reps || 2, spreadMs: hi - lo };
+    if (ctx.B1B_STATS) row.patch = { tried: ctx.B1B_STATS.tried, ok: ctx.B1B_STATS.ok };
+    rows.push(row); if (onRow) onRow(row);
+  }
+  return { raw: { tris: raw.idx.length / 3 }, rows, rawJ: raw };
+}
+
 // Metrics of one run. raw = joined raw mesh; rawBvh optional shared BVH. opts: {siSample, devSamples}
 export function measureRun(ctx, meta, slabs, run, raw, rawBvh, opts = {}) {
   const out = run.final, nV = out.pos.length / 3, res = {};

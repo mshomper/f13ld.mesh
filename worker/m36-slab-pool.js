@@ -85,7 +85,7 @@ async function _slabFinish(g, results, tol, post, t0, runBands, nWorkers, noFlip
   const C=compactIndexed(J.pos, idx);
   const compactMs=performance.now()-tCmp;   // timing only
   let finalFlip=null;
-  const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF), compactMs:Math.round(compactMs), joinMs:Math.round(tF-tJ)};
+  const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF), compactMs:Math.round(compactMs), joinMs:Math.round(tF-tJ), slabSimpT:sumSimpT(results)};   // timing only
   // v0.16.2: weld regions skip this flip — the weld flips once after its union
   if(tol>0 && !noFlip){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);
@@ -112,6 +112,15 @@ function slabStageTimes(out){
   t.fieldCpu=fc; t.simpCpu=sc; t.jobCpu=jc; t.workers=out.workers||1;
   const f=out.finalSimp;
   if(f){ for(const r of (f.rounds||[])){ if(r.round==='A') t.roundA+=r.ms||0; else t.roundB+=r.ms||0; } if(f.rows) t.rows+=f.rows.ms||0; }
+  // Timing only: where the simplify CPU time goes, summed over every slab / band job (CPU ms, not wall time):
+  // closed + seam checks, meshopt calls (first / retries), lock growing; slab jobs and the final pass apart.
+  const parts=(a,pre)=>{
+    t[pre+'ChkMs']=0; t[pre+'MeshoptMs']=0; t[pre+'RetryMs']=0; t[pre+'LockMs']=0;
+    for(const s of a){ if(!s) continue; t[pre+'ChkMs']+=(s.closed0||0)+(s.closedChk||0)+(s.seam0||0)+(s.seamChk||0); t[pre+'MeshoptMs']+=(s.first||0)+(s.retryMeshopt||0); t[pre+'RetryMs']+=s.retryMeshopt||0; t[pre+'LockMs']+=(s.ring||0)+(s.lockRings||0); }
+    for(const k of ['ChkMs','MeshoptMs','RetryMs','LockMs']) t[pre+k]=Math.round(t[pre+k]);
+  };
+  parts([f&&f.slabSimpT],'slab');
+  parts(f?[...(f.rounds||[]).map(r=>r.simpT), f.rows&&f.rows.simpT]:[],'final');
   return t;
 }
 async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
@@ -196,7 +205,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
           kick();
           const j=jobs[m.id];
           results[m.id]={pos:new Float32Array(m.pos), idx:new Uint32Array(m.idx), seamV:new Uint32Array(m.seamV), seamK:new Float64Array(m.seamK), tearV:m.tearV?new Uint32Array(m.tearV):null,
-            rawTris:m.rawTris, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, evals:m.evals, fieldMs:m.fieldMs||0, simpMs:m.simpMs||0, _La:j.La, _ms:m.ms};
+            rawTris:m.rawTris, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, evals:m.evals, fieldMs:m.fieldMs||0, simpMs:m.simpMs||0, _La:j.La, _ms:m.ms, simpT:m.simpT||null, flipMs:m.flipMs||0};
           done++;
           const now=performance.now();
           if(post && now-lastPost>250){ lastPost=now; post({type:'progress', stage:'meshing on '+nW+' cores — '+Math.round(100*done/jobs.length)+'%...'}); }
@@ -220,7 +229,7 @@ async function slabMeshExport(d, field, min, max, edge, tol, post, opts){
     const send=w=>{ if(bn<bjobs.length){ const j=bjobs[bn], id=bn++; const p=j.pos.slice(), ix=j.idx.slice(), o=j.outer.slice(), sd=j.seed?j.seed.slice():null;
       const tr=[p.buffer, ix.buffer, o.buffer]; if(sd) tr.push(sd.buffer);
       w.postMessage({type:'band', id, pos:p.buffer, idx:ix.buffer, outer:o.buffer, seed:sd?sd.buffer:null, noRing:!!j.noRing, tol:btol}, tr); } };
-    onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), tearV:m.tearV?new Uint32Array(m.tearV):null, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
+    onBand=(w,m)=>{ bkick(); out[m.id]={idx:new Uint32Array(m.idx), tearV:m.tearV?new Uint32Array(m.tearV):null, retries:m.retries, locked:m.locked, gaveUp:m.gaveUp, unsafe:m.unsafe, simpT:m.simpT||null, flipMs:m.flipMs||0}; bd++; if(bd===bjobs.length){ end(); return; } send(w); };
     bkick();
     if(post) post({type:'progress', stage:'tidying '+bjobs.length+' seam band'+(bjobs.length===1?'':'s')+' on '+Math.min(workers.length,bjobs.length)+' cores...'});
     for(const w of workers) send(w);

@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 
-const FIELDS = [['pos', Float32Array], ['idx', Uint32Array], ['seamV', Uint32Array], ['seamK', Float64Array], ['nbrA', Float64Array], ['nbrB', Float64Array]];
-const pad8 = n => (n + 7) & ~7;
+import { FIELDS, pad8, parseSlabs } from './slabparse.mjs';
+export { parseSlabs };
 
 export function packSlabs(meta, slabs) {
   const infos = slabs.map(s => ({ La: s.La, Lb: s.Lb, evals: s.evals || 0, fieldMs: s.fieldMs || 0, marchMs: s.marchMs || 0,
@@ -26,23 +26,4 @@ export function packSlabs(meta, slabs) {
 }
 export function writeSlabs(file, meta, slabs) { fs.writeFileSync(file, zlib.gzipSync(packSlabs(meta, slabs), { level: 9 })); }
 
-// buf: Uint8Array of the unzipped file
-export function parseSlabs(buf) {
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  if (String.fromCharCode(buf[0], buf[1], buf[2], buf[3]) !== 'SLB1') throw new Error('not a slab file');
-  const jl = dv.getUint32(4, true);
-  const head = JSON.parse(new TextDecoder().decode(buf.subarray(8, 8 + jl)));
-  let o = 8 + pad8(jl);
-  const slabs = head.slabs.map(info => {
-    const s = { La: info.La, Lb: info.Lb, evals: info.evals, fieldMs: info.fieldMs, marchMs: info.marchMs };
-    for (const [k, T] of FIELDS) {
-      const n = info.counts[k], bytes = n * T.BYTES_PER_ELEMENT;
-      const out = new T(n);
-      if (n) new Uint8Array(out.buffer).set(buf.subarray(o, o + bytes));   // copy: keeps alignment
-      s[k] = out; o += pad8(bytes);
-    }
-    return s;
-  });
-  return { meta: head.meta, slabs };
-}
 export function readSlabs(file) { const b = zlib.gunzipSync(fs.readFileSync(file)); return parseSlabs(new Uint8Array(b.buffer, b.byteOffset, b.byteLength)); }

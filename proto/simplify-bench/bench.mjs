@@ -18,17 +18,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, loadWorker, SLAB_FILES } from './lib/env.mjs';
 import { readSlabs } from './lib/slabio.mjs';
-import { BVH } from './lib/geom.mjs';
-import { runPipeline, measureRun, rawJoined, hashRun, slabInput } from './lib/pipeline.mjs';
-import { selfTest } from './lib/selftest.mjs';
+import { BVH, hashArrays } from './lib/geom.mjs';
+import { runPipeline, measureRun, rawJoined, hashRun, benchMesh } from './lib/pipeline.mjs';
+import { selfTest, icosphere } from './lib/selftest.mjs';
 import { DATA, CASES } from './make-jobs.mjs';
 
 export const METHODS = {
   today: { label: 'today', patches: [] },
   A: { label: 'A Regularize', patches: ['cand/a.js'] },
-  B1a: { label: 'B1a fast checks', patches: ['cand/b1a.js'] },
-  B1b: { label: 'B1b window repair', patches: ['cand/b1a.js', 'cand/b1b.js'] },
+  B1a: { label: 'B1a fast checks', patches: ['cand/fast.js'] },
+  B1lazy: { label: 'B1a-lazy', patches: ['cand/fast.js', 'cand/lazy.js'] },
+  B1b: { label: 'B1b window repair', patches: ['cand/fast.js', 'cand/window.js'] },
+  rings: { label: 'today, rings 3,3,4..', patches: ['cand/rings.js'] },
 };
+const DEFAULT_METHODS = 'today,A,B1a,B1lazy,B1b';
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
 const has = k => process.argv.includes('--' + k);
 let quick = false, check = false, tune = false;   // set from the arguments when main() starts
@@ -48,25 +51,15 @@ async function directRun(ctx, meta, slabs) {
 
 async function benchCase(file, methods, opts) {
   const { meta, slabs } = readSlabs(file);
-  const base = await loadWorker({ files: SLAB_FILES });
-  const raw = rawJoined(base, slabs), rawBvh = new BVH(raw.pos, raw.idx);
-  const rows = [];
-  for (const name of methods) {
-    const M = METHODS[name], ctx = await loadWorker({ files: SLAB_FILES, patches: M.patches });
-    await runPipeline(ctx, meta, slabs);                                   // warm-up, not timed
-    let best = null;
-    for (let i = 0; i < (opts.reps || 2); i++) { const r = await runPipeline(ctx, meta, slabs); if (!best || r.totalMs < best.totalMs) best = r; }
-    const m = measureRun(ctx, meta, slabs, best, raw, rawBvh, opts);
-    rows.push({ method: name, label: M.label, ...m });
-  }
-  return { meta, raw: { tris: raw.idx.length / 3 }, rows, slabs, rawJ: raw };
+  const r = await benchMesh(patches => loadWorker({ files: SLAB_FILES, patches }), meta, slabs, methods, METHODS, opts);
+  return { meta, raw: r.raw, rows: r.rows, slabs, rawJ: r.rawJ };
 }
 
 function printRows(meta, rawTris, rows) {
   console.log(`\n${meta.family} @ ${meta.qual} (edge ${meta.edgeMm} mm, ${meta.slabs} slabs, raw ${rawTris} tris, tol ${f(meta.tol, 4)})`);
   console.log('  method              time ms (slabs+final)   tris    open nm  selfX   dev max / mean mm (cells)       needles%  minAng P5  seam ok  retries');
   for (const r of rows) console.log('  ' + r.label.padEnd(19), `${f(r.totalMs, 0).padStart(6)} (${f(r.slabMs, 0)}+${f(r.finalMs, 0)})`.padEnd(22), String(r.tris).padStart(6), String(r.open).padStart(5), String(r.nonManifold).padStart(2), String(r.selfX).padStart(6),
-    `  ${f(r.devMaxMm, 4)} / ${f(r.devMeanMm, 4)} (${f(r.devMaxCells, 3)} / ${f(r.devMeanCells, 3)})`.padEnd(34), f(r.needlePct, 2).padStart(7), f(r.minAngleP5, 1).padStart(10), String(r.seamSlabsIdentical).padStart(8), String(r.retries).padStart(6));
+    `  ${f(r.devMaxMm, 4)} / ${f(r.devMeanMm, 4)} (${f(r.devMaxCells, 3)} / ${f(r.devMeanCells, 3)})`.padEnd(34), f(r.needlePct, 2).padStart(7), f(r.minAngleP5, 1).padStart(10), String(r.seamSlabsIdentical).padStart(8), String(r.retries).padStart(6), ` (best of ${r.reps}, spread ${f(r.spreadMs, 0)} ms)` + (r.patch ? ` patch ${r.patch.ok}/${r.patch.tried} accepted` : ''));
 }
 
 // tune a method's tolerance scale until its triangle count is within 5 % of today's (or max deviation within 10 %)
@@ -84,11 +77,38 @@ async function tuneMethod(name, file, todayRow, opts) {
   return best;
 }
 
+// --check extras: paths the real meshes may not reach. (1) an OPEN input (sphere with a triangle removed) -> unsafe path;
+// (2) a stress run with a much larger tolerance until some slab or band gives up (gaveUp) or tears and retries.
+// Main, branch, B1a and B1a-lazy must give identical results (hash) on both.
+async function extraChecks(fails) {
+  console.log('\nextra checks (unsafe / gave-up paths):');
+  const sets = { main: await loadWorker({ files: SLAB_FILES, source: 'main' }), branch: await loadWorker({ files: SLAB_FILES }),
+    B1a: await loadWorker({ files: SLAB_FILES, patches: METHODS.B1a.patches }), B1lazy: await loadWorker({ files: SLAB_FILES, patches: METHODS.B1lazy.patches }) };
+  const sp = icosphere(3, 1), openIdx = sp.idx.slice(3), res = {};
+  for (const [n, c] of Object.entries(sets)) { const r = c.safeSimplify(sp.pos, openIdx, 0.05, null, null, null); res[n] = hashArrays(r.idx) + ':' + !!r.unsafe + ':' + r.retries; }
+  const okOpen = new Set(Object.values(res)).size === 1 && res.main.includes(':true:');
+  console.log(`  open input (sphere minus one triangle): unsafe path, same result in main / branch / B1a / B1a-lazy: ${okOpen ? 'PASS' : 'FAIL'} (${res.main})`);
+  if (!okOpen) fails.push('open-input path differs');
+  const files = ['grain-spinodoid', 'foam2-open-lloyd'].map(n => path.join(DATA, n + '.draft.slb')).filter(fs.existsSync);
+  let sawGaveUp = false, sawRetry = false;
+  for (const file of files) for (const scale of [25, 100]) {
+    const { meta, slabs } = readSlabs(file), h = {}, info = {};
+    for (const [n, c] of Object.entries(sets)) { const run = await runPipeline(c, meta, slabs, scale); h[n] = hashRun(run); if (n === 'branch') info.o = run.outs; }
+    const gave = info.o.filter(o => o.gaveUp).length, unsafe = info.o.filter(o => o.unsafe).length, retries = info.o.reduce((a, o) => a + (o.retries || 0), 0);
+    if (gave) sawGaveUp = true; if (retries) sawRetry = true;
+    const ok = new Set(Object.values(h)).size === 1;
+    console.log(`  ${meta.case} tol x${scale}: slab retries ${retries}, gave up ${gave}, unsafe ${unsafe}; main / branch / B1a / B1a-lazy identical: ${ok ? 'PASS' : 'FAIL'}`);
+    if (!ok) fails.push(`stress ${meta.case} x${scale}: outputs differ`);
+  }
+  console.log(`  coverage: retries seen ${sawRetry}, gave-up seen ${sawGaveUp}`);
+}
+
 export async function main() {
   quick = has('quick'); check = has('check'); tune = has('tune');
-  const quals = (arg('quals', quick ? 'draft' : 'draft,med')).split(','), only = arg('only', '') ? arg('only').split(',') : CASES, methods = arg('methods', 'today,A,B1a,B1b').split(',');
+  const quals = (arg('quals', quick ? 'draft' : 'draft,med')).split(','), only = arg('only', '') ? arg('only').split(',') : CASES, methods = arg('methods', DEFAULT_METHODS).split(',');
   const sampled = quick || has('sample');   // --sample: the quick sampling on any quality (Med meshes have 600k+ triangles)
-  const opts = sampled ? { siSample: 6000, devSamples: 1500, reps: 2 } : { siSample: 0, devSamples: 5000, reps: 3 };
+  const reps = +arg('reps', quick ? 1 : (sampled ? 2 : 3));
+  const opts = sampled ? { siSample: 6000, devSamples: 1500, reps } : { siSample: 0, devSamples: 5000, reps };
   const t0 = performance.now(), fails = [], report = { quick, opts, cases: [] };
   console.log(`simplify bench (${sampled ? 'quick: self-intersections on a seeded sample of 6000 triangles per mesh, deviation from 1500 points per side' : 'full: all triangles, 5000 deviation points per side'}); one thread; Node-built jobs`);
 
@@ -96,6 +116,13 @@ export async function main() {
     const st = selfTest();
     console.log('\nchecker self-test:');
     for (const t of st) { console.log('  ' + (t.ok ? 'PASS' : 'FAIL'), t.name, '-', t.detail); if (!t.ok) fails.push('self-test: ' + t.name); }
+    await extraChecks(fails);
+  }
+  // one-line experiments: --tolx 4,10 prints today's output size and time at a scaled tolerance (no other metrics)
+  if (arg('tolx', '')) for (const q of quals) for (const name of only) {
+    const file = path.join(DATA, name + '.' + q + '.slb'); if (!fs.existsSync(file)) continue;
+    const { meta, slabs } = readSlabs(file), ctx = await loadWorker({ files: SLAB_FILES });
+    for (const s of arg('tolx').split(',').map(Number)) { const run = await runPipeline(ctx, meta, slabs, s); console.log(`tol x${s}: ${meta.family} @ ${q}: ${run.final.idx.length / 3} tris (x1: see table), ${f(run.totalMs, 0)} ms`); }
   }
   for (const q of quals) for (const name of only) {
     const file = path.join(DATA, name + '.' + q + '.slb');
@@ -113,12 +140,12 @@ export async function main() {
       const ctxD = await loadWorker({ files: SLAB_FILES }), ctxM = await loadWorker({ files: SLAB_FILES, source: 'main' });
       const { meta, slabs } = readSlabs(file);
       const hDirect = hashRun(await directRun(ctxD, meta, slabs)), hMain = hashRun(await directRun(ctxM, meta, slabs));
-      const hToday = today.hash, hB1a = (r.rows.find(x => x.method === 'B1a') || {}).hash;
-      const ok1 = hDirect === hToday, ok2 = hMain === hDirect, ok3 = hB1a === undefined || hB1a === hToday;
-      console.log(`  check: baseline == m35/m36 run directly ${ok1 ? 'PASS' : 'FAIL'} (${hToday}); branch == main ${ok2 ? 'PASS' : 'FAIL'} (${hMain}); B1a bit-identical to today ${ok3 ? 'PASS' : 'FAIL'}`);
+      const hToday = today.hash, same = n => { const x = r.rows.find(y => y.method === n); return !x || x.hash === hToday; };
+      const ok1 = hDirect === hToday, ok2 = hMain === hDirect, ok3 = same('B1a') && same('B1lazy');
+      console.log(`  check: baseline == m35/m36 run directly ${ok1 ? 'PASS' : 'FAIL'} (${hToday}); branch == main ${ok2 ? 'PASS' : 'FAIL'} (${hMain}); B1a and B1a-lazy bit-identical to today ${ok3 ? 'PASS' : 'FAIL'}`);
       if (!ok1) fails.push(`${name}.${q}: baseline differs from m35 run directly`);
       if (!ok2) fails.push(`${name}.${q}: branch output differs from main`);
-      if (!ok3) fails.push(`${name}.${q}: B1a differs from today`);
+      if (!ok3) fails.push(`${name}.${q}: B1a or B1a-lazy differs from today`);
       for (const row of r.rows) if (!allComputed(row)) fails.push(`${name}.${q}.${row.method}: a metric was not computed`);
       for (const row of r.rows) if (row.open !== 0 || row.nonManifold !== 0) console.log(`  note: ${row.label} output has open ${row.open} / non-manifold ${row.nonManifold} edges`);
     }

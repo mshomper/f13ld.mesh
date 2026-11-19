@@ -31,7 +31,7 @@ export const METHODS = {
 };
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
 const has = k => process.argv.includes('--' + k);
-const quick = has('quick'), check = has('check'), tune = has('tune');
+let quick = false, check = false, tune = false;   // set from the arguments when main() starts
 const f = (x, d = 2) => (typeof x === 'number' && isFinite(x)) ? x.toFixed(d) : String(x);
 
 // metrics that must be finite numbers / booleans for "all metrics were computed"
@@ -84,7 +84,8 @@ async function tuneMethod(name, file, todayRow, opts) {
   return best;
 }
 
-async function main() {
+export async function main() {
+  quick = has('quick'); check = has('check'); tune = has('tune');
   const quals = (arg('quals', quick ? 'draft' : 'draft,med')).split(','), only = arg('only', '') ? arg('only').split(',') : CASES, methods = arg('methods', 'today,A,B1a,B1b').split(',');
   const opts = quick ? { siSample: 6000, devSamples: 1500, reps: 2 } : { siSample: 0, devSamples: 5000, reps: 3 };
   const t0 = performance.now(), fails = [], report = { quick, opts, cases: [] };

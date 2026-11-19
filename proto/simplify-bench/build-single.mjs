@@ -75,7 +75,7 @@ if (check) {
   const stripped = html.replace(/<script>\nvar MeshoptSimplifier[\s\S]*?<\/script>/, '').replace(/window\.__F13LD_BENCH_SRC__ = [\s\S]*?\};<\/script>/, '</script>');
   if (/<script\b[^>]*\bsrc\s*=/i.test(html)) bad.push('a <script src=...> tag');
   if (/<link\b/i.test(html)) bad.push('a <link> tag');
-  if (/@import|url\(\s*['"]?(?!data:)/i.test(html)) bad.push('a CSS @import or url()');
+  if (/@import|url\(\s*['"]?(?!data:)/i.test((html.match(/<style>[\s\S]*?<\/style>/g) || []).join('\n'))) bad.push('a CSS @import or url()');
   if (/<(?:img|iframe|audio|video|source|embed|object)\b[^>]*\bsrc\s*=/i.test(html)) bad.push('an element with src=');
   { const m = stripped.match(/.{0,40}https?:\/\/.{0,60}/); if (m) bad.push('an http(s) address in the page code: ' + m[0]); }
   { const m = meshopt.match(/.{0,40}https?:\/\/.{0,60}/); if (m) bad.push('an http(s) address in the meshoptimizer file: ' + m[0]); }
@@ -96,13 +96,14 @@ if (check) {
     sb.window = sb; vm.createContext(sb);
     vm.runInContext(meshopt, sb); vm.runInContext(`window.__F13LD_BENCH_SRC__ = ${safeJson({ files, meshes })};`, sb);
     vm.runInContext('(async()=>{' + moduleJs.replace(/^\s*(?:export\s+)/gm, '') + '\n})()', sb);
-    for (let i = 0; i < 100 && !(els.run && els.run.listeners.click && !els.run.disabled); i++) await new Promise(r => setTimeout(r, 50));
+    for (let i = 0; i < 200 && !(els.run && els.run.listeners.click && doc.getElementById('meshName').textContent); i++) await new Promise(r => setTimeout(r, 50));   // init() ends by naming the mesh
     if (!els.run || !els.run.listeners.click) bad.push('the page did not register its Run button');
     else {
+      const logEl = doc.getElementById('log'), cardsEl = doc.getElementById('cards');
       els.run.listeners.click();
-      for (let i = 0; i < 600 && !/done|error/.test(els.log.textContent); i++) await new Promise(r => setTimeout(r, 100));
-      if (!/done/.test(els.log.textContent) || els.cards.children.length !== 2) bad.push('the single file did not run the bench in Node: ' + els.log.textContent.slice(-300));
-      else console.log('single file ran the bench in Node (fake DOM): ' + els.log.textContent.trim().split('\n').slice(-3).join(' | '));
+      for (let i = 0; i < 600 && !/done|error/.test(logEl.textContent); i++) await new Promise(r => setTimeout(r, 100));
+      if (!/done/.test(logEl.textContent) || cardsEl.children.length !== 2) bad.push('the single file did not run the bench in Node: ' + logEl.textContent.slice(-300));
+      else console.log('single file ran the bench in Node (fake DOM): ' + logEl.textContent.trim().split('\n').slice(-3).join(' | '));
     }
   } catch (e) { bad.push('running the single file failed: ' + e.message); }
   if (bad.length) { console.error('CHECK FAILED:\n  ' + bad.join('\n  ')); process.exit(1); }

@@ -1,1 +1,1 @@
---sample --check --tune --quals med --out proto/simplify-bench/results/bench-med.json
+--sample --check --quals med --methods today,B1a,B1lazy,B1b --reps 3 --out proto/simplify-bench/results/bench-med-b1.json

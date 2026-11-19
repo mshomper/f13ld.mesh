@@ -122,7 +122,8 @@ export async function main() {
   if (arg('tolx', '')) for (const q of quals) for (const name of only) {
     const file = path.join(DATA, name + '.' + q + '.slb'); if (!fs.existsSync(file)) continue;
     const { meta, slabs } = readSlabs(file), ctx = await loadWorker({ files: SLAB_FILES });
-    for (const s of arg('tolx').split(',').map(Number)) { const run = await runPipeline(ctx, meta, slabs, s); console.log(`tol x${s}: ${meta.family} @ ${q}: ${run.final.idx.length / 3} tris (x1: see table), ${f(run.totalMs, 0)} ms`); }
+    report.tolx = report.tolx || [];
+    for (const s of [1, ...arg('tolx').split(',').map(Number)]) { const run = await runPipeline(ctx, meta, slabs, s); report.tolx.push({ case: name, qual: q, tolScale: s, tris: run.final.idx.length / 3, totalMs: run.totalMs }); console.log(`tol x${s}: ${meta.family} @ ${q}: ${run.final.idx.length / 3} tris (x1: see table), ${f(run.totalMs, 0)} ms`); }
   }
   for (const q of quals) for (const name of only) {
     const file = path.join(DATA, name + '.' + q + '.slb');

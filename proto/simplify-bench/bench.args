@@ -1,1 +1,1 @@
---quick --check
+--sample --quals med --methods today --only foam2-open-lloyd --reps 1 --tolx 4,10 --out proto/simplify-bench/results/exp-tolx.json

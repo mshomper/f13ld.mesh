@@ -35,12 +35,14 @@ export async function meshopt() {
   return (_meshopt = mod.MeshoptSimplifier);
 }
 
-export async function loadWorker({ source = 'branch', files = SLAB_FILES } = {}) {
+// patches: candidate scripts (paths relative to proto/simplify-bench/) evaluated after the worker files
+export async function loadWorker({ source = 'branch', files = SLAB_FILES, patches = [] } = {}) {
   const ctx = { console, performance, Math, Float32Array, Float64Array, Int32Array, Uint32Array, Uint8Array, Uint16Array, Int8Array, Int16Array,
     Map, Set, Array, Object, Number, String, JSON, Date, Error, Promise, ArrayBuffer, DataView, self: {}, meshoptReady: Promise.resolve(),
     setTimeout, clearTimeout };
   vm.createContext(ctx);
   ctx.MeshoptSimplifier = await meshopt();
   for (const f of files) vm.runInContext(readSource(f, source), ctx, { filename: f });
+  for (const p of patches) vm.runInContext(fs.readFileSync(path.join(ROOT, 'proto', 'simplify-bench', p), 'utf8'), ctx, { filename: p });
   return ctx;
 }

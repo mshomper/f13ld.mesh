@@ -74,10 +74,12 @@ function simplifySlab(r, tol, flip){
   // v0.16.0: edge flips; no edge between two seam vertices is removed or
   // made and no vertex moves, so the slabs still join exactly
   var fr=flip===false?{idx:ss.idx, flips:0, ms:0}:checkedFlip(r.pos, ss.idx, open, shared||open);
+  var tC=_nowMs();
   var c=compactIndexed(r.pos, fr.idx);
+  var compactMs=_nowMs()-tC;
   var sv=[], sk=[];
   for(i=0;i<r.seamV.length;i++){ var m=c.remap[r.seamV[i]]; if(m>=0){ sv.push(m); sk.push(r.seamK[i]); } }
-  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), tearV:tearVerts(ss.tearLock, c.remap), rawTris:r.idx.length/3, evals:r.evals, fieldMs:r.fieldMs, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected};
+  return {pos:c.pos, idx:c.idx, seamV:Uint32Array.from(sv), seamK:Float64Array.from(sk), tearV:tearVerts(ss.tearLock, c.remap), rawTris:r.idx.length/3, evals:r.evals, fieldMs:r.fieldMs, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected, simpT:ss.t||null, compactMs:compactMs};
 }
 // flipEdges opts for the slab / band passes: 'edge' locking lets seam
 // vertices take part (their edges to each other and their positions stay),
@@ -137,7 +139,7 @@ function simplifyBandJob(job, tol, flip){
   var ss=safeSimplify(job.pos, job.idx, tol, job.outer, ['Sparse'], null, job.seed||null, !!job.noRing);
   // v0.16.0: edge flips, outer edges (both ends outer) kept as they are
   var fr=flip===false?{idx:ss.idx, flips:0, ms:0}:checkedFlip(job.pos, ss.idx, job.outer, job.outer);
-  return {idx:fr.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected, tearV:tearVerts(ss.tearLock, null)};
+  return {idx:fr.idx, retries:ss.retries, locked:ss.locked, gaveUp:!!ss.gaveUp, unsafe:!!ss.unsafe, flips:fr.flips, flipMs:fr.ms, flipRejected:!!fr.rejected, tearV:tearVerts(ss.tearLock, null), simpT:ss.t||null};
 }
 function joinSeamBands(rest, jobs, results){
   var n=rest.length, i, k;
@@ -267,8 +269,16 @@ function simplifyFinalRounds(pos, idx, seamZ, tol, flip){
 function bandStats(cut, res, out){
   var r=0, l=0, gu=false, un=false, after=0, fl=0, fr=0;
   for(var k=0;k<res.length;k++){ r+=res[k].retries; l+=res[k].locked; gu=gu||res[k].gaveUp; un=un||res[k].unsafe; after+=res[k].idx.length/3; fl+=res[k].flips||0; if(res[k].flipRejected) fr++; }
-  return {bandTris:cut.bandTris, after:after, bands:res.length, retries:r, locked:l, gaveUp:gu, unsafe:un, flips:fl, flipRejected:fr};
+  return {bandTris:cut.bandTris, after:after, bands:res.length, retries:r, locked:l, gaveUp:gu, unsafe:un, flips:fl, flipRejected:fr, simpT:sumSimpT(res), flipMs:sumFlipMs(res)};
 }
+// Timing only: summed safeSimplify times / flip ms over band job results
+// (only present when the jobs ran in this thread).
+function sumSimpT(res){
+  var s=null;
+  for(var k=0;k<res.length;k++){ var t=res[k]&&res[k].simpT; if(!t) continue; if(!s) s={}; for(var key in t) s[key]=(s[key]||0)+t[key]; }
+  return s;
+}
+function sumFlipMs(res){ var s=0; for(var k=0;k<res.length;k++) s+=(res[k]&&res[k].flipMs)||0; return s; }
 
 // Closed, consistently oriented mesh: every directed edge a→b appears once
 // and b→a appears once. Returns {ok, bad}; with wantVerts, also verts (the
@@ -351,13 +361,20 @@ var SAFE_SIMPLIFY_RINGS=[1,1,2,2,3,3,4,6,8,10,12,12];
 // return them as tearV), so the final pass doesn't tear and redo there.
 // The result's tearLock marks every vertex locked because of a tear (seed
 // included).
+// Timing only (expedition measurement, no behaviour change): res.t = ms in
+// {ring: ringLock at start, closed0: input closed check, seam0: seam edge
+// count, first: first meshopt call, retryMeshopt, closedChk / seamChk: checks
+// after each try, lockRings}.
+function _nowMs(){ return (typeof performance!=='undefined')?performance.now():0; }
 function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
+  var tm={ring:0, closed0:0, seam0:0, first:0, retryMeshopt:0, closedChk:0, seamChk:0, lockRings:0, calls:0}, tq=_nowMs();
   var lock0=null;
   if(open && !shared) shared=function(a,b){ return open[a]===1 && open[b]===1; };
   // open vertices themselves stay put too; noRing (v0.16.2 rows jobs) skips
   // the extra lock on the triangles along the open edges — the tear checks
   // below still keep every open edge as it was
   if(open){ lock0=new Uint8Array(open); if(!noRing) ringLock(idx, open.length, shared, lock0); }
+  tm.ring=_nowMs()-tq;
   var S=slabMeshopt();
   if(!S || !(tol>0) || idx.length<3) return {idx:idx, retries:0, locked:0, unsafe:false};
   var nV=pos.length/3, nT=idx.length/3;
@@ -365,19 +382,32 @@ function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
   var tearLock=new Uint8Array(nV), seeded=0;
   if(seed){ for(var si=0;si<nV;si++) if(seed[si]){ tearLock[si]=1; if(!lock[si]){ lock[si]=1; seeded++; } } }
   var attr=new Float32Array(nV), fl=['ErrorAbsolute'].concat(flags||[]);
+  tq=_nowMs();
   if(meshClosedReport(pos, idx, false, shared||null).ok===false) return {idx:idx, retries:0, locked:0, unsafe:true};
+  tm.closed0=_nowMs()-tq; tq=_nowMs();
   var res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
+  tm.first=_nowMs()-tq; tm.calls=1; tq=_nowMs();
   var retries=0, locked=0, before=shared?openEdgeCounts(idx, nV, shared):null;
+  tm.seam0=_nowMs()-tq;
   // Two kinds of problem: a tear (closed check) and a changed seam edge.
   // A tear can come from a collapse a few edges away, so its lock grows by
   // SAFE_SIMPLIFY_RINGS; a changed seam edge comes from a collapse next
   // to it, so one ring is enough.
   function problems(r){
+    var t1=_nowMs();
     var rep=meshClosedReport(pos, r, true, shared||null);
-    return {tear:rep.verts?Array.from(rep.verts):[], seam:before?openEdgeChanges(before, r, nV, shared):[]};
+    var tr=rep.verts?Array.from(rep.verts):[];
+    var t2=_nowMs(); tm.closedChk+=t2-t1;
+    var sm=before?openEdgeChanges(before, r, nV, shared):[];
+    tm.seamChk+=_nowMs()-t2;
+    return {tear:tr, seam:sm};
   }
   function lockRings(list, rings){
     if(!list.length) return;
+    var tl=_nowMs();
+    try{ lockRings0(list, rings); } finally { tm.lockRings+=_nowMs()-tl; }
+  }
+  function lockRings0(list, rings){
     var hit=new Uint8Array(nV), t, k;
     for(k=0;k<list.length;k++) hit[list[k]]=1;
     for(var ring=0; ring<rings; ring++){
@@ -392,16 +422,18 @@ function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
   for(; retries<SAFE_SIMPLIFY_RETRIES; retries++){
     var pr=problems(res);
     if(retries===0){ safeSimplify.first={tear:pr.tear.length, seam:pr.seam.length}; }
-    if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock};
+    if(!pr.tear.length && !pr.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock, t:tm};
     // locks add up across retries: tears tend to move, so the next try only
     // has to catch the new ones
     isTear=true; lockRings(pr.tear, SAFE_SIMPLIFY_RINGS[Math.min(retries, SAFE_SIMPLIFY_RINGS.length-1)]);
     isTear=false; lockRings(pr.seam, 1);
+    tq=_nowMs();
     res=S.simplifyWithAttributes(idx, pos, 3, attr, 1, [0], lock, 6, tol, fl)[0];
+    tm.retryMeshopt+=_nowMs()-tq; tm.calls++;
   }
   var last=problems(res);
-  if(!last.tear.length && !last.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock};
-  return {idx:idx, retries:retries, locked:locked, seeded:seeded, unsafe:false, gaveUp:true, tearLock:tearLock};
+  if(!last.tear.length && !last.seam.length) return {idx:res, retries:retries, locked:locked, seeded:seeded, unsafe:false, tearLock:tearLock, t:tm};
+  return {idx:idx, retries:retries, locked:locked, seeded:seeded, unsafe:false, gaveUp:true, tearLock:tearLock, t:tm};
 }
 
 // Edge flips (v0.16.0). Simplify leaves long thin triangles on flat areas

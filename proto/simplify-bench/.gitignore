@@ -1,0 +1,3 @@
+# Med meshes are about 40 MB in all: regenerate with `node proto/simplify-bench/make-jobs.mjs --quals med` (about 40 s)
+data/*.med.slb
+data/*.high.slb

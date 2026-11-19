@@ -78,12 +78,14 @@ async function _slabFinish(g, results, tol, post, t0, runBands, nWorkers, noFlip
       idx=joinSeamBands(rc.rest, rc.jobs, rr);
     }
     let biggest=0; for(const j of rc.jobs) biggest=Math.max(biggest, j.idx.length/3);
-    rows={free:rc.free, pieces:rc.pieces, jobs:rc.jobs.length, tris:rc.bandTris, biggest, retries:rr.reduce((a,x)=>a+(x.retries||0),0), gaveUp:rr.some(x=>x.gaveUp), ms:Math.round(performance.now()-tR)};
+    rows={free:rc.free, pieces:rc.pieces, jobs:rc.jobs.length, tris:rc.bandTris, biggest, retries:rr.reduce((a,x)=>a+(x.retries||0),0), gaveUp:rr.some(x=>x.gaveUp), ms:Math.round(performance.now()-tR), simpT:sumSimpT(rr), flipMs:sumFlipMs(rr)};
   }
   seam=rounds.length?rounds[rounds.length-1]:null;
+  const tCmp=performance.now();
   const C=compactIndexed(J.pos, idx);
+  const compactMs=performance.now()-tCmp;   // timing only
   let finalFlip=null;
-  const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF)};
+  const finalSimp={rounds, rows, ms:Math.round(performance.now()-tF), compactMs:Math.round(compactMs), joinMs:Math.round(tF-tJ)};
   // v0.16.2: weld regions skip this flip — the weld flips once after its union
   if(tol>0 && !noFlip){ finalFlip=checkedFlip(C.pos, C.idx, null); C.idx=finalFlip.idx; }
   const msSeam=Math.round(performance.now()-tJ);

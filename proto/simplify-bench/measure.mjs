@@ -73,6 +73,10 @@ function tableMd(all, machine) {
     L.push('| family | join | round A | round B | rows | compact | final flip | final pass total | A/B/rows retries | out tris | retries + checks + lock as % of slab simplify |');
     L.push('|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|');
     for (const a of rows) { const f = a.finalPhase; L.push(`| ${a.family} | ${f.joinMs} | ${f.roundA ? f.roundA.ms : '-'} | ${f.roundB ? f.roundB.ms : '-'} | ${f.rows ? f.rows.ms : '-'} | ${f.compactMs} | ${f.finalFlipMs} | ${f.totalMs} | ${[f.roundA, f.roundB, f.rows].map(x => x ? x.retries : '-').join('/')} | ${a.finalTris} | ${a.retrySharePct} |`); }
+    L.push('', '### Final pass per round: triangles removed and cost (CPU ms, one thread)', '');
+    L.push('| family | round A ms / tris in -> out / ms per 1000 removed | round B | rows pass (tris in) | final flip ms |', '|---|---|---|---|---|');
+    const per = (x, key) => x ? `${x.ms} ms / ${x.bandTris} -> ${x.after} / ${x.bandTris > x.after ? ((x.ms / (x.bandTris - x.after)) * 1000).toFixed(1) : 'n/a'}` : '-';
+    for (const a of rows) { const f = a.finalPhase; L.push(`| ${a.family} | ${per(f.roundA)} | ${per(f.roundB)} | ${f.rows ? f.rows.ms + ' ms / ' + f.rows.tris + ' tris' : '-'} | ${f.finalFlipMs} |`); }
     L.push('', '### Slab simplify as a share (%), slabs : final pass', '');
     L.push('| family | slab simplify ms | final pass ms (CPU, incl. flip) | ratio slab : final | field ms (sum) | marching ms (sum) |', '|---|--:|--:|--:|--:|--:|');
     for (const a of rows) { const f = a.finalPhase, fp = f.totalMs; L.push(`| ${a.family} | ${a.slabPhase.simplifyMs} | ${fp} | ${(a.slabPhase.simplifyMs / fp).toFixed(2)} : 1 | ${a.fieldMsSum} | ${a.marchMsSum} |`); }

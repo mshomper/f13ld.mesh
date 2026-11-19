@@ -346,7 +346,10 @@ function runMesh(workerUrl, job, cores, onStage, extra){
       const m=e.data;
       if(m.type==='progress') onStage(m.stage);
       else if(m.type==='diag'&&m.diag&&m.diag.fieldBake) field=m.diag.fieldBake;
-      else if(m.type==='done'){ const ms=performance.now()-t0; end(); res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
+      else if(m.type==='done'){ const ms=performance.now()-t0; end();
+        // v0.16.3: bench wall time minus the worker's own clock (started when it got the job) = loading the worker's scripts and WASM; not part of the export itself
+        if(m.stages && m.ms>0) m.stages.startup=Math.max(0,Math.round(ms-m.ms));
+        res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
       else if(m.type==='error'){ end(); rej(new Error(m.message)); }
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
@@ -650,7 +653,7 @@ async function run(){
 // Shape-clipped runs also evaluate the field in the coarse pass before the slabs (stages.shapeCoarse), counted here.
 function fieldMsOf(t){ const st=t.stages; return st&&st.jobCpu>0 ? (st.field||0)+(st.weldField||0)+(st.shapeCoarse||0) : ((t.bd&&t.bd.field)||0)+((st&&st.weldField)||0); }
 function fieldLsTxt(t){ const st=t.stages; return fmtS(fieldMsOf(t))+' / '+(st&&st.jobCpu>0 ? fmtS(st.march||0)+' march' : fmtS((t.bd&&t.bd.levelSet)||0)); }
-const STAGE_KEYS=[['field','field (in slabs)'],['march','march (in slabs)'],['simp','simplify (in slabs)'],['shapeCoarse','shape coarse pass'],['weldField','weld field'],['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
+const STAGE_KEYS=[['startup','worker start-up (before the job)'],['field','field (in slabs)'],['march','march (in slabs)'],['simp','simplify (in slabs)'],['shapeCoarse','shape coarse pass'],['weldField','weld field'],['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
 function stagesTxt(st){
   if(!st) return '\u2014';
   return STAGE_KEYS.filter(([k])=>st[k]>0).map(([k,l])=>l+' '+fmtS(st[k])).join(' \u00b7 ')||'\u2014';

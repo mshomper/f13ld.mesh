@@ -97,6 +97,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">Time limit</label><input type="number" id="limit" min="30" max="1800" step="10" value="300"><span class="note" style="margin:0">seconds per export</span></div>
       <div class="row"><label class="k">This build mesher</label>
         <div class="seg" id="mesherSeg"><button data-m="auto">Auto</button><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">Auto is the app's default; the reference always runs classic</span></div>
+      <div class="row"><label class="k">This build simplify</label>
+        <div class="seg" id="checksSeg"><button data-c="standard">Standard</button><button data-c="fast">Fast</button></div><span class="note" style="margin:0">slab mesher only; Fast should give the same meshes, sooner (v0.16.5)</span></div>
       <div class="row"><label class="k">Loose pieces</label>
         <div class="seg" id="looseSeg"><button data-f="keep">Keep all</button><button data-f="specks">Remove specks</button><button data-f="largest">Largest piece only</button></div><span class="note" style="margin:0">specks are pieces under 10 mesh cells; the reference keeps all</span></div>
       <div class="row"><label class="k">Extra run</label><label class="chk"><input type="checkbox" id="oneCore"> this build on one core as well</label></div>
@@ -170,6 +172,10 @@ function bindSeg(id,key,cur,set){
 }
 bindSeg('mesherSeg','m',()=>MESHER,v=>{ MESHER=v; store('mesher',v); });
 bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=String(v); store('looseMode',LOOSE); });
+// v0.16.5: Checks: Fast (job fastChecks:true; builds before v0.16.5 ignore it)
+let CHECKS=String(load('checks','standard')); if(!['standard','fast'].includes(CHECKS)) CHECKS='standard';
+bindSeg('checksSeg','c',()=>CHECKS,v=>{ CHECKS=String(v); store('checks',CHECKS); });
+const checksLabel=()=>CHECKS==='fast'?'Fast':'Standard';
 const looseLabel=()=>{ const b=$('looseSeg').querySelector('button.on'); return b?b.textContent:String(LOOSE); };
 $('oneCore').checked=load('oneCore',false); $('oneCore').onchange=()=>store('oneCore',$('oneCore').checked);
 
@@ -349,12 +355,12 @@ function runMesh(workerUrl, job, cores, onStage, extra){
       else if(m.type==='done'){ const ms=performance.now()-t0; end();
         // v0.16.3: bench wall time minus the worker's own clock (started when it got the job) = loading the worker's scripts and WASM; not part of the export itself
         if(m.stages && m.ms>0) m.stages.startup=Math.max(0,Math.round(ms-m.ms));
-        res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
+        res({vp:new Float32Array(m.vertProperties), tv:new Uint32Array(m.triVerts), tris:m.triCount, ms, bd:m.msBreakdown||{}, cores:m.cores||1, field, mesher:m.mesher, fastChecks:!!m.fastChecks, slabFallback:m.slabFallback, loose:m.loose||null, closedFix:m.closedFix, stages:m.stages||null}); }
       else if(m.type==='error'){ end(); rej(new Error(m.message)); }
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
     const msg=structuredClone(job); msg.cores=cores;
-    if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; }
+    if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; delete msg.fastChecks; if(extra.fastChecks) msg.fastChecks=true; }
     const tr=new Set(); const add=b=>{ if(b instanceof ArrayBuffer) tr.add(b); };
     add(msg.shapeSdfData); add(msg.huGridData);
     // weld job (msg.bodies + msg.weld): member grids, pre-baked regions, solid meshes
@@ -509,7 +515,14 @@ const anyTxt=v=>v==null||v===false?'':(typeof v==='object'?JSON.stringify(v):Str
 function mesherTxt(t){
   if(!t||!t.mesher) return '—';
   const fb=anyTxt(t.slabFallback);
-  return t.mesher+(fb?' (slab fallback'+(fb!=='true'?': '+fb:'')+')':'');
+  return t.mesher+(t.fastChecks?' · fast simplify':'')+(fb?' (slab fallback'+(fb!=='true'?': '+fb:'')+')':'');
+}
+// Simplify CPU split (timing counters from the simplification expedition):
+// CPU ms summed over the pool's jobs, not wall time. Slab jobs and the final
+// pass apart; meshopt includes its retries; checks = closed + seam checks.
+const SPLIT_KEYS=[['slabMeshoptMs','slabs meshopt'],['slabRetryMs','slabs retries'],['slabChkMs','slabs checks'],['slabLockMs','slabs locks'],['finalMeshoptMs','final meshopt'],['finalRetryMs','final retries'],['finalChkMs','final checks'],['finalLockMs','final locks']];
+function splitTxt(st){
+  return 'slabs: meshopt '+fmtS(st.slabMeshoptMs)+' (retries '+fmtS(st.slabRetryMs)+') · checks '+fmtS(st.slabChkMs)+' · locks '+fmtS(st.slabLockMs)+' | final pass: meshopt '+fmtS(st.finalMeshoptMs)+' (retries '+fmtS(st.finalRetryMs)+') · checks '+fmtS(st.finalChkMs)+' · locks '+fmtS(st.finalLockMs);
 }
 function looseTxt(l){
   if(!l) return '—';
@@ -539,6 +552,8 @@ function setCard(el, r){
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);
     if(r.test && r.test.stages) kv.push(['slab stages (this build)', stagesTxt(r.test.stages)]);
+    // timing only (simplify-expedition counters): CPU ms summed over the pool's jobs
+    if(r.test && r.test.stages && r.test.stages.slabMeshoptMs!=null) kv.push(['simplify CPU split', splitTxt(r.test.stages)]);
     kv.push(['loose pieces removed', looseTxt(r.test.loose)]);
     const cf=anyTxt(r.test.closedFix); if(cf) kv.push(['closed fix', cf]);
   }
@@ -586,7 +601,7 @@ async function run(){
   const cores=Math.max(1,Math.floor(+$('cores').value||1));
   const refBase=$('refUrl').value.trim()||DEFAULT_REF;
   const rows=[];
-  report={when:new Date(), quality:QUAL, mesher:MESHER, loose:LOOSE, looseLabel:looseLabel(), cores, refBase, testBase:TEST_BASE, ver:$('verLbl').textContent, ua:navigator.userAgent, threads:navigator.hardwareConcurrency, rows};
+  report={when:new Date(), quality:QUAL, mesher:MESHER, checks:CHECKS, checksLabel:checksLabel(), loose:LOOSE, looseLabel:looseLabel(), cores, refBase, testBase:TEST_BASE, ver:$('verLbl').textContent, ua:navigator.userAgent, threads:navigator.hardwareConcurrency, rows};
   let refUrl;
   try{ refUrl=await getRefWorkerUrl(refBase); }
   catch(e){ setStatus('Reference build not reachable: '+e.message,'bad'); finish(); return; }
@@ -607,10 +622,10 @@ async function run(){
       r.tris=r.ref.tris; setCard(el,r);
       if($('oneCore').checked){
         r.label='1 core'; stage('this build, one core…');
-        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t), {mesher:MESHER, looseMode:LOOSE}); r.one.scale=r.scale;
+        r.one=await runMesh(testWorkerUrl, job, 1, t=>stage('1 core: '+t), {mesher:MESHER, looseMode:LOOSE, fastChecks:CHECKS==='fast'}); r.one.scale=r.scale;
       }
       r.label=cores+' cores'; stage('this build, '+cores+' cores…');
-      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseMode:LOOSE}); r.test.scale=r.scale;
+      r.test=await runMesh(testWorkerUrl, job, cores, t=>stage(cores+' cores: '+t), {mesher:MESHER, looseMode:LOOSE, fastChecks:CHECKS==='fast'}); r.test.scale=r.scale;
       r.trisTest=r.test.tris!=null?r.test.tris:r.test.tv.length/3;
       r.test.q=triQuality(r.test);
       r.same=sameMesh(r.ref, r.test);
@@ -684,7 +699,7 @@ $('dlBtn').onclick=()=>{
   L.push('- This build: '+R.testBase+' ('+R.ver+')');
   L.push('- Reference: '+R.refBase);
   L.push('- Quality: '+R.quality+' · cores: '+R.cores+' · browser threads: '+R.threads);
-  L.push('- This build mesher: '+R.mesher+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
+  L.push('- This build mesher: '+R.mesher+' · simplify: '+R.checksLabel+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
   L.push('- Browser: '+R.ua,'');
   L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Needles ref | Needles this | Min angle p5 ref / this | Result |');
   L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
@@ -703,6 +718,12 @@ $('dlBtn').onclick=()=>{
   if(withStages.length){
     L.push('','Slab mesher stage times (this build):','','| Case | '+STAGE_KEYS.map(([,l])=>l).join(' | ')+' |','|---|'+STAGE_KEYS.map(()=>'---|').join(''));
     for(const r of withStages){ const st=r.test.stages; L.push('| '+r.name+' | '+STAGE_KEYS.map(([k])=>st[k]>0?fmtS(st[k]):'\u2014').join(' | ')+' |'); }
+  }
+  // simplify CPU split per case (CPU summed over the pool's jobs, not wall time)
+  const withSplit=R.rows.filter(r=>r.test&&r.test.stages&&r.test.stages.slabMeshoptMs!=null);
+  if(withSplit.length){
+    L.push('','Simplify CPU split (this build, simplify: '+R.checksLabel+'; CPU time summed over all slab and band jobs, not wall time; meshopt includes its retries; checks = closed-mesh and seam checks):','','| Case | Simplify | '+SPLIT_KEYS.map(([,l])=>l).join(' | ')+' |','|---|---|'+SPLIT_KEYS.map(()=>'---|').join(''));
+    for(const r of withSplit){ const st=r.test.stages; L.push('| '+r.name+' | '+(r.test.fastChecks?'Fast':'Standard')+' | '+SPLIT_KEYS.map(([k])=>fmtS(st[k]||0)).join(' | ')+' |'); }
   }
   L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). Needles: triangles whose height over their longest edge is under '+NEEDLE_RATIO+', as a count and a share of all triangles. Min angle p5: the 5th percentile of each triangle\'s smallest angle. PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');
   const welds=R.rows.filter(r=>r.weld);

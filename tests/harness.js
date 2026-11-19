@@ -115,6 +115,8 @@ async function run(site, root, recipe, opts) {
   if (opts.cores) await ctx.addInitScript(n => Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => n }), opts.cores);
   // v0.15.0: MESHER=slab|classic, LOOSE=<fraction> pick the Export settings (older builds ignore them)
   if (opts.mesher || opts.loose != null) await ctx.addInitScript(([m, l]) => { try { if (m) localStorage.setItem('f13ld.mesh.mesher', m); if (l != null) localStorage.setItem('f13ld.mesh.loose', l === '0' || l === 0 ? 'keep' : String(l)); } catch (e) {} }, [opts.mesher || null, opts.loose != null ? opts.loose : null]);
+  // v0.16.5: CHECKS=standard|fast picks the Export tab's Checks (older builds ignore it)
+  if (opts.checks) await ctx.addInitScript(c => { try { localStorage.setItem('f13ld.mesh.fastchecks', c); } catch (e) {} }, opts.checks);
   // DUMPJOB=<dir>: keep a copy of each export job sent to the mesh worker (dev only)
   if (process.env.DUMPJOB) await ctx.addInitScript(() => { const P = Worker.prototype.postMessage; Worker.prototype.postMessage = function (m, t) { try { if (m && m.mode === 'export') window.__lastJob = structuredClone(m); } catch (e) {} return P.call(this, m, t); }; });
   const page = await ctx.newPage();
@@ -200,10 +202,15 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
   for (const [name, spec] of Object.entries(R)) {
     if (FILTER && !name.includes(FILTER)) continue;
     const opts = { cores: spec.cores || (process.env.CORES ? +process.env.CORES : undefined), shape: spec.shape && path.join(__dirname, 'fixtures', spec.shape), cellMm: spec.cellMm, export: spec.export,
-      mesher: process.env.MESHER, loose: process.env.LOOSE != null ? process.env.LOOSE : undefined };
+      mesher: process.env.MESHER, loose: process.env.LOOSE != null ? process.env.LOOSE : undefined, checks: process.env.CHECKS };
     // REFMESHER=<mesher>: the old build's mesher when it should differ from MESHER
-    // (e.g. REFMESHER=classic MESHER=slab compares slab against classic)
-    const a = await run('orig.test', ORIG, spec.recipe, process.env.REFMESHER ? Object.assign({}, opts, { mesher: process.env.REFMESHER }) : opts);
+    // (e.g. REFMESHER=classic MESHER=slab compares slab against classic).
+    // REFCHECKS=<checks> likewise (REFCHECKS=standard CHECKS=fast on one build
+    // compares the two Checks settings).
+    const refOpts = Object.assign({}, opts);
+    if (process.env.REFMESHER) refOpts.mesher = process.env.REFMESHER;
+    if (process.env.REFCHECKS) refOpts.checks = process.env.REFCHECKS;
+    const a = await run('orig.test', ORIG, spec.recipe, refOpts);
     const b = await run('new.test', NEW, spec.recipe, opts);
     // The mesher asked for must be the one that ran: a slab run that fell back
     // to classic ("slab skipped") is not a slab result, whatever its shape.
@@ -211,6 +218,11 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
     if (opts.mesher === 'slab' || opts.mesher === 'classic') {
       const rm = reportMesher(b.report);
       if (rm && (rm.used !== opts.mesher || rm.skipped)) wrongMesher = `asked for the ${opts.mesher} mesher, the report says "${rm.text}"`;
+    }
+    // CHECKS=fast on a slab result: the report must say so (v0.16.5 mesher chip "· fast simplify")
+    if (!wrongMesher && opts.checks && b.report) {
+      const rm = reportMesher(b.report), fast = /fast simplify/.test(b.report);
+      if (rm && rm.used === 'slab' && fast !== (opts.checks === 'fast')) wrongMesher = `asked for ${opts.checks} checks, the report ${fast ? 'says' : 'does not say'} "fast simplify"`;
     }
     if (process.env.DUMP) { for (const [lbl, r] of [['orig', a], ['new', b]]) if (r.model) fs.writeFileSync(path.join(process.env.DUMP, name + '.' + lbl + '.model'), r.model); }
     const same = a.model !== undefined && a.model === b.model;

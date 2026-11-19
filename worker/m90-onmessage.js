@@ -54,6 +54,10 @@ self.onmessage=async function(e){
     // and 'classic' force one.
     const meshMode=(d.mesher==='slab'||d.mesher==='classic')?d.mesher:'auto';
     const useSlab=meshMode==='slab', autoMode=meshMode==='auto';
+    // v0.16.5: d.fastChecks === true → the slab mesher's simplify uses the fast
+    // closed-mesh checks (m35 safeSimplifyFast; same result). Set on every
+    // export, so a standard export after a fast one runs today's checks.
+    setSlabFastChecks(d.fastChecks===true);
     let slabOut=null, slabFallback=null, autoReason=null, autoCtx=null;
     const isOOM=err=>/ran out of working memory/.test((err&&err.message)||'');
     const post=m=>self.postMessage(m);
@@ -503,7 +507,7 @@ self.onmessage=async function(e){
     if(fieldBake) self.postMessage({type:'diag',diag:{fieldBake:{workers:fieldBake.workers, ms:fieldBake.ms, f32:fieldBake.f32, points:fieldBake.points, cached:fieldBake.stats.hit, direct:fieldBake.stats.miss}}});
     self.postMessage({type:'done',vertProperties:vertProperties.buffer,triVerts:triVerts.buffer,triCount,ms,scale:d.scale,
       cores:slabOut?slabOut.workers:(fieldBake?fieldBake.workers:1),
-      mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
+      mesher:slabOut?'slab':'classic', meshMode:meshMode, fastChecks:!!slabOut&&SLAB_FAST_CHECKS, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
       // v0.16.1: where the slab mesher's time went (ms)
       // v0.16.3: + field / march split of the slabs stage (fieldCpu, jobCpu, workers) and, for welds, the main thread's field bake (weldField)

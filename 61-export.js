@@ -119,6 +119,7 @@ async function _exportWeldGroup(gid){
       weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes, bakeMs:Math.round(bakeMs), bakeWorkers},   // v0.16.3: bake timing, report only
       mesher:exportMesherPref(), looseMode:exportLooseMode()   // v0.16.0: welds use the Mesher setting too
     };
+    if(exportFastChecks()) workerMsg.fastChecks=true;   // v0.16.5 Checks: Fast (absent = standard)
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
     for(const m of solidMeshes){ if(m){ transfer.push(m.pos, m.idx); } }
@@ -645,6 +646,7 @@ async function _triggerExportImpl(){
       // Build transfer list — only include buffers that are actually present.
       // shapeSdfData is mandatory for shape-clipped exports; huGridData is
       // optional (only set for HU recipes when the parallel pre-bake ran).
+      if(exportFastChecks()) workerMsg.fastChecks=true;   // v0.16.5 Checks: Fast (absent = standard)
       const transferList=[];
       if(workerMsg.shapeSdfData) transferList.push(workerMsg.shapeSdfData);
       if(workerMsg.huGridData) transferList.push(workerMsg.huGridData);
@@ -769,6 +771,7 @@ function expTimeSplitChip(bd){
 function expMesherChip(r){
   let v=r.mesher==='slab'?'slab':'classic';
   if(r.meshMode==='auto') v='auto \u00b7 '+v+(r.autoReason?' ('+r.autoReason+')':'');
+  if(r.fastChecks) v+=' \u00b7 fast simplify';   // v0.16.5 Export tab Simplify: Fast
   else if(r.mesher!=='slab' && r.slabFallback){
     // the reason sits in the chip's hover text (worker/m90 slabFallback)
     return expChip('mesher', v+' (slab skipped)').replace('<div class="exp-chip"', '<div class="exp-chip" title="'+esc('Slab mesher skipped: '+r.slabFallback+'. The classic mesher made this file.')+'"');

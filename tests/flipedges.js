@@ -60,7 +60,7 @@ function pillow(){
   check('triQuality needle', q2.needles===1 && Math.abs(q2.meanMinAngle-Math.atan(0.02)*180/Math.PI)<1e-3, JSON.stringify(q2));
 }
 (async()=>{
-  const {MeshoptSimplifier:S}=await import(path.join(__dirname,'node_modules/meshoptimizer/index.js')); await S.ready;
+  const {MeshoptSimplifier:S}=await import(require('url').pathToFileURL(path.join(__dirname,'node_modules/meshoptimizer/index.js')).href); await S.ready;
   ctx.MeshoptSimplifier=S;
   // determinism + timing on a large simplified slab (gyroid, ~1 M raw tris) and a flat cap
   const sc=Math.PI/2;

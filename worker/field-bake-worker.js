@@ -59,11 +59,12 @@ self.onmessage=async function(e){
       const fn=d.main ? makeWeldLookupSlice(_grid, d.main, d.off, d.kmA, d.koA) : _field;
       if(!fn) throw new Error('mesh job without a field');
       let r=slabMeshLayers(fn, _grid, d.La, d.Lb);
-      if(d.tol>0){ await slabMeshoptReady; r=simplifySlab(r, d.tol); }
+      let simpMs=0;   // v0.16.3: per-slab simplify time, so the marching share isn't inflated by it
+      if(d.tol>0){ await slabMeshoptReady; const tS=performance.now(); const fm=r.fieldMs; r=simplifySlab(r, d.tol); simpMs=performance.now()-tS; r.fieldMs=fm; }
       else r.rawTris=r.idx.length/3;
       const tearV=r.tearV||new Uint32Array(0);
       self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer, tearV:tearV.buffer,
-        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, fieldMs:r.fieldMs||0, ms:performance.now()-t0},
+        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, fieldMs:r.fieldMs||0, simpMs, ms:performance.now()-t0},
         [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer, tearV.buffer]);
       return;
     }

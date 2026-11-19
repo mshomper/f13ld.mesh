@@ -528,10 +528,10 @@ function setCard(el, r){
   if(r.tris!=null) kv.push(['triangles', r.tris.toLocaleString()]);
   if(r.ref) kv.push(['reference', fmtS(r.ref.ms)]);
   if(r.one) kv.push(['this build, 1 core', fmtS(r.one.ms)]);
-  if(r.test) kv.push(['this build, '+(r.test.cores)+' cores', fmtS(r.test.ms)]);
+  if(r.test) kv.push(['this build, '+(r.test.cores)+' workers used', fmtS(r.test.ms)]);
   if(r.ref&&r.test) kv.push(['speed-up', (r.ref.ms/r.test.ms).toFixed(2)+'×']);
   if(r.test) kv.push(['field / level set', fieldLsTxt(r.test)]);
-  if(r.test&&r.test.stages&&r.test.stages.jobCpu>0){ const st=r.test.stages; kv.push(['slab field bake', fmtS(st.field)+' of '+fmtS(st.mesh)+' slabs stage (CPU '+fmtS(st.fieldCpu)+' of '+fmtS(st.jobCpu)+', '+st.workers+' workers)'+(st.weldField>0?', + weld main-thread bake '+fmtS(st.weldField):'')]); }
+  if(r.test&&r.test.stages&&r.test.stages.jobCpu>0){ const st=r.test.stages; kv.push(['slab field bake', fmtS(st.field)+' of '+fmtS(st.mesh)+' slabs stage (CPU '+fmtS(st.fieldCpu)+' of '+fmtS(st.jobCpu)+', '+st.workers+' workers)'++', simplify in slabs '+fmtS(st.simp||0)+(st.shapeCoarse>0?', + shape coarse pass '+fmtS(st.shapeCoarse):'')+(st.weldField>0?', + weld main-thread bake '+fmtS(st.weldField):'')]); }
   if(r.test&&r.test.field) kv.push(['points from cache', r.test.field.cached.toLocaleString()+(r.test.field.direct?' (+'+r.test.field.direct+' direct)':'')]);
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);
@@ -647,9 +647,10 @@ async function run(){
 // v0.16.3: slab runs report their field bake in stages (classic: msBreakdown.field).
 // Field = per-job field wall share of the slabs stage (+ the weld's main-thread bake);
 // the second number is the level set (classic) or the marching part of the slabs (slab).
-function fieldMsOf(t){ const st=t.stages; return st&&st.jobCpu>0 ? (st.field||0)+(st.weldField||0) : ((t.bd&&t.bd.field)||0)+((st&&st.weldField)||0); }
+// Shape-clipped runs also evaluate the field in the coarse pass before the slabs (stages.shapeCoarse), counted here.
+function fieldMsOf(t){ const st=t.stages; return st&&st.jobCpu>0 ? (st.field||0)+(st.weldField||0)+(st.shapeCoarse||0) : ((t.bd&&t.bd.field)||0)+((st&&st.weldField)||0); }
 function fieldLsTxt(t){ const st=t.stages; return fmtS(fieldMsOf(t))+' / '+(st&&st.jobCpu>0 ? fmtS(st.march||0)+' march' : fmtS((t.bd&&t.bd.levelSet)||0)); }
-const STAGE_KEYS=[['field','field (in slabs)'],['march','march (in slabs)'],['weldField','weld field'],['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
+const STAGE_KEYS=[['field','field (in slabs)'],['march','march (in slabs)'],['simp','simplify (in slabs)'],['shapeCoarse','shape coarse pass'],['weldField','weld field'],['mesh','slabs'],['roundA','round A'],['roundB','round B'],['rows','rows'],['flip','flips'],['union','union'],['cleanup','clean-up']];
 function stagesTxt(st){
   if(!st) return '\u2014';
   return STAGE_KEYS.filter(([k])=>st[k]>0).map(([k,l])=>l+' '+fmtS(st[k])).join(' \u00b7 ')||'\u2014';
@@ -688,7 +689,7 @@ $('dlBtn').onclick=()=>{
   for(const r of R.rows){
     const g=r.geo;
     const res=r.error?('error: '+r.error):(r.state==='ok'?(r.same?'PASS (identical)':'PASS'):'FAIL'+(r.reason?': '+r.reason:''));
-    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString()+(g?' / '+r.trisTest.toLocaleString():''):'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' cores)':'—')+
+    L.push('| '+r.name+' | '+(r.tris!=null?r.tris.toLocaleString()+(g?' / '+r.trisTest.toLocaleString():''):'—')+' | '+(r.ref?fmtS(r.ref.ms):'—')+' | '+(r.test?fmtS(r.test.ms)+' ('+r.test.cores+' workers)':'—')+
       ' | '+(r.ref&&r.test?(r.ref.ms/r.test.ms).toFixed(2)+'×':'—')+' | '+(r.test?fieldLsTxt(r.test):'—')+
       ' | '+cell(mesherTxt(r.test))+' | '+cell(r.test?looseTxt(r.test.loose):'—')+
       ' | '+(g?pctTxt(g.volDiff):'—')+' | '+(g?pctTxt(g.areaDiff):'—')+' | '+(g?pctTxt(g.triDiff):'—')+' | '+(g?g.openRef+' / '+g.openTest:'—')+' | '+(g?mmTxt(g.maxDistMm):'—')+

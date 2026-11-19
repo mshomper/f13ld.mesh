@@ -43,6 +43,7 @@ self.onmessage=async function(e){
     let setupMs=performance.now()-tSetup0;   // v0.11.0: field pool sizing (m33)
     let mfld;
     let msLevelSet=0; // shared across branches for the timings pill
+    let msShapeCoarse=0; // v0.16.3: shape setup + coarse pass on this thread, before the slabs (report only)
     let fieldBake=null; // v0.11.0: {workers, ms, f32, stats} when the single-body field was pre-baked
     let weldDustMm3=0; // v0.9.3 hybrid weld: drop shells smaller than this (dropTinyShells)
     // v0.15.0 slab mesher (m34–m36): open-cube and shape-clipped parts mesh in
@@ -331,6 +332,7 @@ self.onmessage=async function(e){
           mnz:Math.max(bbox.mnz,emnz-ePad),mxz:Math.min(bbox.mxz,emxz+ePad)
         };
       }
+      msShapeCoarse=Math.round(performance.now()-tShape0);
       const fineVox=Math.round(((eInner.mxx-eInner.mnx)*(eInner.mxy-eInner.mny)*(eInner.mxz-eInner.mnz))/Math.pow(relEdgeMm,3)/1e6);
       lastStage='fine level set ('+relEdgeMm.toFixed(3)+'mm, ~'+fineVox+'M voxels)';
       shapeField.setEdge(relEdgeMm); // v0.5.0-rc19: short-circuit threshold tracks pass edge
@@ -505,7 +507,7 @@ self.onmessage=async function(e){
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
       // v0.16.1: where the slab mesher's time went (ms)
       // v0.16.3: + field / march split of the slabs stage (fieldCpu, jobCpu, workers) and, for welds, the main thread's field bake (weldField)
-      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}, (d.weld&&d.weld.bakeMs>0)?{weldField:d.weld.bakeMs}:null):null},[vertProperties.buffer,triVerts.buffer]);
+      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}, (d.weld&&d.weld.bakeMs>0)?{weldField:d.weld.bakeMs}:null, msShapeCoarse>0?{shapeCoarse:msShapeCoarse}:null):null},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

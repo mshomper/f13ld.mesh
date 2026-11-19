@@ -18,7 +18,7 @@ const target = (what === 'file' ? pathToFileURL(path.join(here, 'gpu-bake-single
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'gpubake-smoke-'));
 const port = 9333 + Math.floor(Math.random() * 500);
 
-const child = spawn(exe, [...(process.env.SMOKE_HEADFUL ? ['--window-position=-32000,-32000', '--window-size=900,700'] : ['--headless=new']), `--remote-debugging-port=${port}`, '--enable-unsafe-webgpu', '--enable-unsafe-swiftshader', '--use-angle=swiftshader',
+const child = spawn(exe, [...(process.env.SMOKE_HEADFUL ? ['--window-position=-32000,-32000', '--window-size=900,700'] : ['--headless=new']), `--remote-debugging-port=${port}`, '--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-features=Vulkan',
   '--ignore-gpu-blocklist', '--disable-gpu-sandbox', '--no-first-run', `--user-data-dir=${profile}`,
   ...(process.env.SMOKE_FLAGS ? process.env.SMOKE_FLAGS.split(' ') : []), 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));

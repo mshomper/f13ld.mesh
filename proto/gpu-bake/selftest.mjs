@@ -118,7 +118,7 @@ async function main() {
     const j = judgeHybrid(h, emu, cpu, g, band);
     console.log(`\n--- hybrid: ${RECIPE_LABEL[key]} at ${n}^3 (${total} points)${EXPECT_BREAK ? ' [PERTURBED kernel: coordinate scale x (1+1e-6)]' : ''} ---`);
     console.log(`emulation vs CPU: max abs diff ${sci(c.maxDiff)}, sign changes ${c.flips}`);
-    console.log(`BAND ${sci(band)}; re-evaluated ${j.reEvaluated} of ${total} = ${pct(j.share)} (band ${pct(j.shareA)} + sign-changing-edge ends ${pct(j.shareB)}); sign-changing edges ${j.edges}`);
+    console.log(`BAND ${sci(band)}; re-evaluated ${j.reEvaluated} of ${total} = ${pct(j.share)} (band ${pct(j.shareA)} + sign-changing-edge ends ${pct(j.shareB)}); sign-changing edges ${j.edges}; edge rule (b) rounds until no point added: ${j.rounds}`);
     const L = lipschitzBound(params), eNb = Math.max(g.s[0], g.s[1], g.s[2]);   // longest lattice edge = the axis edge
     let skip = 0; for (let t = 0; t < total; t++) if (Math.abs(cpu[t]) > L * eNb) skip++;
     const ta = trigArgInfo(params);

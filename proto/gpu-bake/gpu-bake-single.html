@@ -594,14 +594,22 @@ function hybridPass(f32, g, band, evalAt) {
     const v = f32[t];
     if (!(Math.abs(v) >= band)) { fin[t] = ev(t); re[t] = 1; nA++; } else fin[t] = v;
   }
-  const need = [];
-  forEachEdge(g, (a, b) => {
-    if ((fin[a] > 0) !== (fin[b] > 0)) { if (!re[a]) need.push(a); if (!re[b]) need.push(b); }
-  });
-  for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = ev(t); re[t] = 2; nB++; } }
+  // (b) to a fixpoint: re-evaluating a point can flip its sign (a wrong float32 sign) and so create a
+  // new sign-changing edge whose far end was never re-evaluated; repeat until no point is added.
+  let rounds = 0;
+  for (;;) {
+    const need = [];
+    forEachEdge(g, (a, b) => {
+      if ((fin[a] > 0) !== (fin[b] > 0)) { if (!re[a]) need.push(a); if (!re[b]) need.push(b); }
+    });
+    let added = 0;
+    for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = ev(t); re[t] = 2; nB++; added++; } }
+    if (!added) break;
+    rounds++;
+  }
   const msTotal = performance.now() - tAll;
   // msEval = the CPU float64 re-evaluation; msScan = everything else (band test + sign / edge scan)
-  return { fin, re, nA, nB, total: T, msTotal, msEval, msScan: msTotal - msEval };
+  return { fin, re, nA, nB, rounds, total: T, msTotal, msEval, msScan: msTotal - msEval };
 }
 
 // Judge against the CPU bake (cpu: Float64Array, same layout).
@@ -636,7 +644,7 @@ function judgeHybrid(h, f32, cpu, g, band) {
     bandHolds: bandViolations === 0, bandViolations, maxErr,
     certified: signMismatch === 0 && edgeBad === 0 && escapes === 0 && bandViolations === 0,
     signMismatch, edges, edgeBad, escapes, f32Flips,
-    share: (h.nA + h.nB) / T, shareA: h.nA / T, shareB: h.nB / T, reEvaluated: h.nA + h.nB, total: T,
+    rounds: h.rounds, share: (h.nA + h.nB) / T, shareA: h.nA / T, shareB: h.nB / T, reEvaluated: h.nA + h.nB, total: T,
   };
 }
 
@@ -664,7 +672,7 @@ function compareF32(f32, cpu) {
 // the CPU), 3 out (f32).
 
 const WGSL_PRELUDE = /* wgsl */ `
-@group(0) @binding(0) var<storage, read> meta: array<u32>;
+@group(0) @binding(0) var<storage, read> gmeta: array<u32>;
 @group(0) @binding(1) var<storage, read> coords: array<f32>;
 @group(0) @binding(2) var<storage, read> prm: array<f32>;
 @group(0) @binding(3) var<storage, read_write> outv: array<f32>;
@@ -682,18 +690,18 @@ fn red(a: f32) -> f32 {
 const WGSL_MAIN = /* wgsl */ `
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let t = gid.x + gid.y * meta[8];
-  if (t >= meta[7]) { return; }
+  let t = gid.x + gid.y * gmeta[8];
+  if (t >= gmeta[7]) { return; }
   var px: f32; var py: f32; var pz: f32;
-  if (t < meta[6]) {
-    let nx = meta[0]; let ny = meta[1];
+  if (t < gmeta[6]) {
+    let nx = gmeta[0]; let ny = gmeta[1];
     let i = t % nx; let j = (t / nx) % ny; let k = t / (nx * ny);
-    px = coords[meta[9] + i]; py = coords[meta[10] + j]; pz = coords[meta[11] + k];
+    px = coords[gmeta[9] + i]; py = coords[gmeta[10] + j]; pz = coords[gmeta[11] + k];
   } else {
-    let u = t - meta[6];
-    let nx = meta[3]; let ny = meta[4];
+    let u = t - gmeta[6];
+    let nx = gmeta[3]; let ny = gmeta[4];
     let i = u % nx; let j = (u / nx) % ny; let k = u / (nx * ny);
-    px = coords[meta[12] + i]; py = coords[meta[13] + j]; pz = coords[meta[14] + k];
+    px = coords[gmeta[12] + i]; py = coords[gmeta[13] + j]; pz = coords[gmeta[14] + k];
   }
   outv[t] = field(px, py, pz);
 }
@@ -962,7 +970,11 @@ async function compareOne(key, n) {
   await tick();
   const h2 = hybridPass(gpu.values, g, bandSpec, evalAt), j2 = judgeHybrid(h2, gpu.values, cpu, g, bandSpec);
   const yn = v => v ? 'yes' : 'NO';
-  const row = j => `(i) signs equal CPU: ${yn(j.i)} | (ii) edge ends bit-exact: ${yn(j.ii)}${j.ii ? '' : ' (' + j.edgeBad + ' edges)'} | (iii) escapes: ${j.escapes} | (iv) band holds: ${yn(j.bandHolds)} (max err ${sci(j.maxErr)})`;
+  const row = j => {
+    const ok = [], bad = [];
+    for (const [k, v] of [['(i)', j.i], ['(ii)', j.ii], ['(iii)', j.iii], ['(iv)', j.bandHolds]]) (v ? ok : bad).push(k);
+    return `criteria passing: ${ok.join(' ') || 'none'}; failing: ${bad.join(' ') || 'none'} | (i) signs equal CPU: ${yn(j.i)} | (ii) edge ends bit-exact: ${yn(j.ii)}${j.ii ? '' : ' (' + j.edgeBad + ' edges)'} | (iii) escapes: ${j.escapes} | (iv) band holds: ${yn(j.bandHolds)} (max err ${sci(j.maxErr)}) | edge rule rounds: ${j.rounds}`;
+  };
   const head = `[${label}] ${total} points | GPU vs CPU: max abs diff ${sci(c.maxDiff)}, sign changes ${c.flips}, non-finite ${c.nonFinite}`;
   const l1 = `   assumed-GPU band ${sci(bandGpu)}: re-evaluated ${j1.reEvaluated} = ${pct(j1.share)} (band ${pct(j1.shareA)} + edge ends ${pct(j1.shareB)}) | ${row(j1)} -> ${j1.certified ? 'PASS' : 'FAIL'}`;
   const l2 = `   WGSL-spec band ${sci(bandSpec)}: re-evaluated ${j2.reEvaluated} = ${pct(j2.share)} (band ${pct(j2.shareA)} + edge ends ${pct(j2.shareB)}) | ${row(j2)} -> ${j2.certified ? 'PASS' : 'FAIL'}`;
@@ -1029,7 +1041,7 @@ async function runBench() {
         $('status').textContent = label + ': hybrid pass';
         const fn = cpuField(worker, recipe, g.edge), xyz2 = [0, 0, 0], bandG = bandFor(params, ESC.gpu);
         const h = hybridPass(vals, g, bandG, t => { pointCoords(g, t, xyz2); return fn([xyz2[0], xyz2[1], xyz2[2]]); });
-        const hm = `   hybrid (assumed-GPU band ${sci(bandG)}): CPU scan ${h.msScan.toFixed(0)} ms (band test + sign / edge scan), CPU re-evaluation ${h.msEval.toFixed(0)} ms for ${h.nA + h.nB} points = ${pct((h.nA + h.nB) / total)} (band ${pct(h.nA / total)} + edge ends ${pct(h.nB / total)}); ` +
+        const hm = `   hybrid (assumed-GPU band ${sci(bandG)}, edge rule rounds ${h.rounds}): CPU scan ${h.msScan.toFixed(0)} ms (band test + sign / edge scan), CPU re-evaluation ${h.msEval.toFixed(0)} ms for ${h.nA + h.nB} points = ${pct((h.nA + h.nB) / total)} (band ${pct(h.nA / total)} + edge ends ${pct(h.nB / total)}); ` +
           `total hybrid wall = ${(med(wall) + h.msTotal).toFixed(0)} ms (GPU ${med(wall).toFixed(0)} + CPU ${h.msTotal.toFixed(0)}) vs CPU one-thread bake ${cp.ms.toFixed(0)} ms`;
         log(hm); results.push(hm); await tick();
       }

@@ -18,14 +18,22 @@ export function hybridPass(f32, g, band, evalAt) {
     const v = f32[t];
     if (!(Math.abs(v) >= band)) { fin[t] = ev(t); re[t] = 1; nA++; } else fin[t] = v;
   }
-  const need = [];
-  forEachEdge(g, (a, b) => {
-    if ((fin[a] > 0) !== (fin[b] > 0)) { if (!re[a]) need.push(a); if (!re[b]) need.push(b); }
-  });
-  for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = ev(t); re[t] = 2; nB++; } }
+  // (b) to a fixpoint: re-evaluating a point can flip its sign (a wrong float32 sign) and so create a
+  // new sign-changing edge whose far end was never re-evaluated; repeat until no point is added.
+  let rounds = 0;
+  for (;;) {
+    const need = [];
+    forEachEdge(g, (a, b) => {
+      if ((fin[a] > 0) !== (fin[b] > 0)) { if (!re[a]) need.push(a); if (!re[b]) need.push(b); }
+    });
+    let added = 0;
+    for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = ev(t); re[t] = 2; nB++; added++; } }
+    if (!added) break;
+    rounds++;
+  }
   const msTotal = performance.now() - tAll;
   // msEval = the CPU float64 re-evaluation; msScan = everything else (band test + sign / edge scan)
-  return { fin, re, nA, nB, total: T, msTotal, msEval, msScan: msTotal - msEval };
+  return { fin, re, nA, nB, rounds, total: T, msTotal, msEval, msScan: msTotal - msEval };
 }
 
 // Judge against the CPU bake (cpu: Float64Array, same layout).
@@ -60,7 +68,7 @@ export function judgeHybrid(h, f32, cpu, g, band) {
     bandHolds: bandViolations === 0, bandViolations, maxErr,
     certified: signMismatch === 0 && edgeBad === 0 && escapes === 0 && bandViolations === 0,
     signMismatch, edges, edgeBad, escapes, f32Flips,
-    share: (h.nA + h.nB) / T, shareA: h.nA / T, shareB: h.nB / T, reEvaluated: h.nA + h.nB, total: T,
+    rounds: h.rounds, share: (h.nA + h.nB) / T, shareA: h.nA / T, shareB: h.nB / T, reEvaluated: h.nA + h.nB, total: T,
   };
 }
 

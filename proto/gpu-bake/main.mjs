@@ -84,7 +84,11 @@ async function compareOne(key, n) {
   await tick();
   const h2 = hybridPass(gpu.values, g, bandSpec, evalAt), j2 = judgeHybrid(h2, gpu.values, cpu, g, bandSpec);
   const yn = v => v ? 'yes' : 'NO';
-  const row = j => `(i) signs equal CPU: ${yn(j.i)} | (ii) edge ends bit-exact: ${yn(j.ii)}${j.ii ? '' : ' (' + j.edgeBad + ' edges)'} | (iii) escapes: ${j.escapes} | (iv) band holds: ${yn(j.bandHolds)} (max err ${sci(j.maxErr)})`;
+  const row = j => {
+    const ok = [], bad = [];
+    for (const [k, v] of [['(i)', j.i], ['(ii)', j.ii], ['(iii)', j.iii], ['(iv)', j.bandHolds]]) (v ? ok : bad).push(k);
+    return `criteria passing: ${ok.join(' ') || 'none'}; failing: ${bad.join(' ') || 'none'} | (i) signs equal CPU: ${yn(j.i)} | (ii) edge ends bit-exact: ${yn(j.ii)}${j.ii ? '' : ' (' + j.edgeBad + ' edges)'} | (iii) escapes: ${j.escapes} | (iv) band holds: ${yn(j.bandHolds)} (max err ${sci(j.maxErr)}) | edge rule rounds: ${j.rounds}`;
+  };
   const head = `[${label}] ${total} points | GPU vs CPU: max abs diff ${sci(c.maxDiff)}, sign changes ${c.flips}, non-finite ${c.nonFinite}`;
   const l1 = `   assumed-GPU band ${sci(bandGpu)}: re-evaluated ${j1.reEvaluated} = ${pct(j1.share)} (band ${pct(j1.shareA)} + edge ends ${pct(j1.shareB)}) | ${row(j1)} -> ${j1.certified ? 'PASS' : 'FAIL'}`;
   const l2 = `   WGSL-spec band ${sci(bandSpec)}: re-evaluated ${j2.reEvaluated} = ${pct(j2.share)} (band ${pct(j2.shareA)} + edge ends ${pct(j2.shareB)}) | ${row(j2)} -> ${j2.certified ? 'PASS' : 'FAIL'}`;
@@ -151,7 +155,7 @@ async function runBench() {
         $('status').textContent = label + ': hybrid pass';
         const fn = cpuField(worker, recipe, g.edge), xyz2 = [0, 0, 0], bandG = bandFor(params, ESC.gpu);
         const h = hybridPass(vals, g, bandG, t => { pointCoords(g, t, xyz2); return fn([xyz2[0], xyz2[1], xyz2[2]]); });
-        const hm = `   hybrid (assumed-GPU band ${sci(bandG)}): CPU scan ${h.msScan.toFixed(0)} ms (band test + sign / edge scan), CPU re-evaluation ${h.msEval.toFixed(0)} ms for ${h.nA + h.nB} points = ${pct((h.nA + h.nB) / total)} (band ${pct(h.nA / total)} + edge ends ${pct(h.nB / total)}); ` +
+        const hm = `   hybrid (assumed-GPU band ${sci(bandG)}, edge rule rounds ${h.rounds}): CPU scan ${h.msScan.toFixed(0)} ms (band test + sign / edge scan), CPU re-evaluation ${h.msEval.toFixed(0)} ms for ${h.nA + h.nB} points = ${pct((h.nA + h.nB) / total)} (band ${pct(h.nA / total)} + edge ends ${pct(h.nB / total)}); ` +
           `total hybrid wall = ${(med(wall) + h.msTotal).toFixed(0)} ms (GPU ${med(wall).toFixed(0)} + CPU ${h.msTotal.toFixed(0)}) vs CPU one-thread bake ${cp.ms.toFixed(0)} ms`;
         log(hm); results.push(hm); await tick();
       }

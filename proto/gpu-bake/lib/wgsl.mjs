@@ -8,7 +8,7 @@
 // the CPU), 3 out (f32).
 
 const WGSL_PRELUDE = /* wgsl */ `
-@group(0) @binding(0) var<storage, read> meta: array<u32>;
+@group(0) @binding(0) var<storage, read> gmeta: array<u32>;
 @group(0) @binding(1) var<storage, read> coords: array<f32>;
 @group(0) @binding(2) var<storage, read> prm: array<f32>;
 @group(0) @binding(3) var<storage, read_write> outv: array<f32>;
@@ -26,18 +26,18 @@ fn red(a: f32) -> f32 {
 const WGSL_MAIN = /* wgsl */ `
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let t = gid.x + gid.y * meta[8];
-  if (t >= meta[7]) { return; }
+  let t = gid.x + gid.y * gmeta[8];
+  if (t >= gmeta[7]) { return; }
   var px: f32; var py: f32; var pz: f32;
-  if (t < meta[6]) {
-    let nx = meta[0]; let ny = meta[1];
+  if (t < gmeta[6]) {
+    let nx = gmeta[0]; let ny = gmeta[1];
     let i = t % nx; let j = (t / nx) % ny; let k = t / (nx * ny);
-    px = coords[meta[9] + i]; py = coords[meta[10] + j]; pz = coords[meta[11] + k];
+    px = coords[gmeta[9] + i]; py = coords[gmeta[10] + j]; pz = coords[gmeta[11] + k];
   } else {
-    let u = t - meta[6];
-    let nx = meta[3]; let ny = meta[4];
+    let u = t - gmeta[6];
+    let nx = gmeta[3]; let ny = gmeta[4];
     let i = u % nx; let j = (u / nx) % ny; let k = u / (nx * ny);
-    px = coords[meta[12] + i]; py = coords[meta[13] + j]; pz = coords[meta[14] + k];
+    px = coords[gmeta[12] + i]; py = coords[gmeta[13] + j]; pz = coords[gmeta[14] + k];
   }
   outv[t] = field(px, py, pz);
 }

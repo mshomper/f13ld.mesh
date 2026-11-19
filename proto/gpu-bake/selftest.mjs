@@ -15,7 +15,7 @@ import { gridDims, cubeGrid, bakeCpu, axisTables, forEachEdge, edgeCount, pointC
 import { cpuField, f32Tables, setPreviewRange } from './lib/field.mjs';
 import { RECIPES, RECIPE_LABEL, freshRecipe, kernelParams } from './lib/params.mjs';
 import { emuBake, mirrorBake } from './lib/emu.mjs';
-import { ESC, K_COVER, bandFor } from './lib/bands.mjs';
+import { ESC, K_COVER, bandFor, lipschitzBound, trigArgInfo } from './lib/bands.mjs';
 import { hybridPass, judgeHybrid, compareF32 } from './lib/hybrid.mjs';
 import { BakePool } from './lib/parallel.mjs';
 
@@ -119,6 +119,11 @@ async function main() {
     console.log(`\n--- hybrid: ${RECIPE_LABEL[key]} at ${n}^3 (${total} points)${EXPECT_BREAK ? ' [PERTURBED kernel: coordinate scale x (1+1e-6)]' : ''} ---`);
     console.log(`emulation vs CPU: max abs diff ${sci(c.maxDiff)}, sign changes ${c.flips}`);
     console.log(`BAND ${sci(band)}; re-evaluated ${j.reEvaluated} of ${total} = ${pct(j.share)} (band ${pct(j.shareA)} + sign-changing-edge ends ${pct(j.shareB)}); sign-changing edges ${j.edges}`);
+    const L = lipschitzBound(params), eNb = Math.max(g.s[0], g.s[1], g.s[2]);   // longest lattice edge = the axis edge
+    let skip = 0; for (let t = 0; t < total; t++) if (Math.abs(cpu[t]) > L * eNb) skip++;
+    const ta = trigArgInfo(params);
+    console.log(`CPU skip share (rigorous Lipschitz bound, L=${L.toFixed(3)}, e=${eNb.toFixed(4)}): ${pct(skip / total)} of points have |f| > L*e and could be skipped by a CPU-only scheme; hybrid re-evaluated share r = ${pct(j.share)}`);
+    console.log(`max |argument| reaching sin/cos: ${ta.maxArg.toFixed(2)} rad before range reduction (kernel ${ta.reduced ? 'reduces into [-pi, pi] first, so sin/cos see <= pi' : 'does not reduce; already within [-pi, pi]'}); WGSL promises 2^-11 only inside [-pi, pi]`);
     console.log(`(i) signs equal CPU: ${j.i ? 'yes' : 'NO, ' + j.signMismatch + ' differ'}   (ii) edge ends bit-exact: ${j.ii ? 'yes' : 'NO, ' + j.edgeBad + ' edges'}   (iii) escapes = ${j.escapes}   -> ${j.pass ? 'PASS' : 'FAIL'}`);
     console.log(`(iv) band holds (max |f32-CPU| ${sci(j.maxErr)} <= BAND ${sci(band)}): ${j.bandHolds ? 'yes' : 'NO, ' + j.bandViolations + ' points over'}   -> hybrid ${j.certified ? 'PASS' : 'FAIL'}`);
     if (EXPECT_BREAK) { breakRuns++; if (!j.certified) breakFail++; breakMaxDiff = Math.max(breakMaxDiff, c.maxDiff); console.log(`  [${sec()}]`); continue; }

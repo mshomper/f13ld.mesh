@@ -26,6 +26,28 @@ const u = 2 ** -24;
 export const ESC = { emu: 2 ** -24, gpu: 2 ** -16, spec: 2 ** -11 };
 export const K_COVER = 2;
 
+// Rigorous Lipschitz bound L of the field (field units per world unit), from the kernel parameters.
+//  TPMS: |grad phi| <= sum over terms |coef| * sum over factors |freq| * fs_max (every other factor <= 1);
+//        f = -(|phi - off| - wt) or -(phi - off) keeps that constant.
+//  grain: |grad raw| <= PI5 * sum |k_i| / sqrt(N);  f has constant 1/halfR on top.
+export function lipschitzBound(params) {
+  if (params.kind === 'tpms') {
+    const { terms, fs } = params.meta, fmax = Math.max(...fs);
+    let L = 0;
+    for (const T of terms) { let s = 0; for (const F of T.f) if (F.kind < 2 && F.axis < 3) s += Math.abs(F.freq); L += Math.abs(T.coef) * s; }
+    return L * fmax;
+  }
+  const { waves, halfR, N } = params.meta;
+  let s = 0; for (const w of waves) s += Math.hypot(w.kx, w.ky, w.kz);
+  return (Math.PI / 5) * s / Math.sqrt(N) / halfR;
+}
+// What reaches sin / cos (WGSL promises 2^-11 absolute only inside [-pi, pi]): the largest |argument|
+// before the kernel's range reduction (a bound over the whole cube), and whether the kernel reduces it.
+export function trigArgInfo(params) {
+  const reduce = params.f32[params.kind === 'tpms' ? 7 : 9] === 1;
+  return { maxArg: params.meta.maxArg, reduced: reduce, maxArgAtTrig: reduce ? Math.PI : params.meta.maxArg };
+}
+
 export function bandFor(params, esc) {
   return K_COVER * sigmaField(params, esc);
 }

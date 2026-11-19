@@ -11,17 +11,21 @@ import { forEachEdge, totalPoints } from './grid.mjs';
 // evalAt(t) -> float64 field value at all-points index t (CPU, the real field).
 export function hybridPass(f32, g, band, evalAt) {
   const T = totalPoints(g), fin = new Float64Array(T), re = new Uint8Array(T);
-  let nA = 0, nB = 0;
+  let nA = 0, nB = 0, msEval = 0;
+  const tAll = performance.now();
+  const ev = t => { const t1 = performance.now(); const v = evalAt(t); msEval += performance.now() - t1; return v; };
   for (let t = 0; t < T; t++) {
     const v = f32[t];
-    if (!(Math.abs(v) >= band)) { fin[t] = evalAt(t); re[t] = 1; nA++; } else fin[t] = v;
+    if (!(Math.abs(v) >= band)) { fin[t] = ev(t); re[t] = 1; nA++; } else fin[t] = v;
   }
   const need = [];
   forEachEdge(g, (a, b) => {
     if ((fin[a] > 0) !== (fin[b] > 0)) { if (!re[a]) need.push(a); if (!re[b]) need.push(b); }
   });
-  for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = evalAt(t); re[t] = 2; nB++; } }
-  return { fin, re, nA, nB, total: T };
+  for (let q = 0; q < need.length; q++) { const t = need[q]; if (!re[t]) { fin[t] = ev(t); re[t] = 2; nB++; } }
+  const msTotal = performance.now() - tAll;
+  // msEval = the CPU float64 re-evaluation; msScan = everything else (band test + sign / edge scan)
+  return { fin, re, nA, nB, total: T, msTotal, msEval, msScan: msTotal - msEval };
 }
 
 // Judge against the CPU bake (cpu: Float64Array, same layout).

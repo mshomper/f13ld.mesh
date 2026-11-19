@@ -1,1 +1,1 @@
---sample --quals med --methods today --only foam2-open-lloyd --reps 1 --tolx 4,10 --out proto/simplify-bench/results/exp-tolx.json
+--sample --quals med --methods today,A --only tpms-gyroid-sheet,noise-simplex-sheet,grain-hyperuniform,grain-spinodoid --reps 1 --tune --out proto/simplify-bench/results/bench-med-A.json

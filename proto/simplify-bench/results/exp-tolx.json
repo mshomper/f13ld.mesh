@@ -65,9 +65,9 @@
      "seamSlabsIdentical": true,
      "seamBadSlabs": [],
      "finalOpenEqualsRaw": true,
-     "slabMs": 2046.3030999999992,
-     "finalMs": 2100.6829000000016,
-     "totalMs": 4146.986000000001,
+     "slabMs": 1324.8284000000003,
+     "finalMs": 1462.4246999999996,
+     "totalMs": 2787.2531,
      "slabTris": 254464,
      "retries": 6,
      "hash": "8c6238b35dba2212",
@@ -76,6 +76,29 @@
     }
    ],
    "tuned": []
+  }
+ ],
+ "tolx": [
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 1,
+   "tris": 221690,
+   "totalMs": 2985.2408
+  },
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 4,
+   "tris": 61278,
+   "totalMs": 1570.1067000000003
+  },
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 10,
+   "tris": 16804,
+   "totalMs": 1263.9993000000004
   }
  ]
 }

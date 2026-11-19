@@ -11,26 +11,26 @@
    Licence: MIT (F13LD.mesh). */
 'use strict';
 function meshClosedReport(pos, idx, wantVerts, ignore){
-  var nV=pos.length/3, nI=idx.length, ea=new Uint32Array(nI), eb=new Uint32Array(nI), nE=0, t, q, i;
+  // per-vertex CSR of outgoing half-edges (targets only); an edge a->b is fine when b occurs exactly once among
+  // a's targets and a occurs exactly once among b's targets (vertex degrees are small, so the scans are short)
+  var nV=pos.length/3, nI=idx.length, t, q, i, a, b;
+  var keep=new Uint8Array(nI), off=new Uint32Array(nV+1), isFn=typeof ignore==='function';
   for(t=0;t<nI;t+=3) for(q=0;q<3;q++){
-    var a=idx[t+q], b=idx[t+(q===2?0:q+1)];
-    if(ignore && (typeof ignore==='function' ? ignore(a,b) : (ignore[a] && ignore[b]))) continue;
-    ea[nE]=a; eb[nE]=b; nE++;
+    a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+    if(ignore && (isFn ? ignore(a,b) : (ignore[a] && ignore[b]))) continue;
+    keep[t+q]=1; off[a+1]++;
   }
-  var size=16; while(size<2*nE) size<<=1;
-  var mask=size-1, ka=new Uint32Array(size), kb=new Uint32Array(size), cnt=new Uint32Array(size);
-  function slot(a, b){
-    var h=(Math.imul(a, 0x9E3779B1) ^ Math.imul(b+0x7F4A7C15, 0x85EBCA6B)); h^=h>>>15; h=Math.imul(h, 0x2C1B3C6D); h^=h>>>13;
-    h&=mask;
-    while(cnt[h]!==0 && (ka[h]!==a || kb[h]!==b)) h=(h+1)&mask;
-    return h;
-  }
-  for(i=0;i<nE;i++){ var s=slot(ea[i], eb[i]); if(cnt[s]===0){ ka[s]=ea[i]; kb[s]=eb[i]; } cnt[s]++; }
+  for(i=0;i<nV;i++) off[i+1]+=off[i];
+  var fill=off.slice(0,nV), to=new Uint32Array(off[nV]);
+  for(t=0;t<nI;t+=3) for(q=0;q<3;q++){ if(!keep[t+q]) continue; to[fill[idx[t+q]]++]=idx[t+(q===2?0:q+1)]; }
   var bad=0, vs=null;
-  for(i=0;i<size;i++){
-    if(cnt[i]===0) continue;
-    var rs=slot(kb[i], ka[i]), good=cnt[i]===1 && cnt[rs]===1;
-    if(!good){ bad+=cnt[i]; if(wantVerts){ if(!vs) vs=new Set(); vs.add(ka[i]); vs.add(kb[i]); } }
+  for(t=0;t<nI;t+=3) for(q=0;q<3;q++){
+    if(!keep[t+q]) continue;
+    a=idx[t+q]; b=idx[t+(q===2?0:q+1)];
+    var c1=0, c2=0, p, e;
+    for(p=off[a], e=off[a+1]; p<e; p++) if(to[p]===b) c1++;
+    for(p=off[b], e=off[b+1]; p<e; p++) if(to[p]===a) c2++;
+    if(c1!==1 || c2!==1){ bad++; if(wantVerts){ if(!vs) vs=new Set(); vs.add(a); vs.add(b); } }
   }
   var out={ok:bad===0, bad:bad};
   if(bad && wantVerts) out.verts=Uint32Array.from(vs);

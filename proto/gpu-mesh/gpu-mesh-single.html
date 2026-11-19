@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F13LD.mesh · GPU mesh prototype</title>
+<style>
+  :root { --bg:#06080c; --panel:#0b0f15; --line:#18212b; --jade:#1D9E75; --lime:#c8f542; --text:#cfd8df; --dim:#7d8b96; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); overflow-x:hidden;
+    font-family:'Exo 2','Segoe UI',system-ui,sans-serif; font-size:13px; }
+  body { display:grid; grid-template-rows:36px 1fr; }
+  header { display:flex; align-items:center; gap:10px; padding:0 12px; border-bottom:1px solid var(--line); background:var(--panel); min-width:0; }
+  header b { color:var(--lime); font-weight:600; letter-spacing:.04em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 270px; min-height:0; min-width:0; }
+  #view { position:relative; min-width:0; min-height:0; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #hint { position:absolute; left:8px; bottom:6px; color:var(--dim); font:11px 'IBM Plex Mono',Consolas,monospace; pointer-events:none; max-width:95%; }
+  aside { border-left:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
+  .dock { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line); }
+  .dock button { flex:1; height:34px; min-width:0; display:flex; align-items:center; justify-content:center; background:#0f151c; border:1px solid var(--line); border-radius:6px; color:var(--text); cursor:pointer; }
+  .dock button:hover { border-color:var(--jade); color:var(--lime); }
+  .dock button:disabled { opacity:.4; cursor:default; }
+  svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .ctl { padding:8px; border-bottom:1px solid var(--line); display:grid; gap:7px; }
+  .row { display:flex; align-items:center; gap:6px; min-width:0; }
+  .row label { width:62px; color:var(--dim); flex:none; }
+  .seg { display:flex; flex:1; min-width:0; }
+  .seg button { flex:1; min-width:0; padding:5px 2px; background:#0f151c; color:var(--text); border:1px solid var(--line); cursor:pointer; font:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seg button:first-child { border-radius:5px 0 0 5px; } .seg button:last-child { border-radius:0 5px 5px 0; }
+  .seg button.on { background:var(--jade); color:#04120d; border-color:var(--jade); }
+  input[type=number] { flex:1; min-width:0; width:100%; background:#0f151c; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:5px 6px; font:12px 'IBM Plex Mono',Consolas,monospace; }
+  #log { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:8px; font:11px/1.45 'IBM Plex Mono',Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+  #log div.err { color:#ff7b72; } #log div.warn { color:#e3b341; } #log div.pass { color:var(--lime); } #log div.fail { color:#ff7b72; font-weight:600; }
+  #nogpu { display:none; padding:24px; line-height:1.6; max-width:560px; }
+  #nogpu h2 { color:var(--lime); margin-top:0; }
+  body.nogpu main { display:none; } body.nogpu #nogpu { display:block; }
+  @media (max-width: 700px) { main { grid-template-columns:minmax(0,1fr); grid-template-rows:55% 45%; } aside { border-left:0; border-top:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header><b>F13LD.mesh · GPU mesh prototype</b></header>
+<div id="nogpu">
+  <h2>WebGPU is not available in this browser</h2>
+  <p>This page needs WebGPU. Open it in a current Chrome or Edge on a PC with a recent graphics driver (address bar: <code>chrome://gpu</code> shows whether WebGPU is enabled). Serve the page over http, not as a file (see README.md).</p>
+  <p id="nogpuReason" style="color:var(--dim)"></p>
+</div>
+<main>
+  <section id="view"><canvas id="cv"></canvas><div id="hint">wheel: zoom &middot; right-drag: orbit &middot; middle-drag or shift+right-drag: pan &middot; two-finger pinch: zoom</div></section>
+  <aside>
+    <div class="dock">
+      <button id="bMesh" title="Mesh: run the GPU mesher with the settings below" aria-label="Mesh"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 3v18M4 7.5l8 4.5 8-4.5"/></svg></button>
+      <button id="bCmp" title="Compare with CPU: same settings on the CPU reference mesher, then check closed mesh" aria-label="Compare with CPU"><svg viewBox="0 0 24 24"><path d="M9 6H5v12h4M15 6h4v12h-4"/><path d="M12 4v16"/></svg></button>
+      <button id="bBench" title="Bench: time field, count, scan, emit at 64 and 128 (256 if the adapter allows)" aria-label="Bench"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 13l3-4M10 3h4"/></svg></button>
+      <button id="bStl" title="Download STL (binary, box scaled to 20 mm) for inspection" aria-label="Download STL"><svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg></button>
+      <button id="bCopy" title="Copy the whole log to the clipboard" aria-label="Copy log"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M5 16V5a1 1 0 0 1 1-1h9"/></svg></button>
+    </div>
+    <div class="ctl">
+      <div class="row"><label>Surface</label><div class="seg" id="sKind"><button data-v="0" class="on" title="Gyroid sheet">Gyroid</button><button data-v="1" title="Schwarz-P sheet">Sch-P</button><button data-v="2" title="Diamond sheet">Diamond</button></div></div>
+      <div class="row"><label>Cells</label><input id="iCells" type="number" min="1" max="12" step="1" value="2" title="Unit cells across the box"></div>
+      <div class="row"><label>Wall</label><input id="iThick" type="number" min="0.05" max="2" step="0.05" value="0.4" title="Wall thickness: solid where |g| is below this value (field = wall - |g|)"></div>
+      <div class="row"><label>Resolution</label><div class="seg" id="sRes"><button data-v="32" title="32 cells per side">32</button><button data-v="64" class="on" title="64 cells per side">64</button><button data-v="128" title="128 cells per side">128</button></div></div>
+    </div>
+    <div id="log"></div>
+  </aside>
+</main>
+<script type="module">
+// ===== tables.mjs =====
+// Single source of truth for the GPU mesh prototype.
+// The CPU reference mesher, the Node selftest and the WebGPU page all import this file.
+// The WGSL constant tables are GENERATED from it (wgslTables()); nothing is retyped in a shader.
+//
+// Grid: (N+1)^3 points, point index = i + m*(j + m*k), m = N+1. Cells: N^3, cell index = i + N*(j + N*k).
+// Unit box [0,1]^3: point (i,j,k) sits at (i,j,k)/N.
+// Convention: positive-inside. A point is solid when field > 0. Outermost layer of points is forced to -1
+// (padded negative) so every part is closed.
+
+const CROSS_EPS = 1e-4; // crossings stay this fraction of an edge off a grid point (cf. SLAB_TCLAMP in worker/m34-slab-mesher.js)
+
+// Cube corner c has offset (c&1, (c>>1)&1, (c>>2)&1).
+const CORNER_OFF = [];
+for (let c = 0; c < 8; c++) CORNER_OFF.push([c & 1, (c >> 1) & 1, (c >> 2) & 1]);
+
+// Grid edges. Every grid edge is (point p, type t) and runs from p to p + EDGE_DIRS[t].
+// It is OWNED by point p. 3 axis edges, 3 face diagonals, 1 body diagonal = exactly the edges the tet split uses.
+const EDGE_DIRS = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+
+// Kuhn / Freudenthal split of a cube into 6 tets along the main diagonal corner0 -> corner7.
+// Tet for axis permutation (p0,p1,p2) = corners 0, e_p0, e_p0+e_p1, 7. Every cube uses the same split,
+// so the diagonals on shared faces always agree between neighbouring cubes (faces match by construction).
+const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+const TETS = PERMS.map(p => { const a = 1 << p[0], b = a | (1 << p[1]); return [0, a, b, 7]; });
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const popc = v => { let n = 0; while (v) { n += v & 1; v >>= 1; } return n; };
+const POPCOUNT7 = Array.from({ length: 128 }, (_, i) => popc(i));
+
+// Edge code = lowCorner | (edgeType << 3): which owned grid edge, relative to the cell origin.
+function edgeCode(cA, cB) {
+  let lo = cA, hi = cB;
+  if (popc(cA) > popc(cB)) { lo = cB; hi = cA; }
+  if ((lo & hi) !== lo) throw new Error('tet edge corners not nested');
+  const d = sub(CORNER_OFF[hi], CORNER_OFF[lo]);
+  const t = EDGE_DIRS.findIndex(e => e[0] === d[0] && e[1] === d[1] && e[2] === d[2]);
+  if (t < 0) throw new Error('edge direction not in EDGE_DIRS');
+  return lo | (t << 3);
+}
+
+// Marching-tet case table. Local vertex v of tet t is cube corner TETS[t][v]; case bit v is set when that
+// vertex is inside (field > 0). TRI_COUNT[case] = 0, 1 or 2. EDGE_CODE[(t*16+case)*6 + tri*3 + vert].
+// Orientation is derived from the reference geometry so that every normal points from solid to empty
+// (counter-clockwise seen from outside, giving positive signed volume).
+const TRI_COUNT = new Uint8Array(16);
+const EDGE_CODE = new Uint8Array(6 * 16 * 6);
+const TET_SIGN = []; // handedness of each tet (+1 / -1), informational
+
+(function build() {
+  for (let t = 0; t < 6; t++) {
+    const cs = TETS[t];
+    const P = cs.map(c => CORNER_OFF[c]);
+    TET_SIGN.push(Math.sign(dot(cross(sub(P[1], P[0]), sub(P[2], P[0])), sub(P[3], P[0]))));
+    for (let cas = 0; cas < 16; cas++) {
+      const ins = [], out = [];
+      for (let v = 0; v < 4; v++) (cas >> v & 1 ? ins : out).push(v);
+      let tris = [];
+      const mid = (u, v) => [(P[u][0] + P[v][0]) / 2, (P[u][1] + P[v][1]) / 2, (P[u][2] + P[v][2]) / 2];
+      if (ins.length === 1 || ins.length === 3) {
+        const single = ins.length === 1 ? ins[0] : out[0];
+        const others = [0, 1, 2, 3].filter(v => v !== single);
+        tris = [others.map(o => [single, o])];
+      } else if (ins.length === 2) {
+        const [a, b] = ins, [c, d] = out;
+        const ac = [a, c], ad = [a, d], bd = [b, d], bc = [b, c];
+        tris = [[ac, ad, bd], [ac, bd, bc]];
+      }
+      const cen = vs => { const s = [0, 0, 0]; for (const v of vs) for (let q = 0; q < 3; q++) s[q] += P[v][q] / vs.length; return s; };
+      const dir = ins.length && out.length ? sub(cen(out), cen(ins)) : [0, 0, 0];
+      TRI_COUNT[cas] = tris.length;
+      tris.forEach((tri, ti) => {
+        const m = tri.map(e => mid(e[0], e[1]));
+        const n = cross(sub(m[1], m[0]), sub(m[2], m[0]));
+        if (dot(n, dir) < 0) tri = [tri[0], tri[2], tri[1]];
+        tri.forEach((e, vi) => { EDGE_CODE[(t * 16 + cas) * 6 + ti * 3 + vi] = edgeCode(cs[e[0]], cs[e[1]]); });
+      });
+    }
+  }
+})();
+
+// ---- Fields (positive-inside, solid where f > 0) -------------------------------------------------------------
+// TPMS "sheet" (wall) form: f = thick - |g(x)|, so the solid is a wall of half-thickness ~thick around the g=0 surface.
+// x = 2*pi*cells*u, u in [0,1]^3 across the box. Sphere: f = radius - |u - (0.5,0.5,0.5)| (thick is the radius).
+const KINDS = { gyroid: 0, schwarzP: 1, diamond: 2, sphere: 3 };
+const KIND_NAMES = ['gyroid', 'schwarzP', 'diamond', 'sphere'];
+const TAU = Math.PI * 2;
+function fieldAt(kind, cells, thick, ux, uy, uz) {
+  if (kind === 3) { const dx = ux - 0.5, dy = uy - 0.5, dz = uz - 0.5; return thick - Math.sqrt(dx * dx + dy * dy + dz * dz); }
+  const x = TAU * cells * ux, y = TAU * cells * uy, z = TAU * cells * uz;
+  const sx = Math.sin(x), cx = Math.cos(x), sy = Math.sin(y), cy = Math.cos(y), sz = Math.sin(z), cz = Math.cos(z);
+  let g;
+  if (kind === 0) g = sx * cy + sy * cz + sz * cx;
+  else if (kind === 1) g = cx + cy + cz;
+  else g = sx * sy * sz + sx * cy * cz + cx * sy * cz + cx * cy * sz;
+  return thick - Math.abs(g);
+}
+
+// ---- WGSL generation -----------------------------------------------------------------------------------------
+function arr(name, type, vals, suffix) {
+  return `const ${name}: array<${type}, ${vals.length}> = array<${type}, ${vals.length}>(${Array.from(vals).map(v => v + suffix).join(', ')});\n`;
+}
+function wgslTables() {
+  const flat = a => a.flat();
+  return [
+    '// generated from tables.mjs by wgslTables(); do not edit\n',
+    arr('CORNER_OFF', 'u32', flat(CORNER_OFF), 'u'),
+    arr('EDGE_DIR', 'u32', flat(EDGE_DIRS), 'u'),
+    arr('TET_CORNER', 'u32', flat(TETS), 'u'),
+    arr('TRI_COUNT', 'u32', TRI_COUNT, 'u'),
+    arr('EDGE_CODE', 'u32', EDGE_CODE, 'u'),
+    `const CROSS_EPS: f32 = ${CROSS_EPS.toExponential()};\n`,
+  ].join('');
+}
+
+// ===== cpu-mesher.mjs =====
+// CPU reference mesher. Same tables, same tet split, same ownership and ordering as the GPU kernels, so the
+// two can be compared index by index: vertices ordered by (owner point index, edge type), triangles ordered by
+// (cell index, tet, triangle in case table).
+// (import removed: ./tables.mjs)
+
+function buildField(N, kind, cells, thick) {
+  const m = N + 1, f = new Float32Array(m * m * m);
+  for (let k = 0; k <= N; k++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const id = i + m * (j + m * k);
+    f[id] = (i === 0 || j === 0 || k === 0 || i === N || j === N || k === N) ? -1 : fieldAt(kind, cells, thick, i / N, j / N, k / N);
+  }
+  return f;
+}
+
+function cornerMask(f, i, j, k, m) {
+  let cm = 0;
+  for (let c = 0; c < 8; c++) { const o = CORNER_OFF[c]; if (f[(i + o[0]) + m * ((j + o[1]) + m * (k + o[2]))] > 0) cm |= 1 << c; }
+  return cm;
+}
+
+function meshField(f, N, eps = CROSS_EPS) {
+  const m = N + 1, np = m * m * m;
+  const masks = new Uint8Array(np), vstart = new Uint32Array(np + 1);
+  for (let k = 0; k <= N; k++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const id = i + m * (j + m * k), f0 = f[id]; let mask = 0;
+    for (let t = 0; t < 7; t++) {
+      const d = EDGE_DIRS[t];
+      if (i + d[0] > N || j + d[1] > N || k + d[2] > N) continue;
+      if ((f0 > 0) !== (f[id + d[0] + m * (d[1] + m * d[2])] > 0)) mask |= 1 << t;
+    }
+    masks[id] = mask; vstart[id + 1] = vstart[id] + POPCOUNT7[mask];
+  }
+  const nV = vstart[np], pos = new Float32Array(nV * 3);
+  for (let k = 0; k <= N; k++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const id = i + m * (j + m * k), mask = masks[id]; if (!mask) continue;
+    let o = vstart[id]; const f0 = f[id];
+    for (let t = 0; t < 7; t++) {
+      if (!(mask >> t & 1)) continue;
+      const d = EDGE_DIRS[t], f1 = f[id + d[0] + m * (d[1] + m * d[2])];
+      let a = f0 / (f0 - f1); a = a < eps ? eps : a > 1 - eps ? 1 - eps : a;
+      pos[o * 3] = (i + a * d[0]) / N; pos[o * 3 + 1] = (j + a * d[1]) / N; pos[o * 3 + 2] = (k + a * d[2]) / N; o++;
+    }
+  }
+  const tcase = (cm, t) => { const c = TETS[t]; return (cm >> c[0] & 1) | (cm >> c[1] & 1) << 1 | (cm >> c[2] & 1) << 2 | (cm >> c[3] & 1) << 3; };
+  let nT = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const cm = cornerMask(f, i, j, k, m); if (cm === 0 || cm === 255) continue;
+    for (let t = 0; t < 6; t++) nT += TRI_COUNT[tcase(cm, t)];
+  }
+  const idx = new Uint32Array(nT * 3); let o = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const cm = cornerMask(f, i, j, k, m); if (cm === 0 || cm === 255) continue;
+    for (let t = 0; t < 6; t++) {
+      const cs = tcase(cm, t), n = TRI_COUNT[cs];
+      for (let q = 0; q < n * 3; q++) {
+        const code = EDGE_CODE[(t * 16 + cs) * 6 + q], A = CORNER_OFF[code & 7], type = code >> 3;
+        const pid = (i + A[0]) + m * ((j + A[1]) + m * (k + A[2]));
+        idx[o++] = vstart[pid] + POPCOUNT7[masks[pid] & ((1 << type) - 1)];
+      }
+    }
+  }
+  return { positions: pos, indices: idx, nV, nT, N };
+}
+
+function meshCpu(N, kind, cells, thick) { return meshField(buildField(N, kind, cells, thick), N); }
+
+// ===== meshcheck.mjs =====
+// Mesh checks shared by selftest.mjs (CPU mesh) and the page ("Compare with CPU" runs them on the GPU mesh).
+
+// Closed-mesh check: every undirected edge used by exactly two triangles, once in each direction.
+function closedCheck(indices, nV) {
+  const nT = (indices.length / 3) | 0;
+  const keys = new Float64Array(nT * 3);
+  const M = nV + 1;
+  for (let t = 0; t < nT; t++) {
+    for (let e = 0; e < 3; e++) {
+      const a = indices[t * 3 + e], b = indices[t * 3 + (e + 1) % 3];
+      const lo = a < b ? a : b, hi = a < b ? b : a;
+      keys[t * 3 + e] = (lo * M + hi) * 2 + (a < b ? 0 : 1);
+    }
+  }
+  keys.sort();
+  let openEdges = 0, nonManifold = 0, badOrient = 0, edges = 0;
+  for (let i = 0; i < keys.length;) {
+    const g = Math.floor(keys[i] / 2);
+    let j = i, d0 = 0, d1 = 0;
+    while (j < keys.length && Math.floor(keys[j] / 2) === g) { if (keys[j] % 2 === 0) d0++; else d1++; j++; }
+    const n = j - i; edges++;
+    if (n === 1) openEdges++;
+    else if (n > 2) nonManifold++;
+    else if (d0 !== 1 || d1 !== 1) badOrient++;
+    i = j;
+  }
+  return { edges, openEdges, nonManifold, badOrient, closed: nT > 0 && openEdges === 0 && nonManifold === 0 && badOrient === 0 };
+}
+
+function signedVolume(pos, idx) {
+  let v = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+    const ax = pos[a], ay = pos[a + 1], az = pos[a + 2], bx = pos[b], by = pos[b + 1], bz = pos[b + 2], cx = pos[c], cy = pos[c + 1], cz = pos[c + 2];
+    v += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+  }
+  return v / 6;
+}
+
+// Non-manifold vertices: a vertex whose incident triangles form more than one fan (link is not a single cycle).
+function nonManifoldVertexCount(indices, nV) {
+  const nT = (indices.length / 3) | 0, start = new Uint32Array(nV + 1);
+  for (let i = 0; i < indices.length; i++) start[indices[i] + 1]++;
+  for (let v = 0; v < nV; v++) start[v + 1] += start[v];
+  const fill = start.slice(0, nV), list = new Uint32Array(indices.length);
+  for (let t = 0; t < nT; t++) for (let e = 0; e < 3; e++) list[fill[indices[t * 3 + e]]++] = t;
+  let bad = 0;
+  for (let v = 0; v < nV; v++) {
+    const s = start[v], k = start[v + 1] - s; if (k < 2) continue;
+    const par = []; for (let i = 0; i < k; i++) par.push(i);
+    const find = x => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; };
+    for (let a = 0; a < k; a++) for (let b = a + 1; b < k; b++) {
+      const ta = list[s + a] * 3, tb = list[s + b] * 3;
+      let shared = 0;
+      for (let i = 0; i < 3; i++) { const x = indices[ta + i]; if (x === v) continue; for (let j = 0; j < 3; j++) if (indices[tb + j] === x) shared++; }
+      if (shared) par[find(a)] = find(b);
+    }
+    let comps = 0; for (let i = 0; i < k; i++) if (find(i) === i) comps++;
+    if (comps > 1) bad++;
+  }
+  return bad;
+}
+
+// Triangles whose area is below 1e-9 of a cell face (h^2).
+function zeroAreaCount(pos, idx, h) {
+  let n = 0; const lim = 1e-9 * h * h;
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    if (0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz) <= lim) n++;
+  }
+  return n;
+}
+
+// ===== gpu-mesher.mjs =====
+// WebGPU marching-tetrahedra mesher. Not run on a real GPU (checked on a software GPU): expect to fix
+// small things on first run. All constant tables come from tables.mjs through wgslTables().
+//
+// Pipeline (every phase is its own submit so each can be timed):
+//   field   : (N+1)^3 f32 field into a storage buffer, outer layer forced to -1 (closed part)
+//   count   : per grid POINT: mask of crossed owned edges (7 bits) + its popcount; per CELL: triangle count
+//   scan    : multi-level work-efficient (Blelloch) exclusive scan of both count buffers, in place; the top
+//             level's single sum is the total, copied to the CPU to size the output buffers
+//   emit    : one vertex per crossed owned edge (index = vertex scan + rank inside the owner's mask),
+//             indexed triangles (neighbour-owned edge indices found through the same scan + mask)
+// (import removed: ./tables.mjs)
+
+const MAXX = 16384; // workgroups per dispatch x; the rest goes to y, so N=256 stays under 65535 per dimension
+function dims(wgCount) { const w = Math.max(1, wgCount), x = Math.min(w, MAXX), y = Math.ceil(w / x); return { x, y }; }
+const U = globalThis.GPUBufferUsage || {}; // module must load even where WebGPU is missing (main.mjs shows the plain message)
+
+const PRELUDE = () => `
+struct P { n: u32, kind: u32, nx: u32, count: u32, cells: f32, thick: f32, pad0: u32, pad1: u32 }
+@group(0) @binding(0) var<uniform> p: P;
+${wgslTables()}
+fn lin(wid: vec3<u32>, li: u32) -> u32 { return (wid.y * p.nx + wid.x) * 64u + li; }
+`;
+
+const SRC = {
+  field: () => PRELUDE() + `
+@group(0) @binding(1) var<storage, read_write> field: array<f32>;
+const TAU: f32 = 6.283185307179586;
+fn fieldAt(u: vec3<f32>) -> f32 {
+  if (p.kind == 3u) { return p.thick - length(u - vec3<f32>(0.5, 0.5, 0.5)); }
+  let q = u * (TAU * p.cells);
+  let s = sin(q);
+  let c = cos(q);
+  var g: f32;
+  if (p.kind == 0u) { g = s.x * c.y + s.y * c.z + s.z * c.x; }
+  else if (p.kind == 1u) { g = c.x + c.y + c.z; }
+  else { g = s.x * s.y * s.z + s.x * c.y * c.z + c.x * s.y * c.z + c.x * c.y * s.z; }
+  return p.thick - abs(g);
+}
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let id = lin(wid, li);
+  if (id >= p.count) { return; }
+  let m = p.n + 1u;
+  let i = id % m;
+  let j = (id / m) % m;
+  let k = id / (m * m);
+  var v: f32 = -1.0;
+  if (i != 0u && j != 0u && k != 0u && i != p.n && j != p.n && k != p.n) {
+    v = fieldAt(vec3<f32>(f32(i), f32(j), f32(k)) / f32(p.n));
+  }
+  field[id] = v;
+}`,
+
+  countVerts: () => PRELUDE() + `
+@group(0) @binding(1) var<storage, read> field: array<f32>;
+@group(0) @binding(2) var<storage, read_write> masks: array<u32>;
+@group(0) @binding(3) var<storage, read_write> vcount: array<u32>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let id = lin(wid, li);
+  if (id >= p.count) { return; }
+  let m = p.n + 1u;
+  let i = id % m;
+  let j = (id / m) % m;
+  let k = id / (m * m);
+  let f0 = field[id];
+  var mask = 0u;
+  for (var t = 0u; t < 7u; t = t + 1u) {
+    let ii = i + EDGE_DIR[t * 3u];
+    let jj = j + EDGE_DIR[t * 3u + 1u];
+    let kk = k + EDGE_DIR[t * 3u + 2u];
+    if (ii > p.n || jj > p.n || kk > p.n) { continue; }
+    let f1 = field[ii + m * (jj + m * kk)];
+    if ((f0 > 0.0) != (f1 > 0.0)) { mask = mask | (1u << t); }
+  }
+  masks[id] = mask;
+  vcount[id] = countOneBits(mask);
+}`,
+
+  cellCommon: `
+fn cornerMask(i: u32, j: u32, k: u32) -> u32 {
+  let m = p.n + 1u;
+  var cm = 0u;
+  for (var c = 0u; c < 8u; c = c + 1u) {
+    let ii = i + CORNER_OFF[c * 3u];
+    let jj = j + CORNER_OFF[c * 3u + 1u];
+    let kk = k + CORNER_OFF[c * 3u + 2u];
+    if (field[ii + m * (jj + m * kk)] > 0.0) { cm = cm | (1u << c); }
+  }
+  return cm;
+}
+fn tetCase(cm: u32, t: u32) -> u32 {
+  var cs = 0u;
+  for (var v = 0u; v < 4u; v = v + 1u) { cs = cs | (((cm >> TET_CORNER[t * 4u + v]) & 1u) << v); }
+  return cs;
+}`,
+
+  countTris() { return PRELUDE() + `
+@group(0) @binding(1) var<storage, read> field: array<f32>;
+@group(0) @binding(2) var<storage, read_write> tcount: array<u32>;
+` + this.cellCommon + `
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let id = lin(wid, li);
+  if (id >= p.count) { return; }
+  let n = p.n;
+  let i = id % n;
+  let j = (id / n) % n;
+  let k = id / (n * n);
+  let cm = cornerMask(i, j, k);
+  var cnt = 0u;
+  if (cm != 0u && cm != 255u) {
+    for (var t = 0u; t < 6u; t = t + 1u) { cnt = cnt + TRI_COUNT[tetCase(cm, t)]; }
+  }
+  tcount[id] = cnt;
+}`; },
+
+  emitVerts: () => PRELUDE() + `
+@group(0) @binding(1) var<storage, read> field: array<f32>;
+@group(0) @binding(2) var<storage, read> masks: array<u32>;
+@group(0) @binding(3) var<storage, read> vstart: array<u32>;
+@group(0) @binding(4) var<storage, read_write> verts: array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let id = lin(wid, li);
+  if (id >= p.count) { return; }
+  let mask = masks[id];
+  if (mask == 0u) { return; }
+  let m = p.n + 1u;
+  let i = id % m;
+  let j = (id / m) % m;
+  let k = id / (m * m);
+  let f0 = field[id];
+  let fn_ = f32(p.n);
+  var o = vstart[id];
+  for (var t = 0u; t < 7u; t = t + 1u) {
+    if (((mask >> t) & 1u) == 0u) { continue; }
+    let dx = EDGE_DIR[t * 3u];
+    let dy = EDGE_DIR[t * 3u + 1u];
+    let dz = EDGE_DIR[t * 3u + 2u];
+    let f1 = field[(i + dx) + m * ((j + dy) + m * (k + dz))];
+    let a = clamp(f0 / (f0 - f1), CROSS_EPS, 1.0 - CROSS_EPS);
+    verts[o * 3u] = (f32(i) + a * f32(dx)) / fn_;
+    verts[o * 3u + 1u] = (f32(j) + a * f32(dy)) / fn_;
+    verts[o * 3u + 2u] = (f32(k) + a * f32(dz)) / fn_;
+    o = o + 1u;
+  }
+}`,
+
+  emitTris() { return PRELUDE() + `
+@group(0) @binding(1) var<storage, read> field: array<f32>;
+@group(0) @binding(2) var<storage, read> masks: array<u32>;
+@group(0) @binding(3) var<storage, read> vstart: array<u32>;
+@group(0) @binding(4) var<storage, read> tstart: array<u32>;
+@group(0) @binding(5) var<storage, read_write> idx: array<u32>;
+` + this.cellCommon + `
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let id = lin(wid, li);
+  if (id >= p.count) { return; }
+  let n = p.n;
+  let m = n + 1u;
+  let i = id % n;
+  let j = (id / n) % n;
+  let k = id / (n * n);
+  let cm = cornerMask(i, j, k);
+  if (cm == 0u || cm == 255u) { return; }
+  var o = tstart[id] * 3u;
+  for (var t = 0u; t < 6u; t = t + 1u) {
+    let cs = tetCase(cm, t);
+    let nt = TRI_COUNT[cs];
+    let base = (t * 16u + cs) * 6u;
+    for (var q = 0u; q < nt * 3u; q = q + 1u) {
+      let code = EDGE_CODE[base + q];
+      let a = code & 7u;
+      let ty = code >> 3u;
+      let pid = (i + CORNER_OFF[a * 3u]) + m * ((j + CORNER_OFF[a * 3u + 1u]) + m * (k + CORNER_OFF[a * 3u + 2u]));
+      idx[o] = vstart[pid] + countOneBits(masks[pid] & ((1u << ty) - 1u));
+      o = o + 1u;
+    }
+  }
+}`; },
+
+  scanHead: `
+struct S { n: u32, nx: u32, nb: u32, pad: u32 }
+@group(0) @binding(0) var<uniform> s: S;
+`,
+  scan: () => SRC.scanHead + `
+@group(0) @binding(1) var<storage, read_write> data: array<u32>;
+@group(0) @binding(2) var<storage, read_write> sums: array<u32>;
+var<workgroup> tmp: array<u32, 256>;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let wg = wid.y * s.nx + wid.x;
+  if (wg >= s.nb) { return; }
+  let gi = wg * 256u + li;
+  var v = 0u;
+  if (gi < s.n) { v = data[gi]; }
+  tmp[li] = v;
+  workgroupBarrier();
+  var off = 1u;
+  for (var d = 128u; d > 0u; d = d >> 1u) {
+    if (li < d) {
+      let ai = off * (2u * li + 1u) - 1u;
+      let bi = off * (2u * li + 2u) - 1u;
+      tmp[bi] = tmp[bi] + tmp[ai];
+    }
+    workgroupBarrier();
+    off = off << 1u;
+  }
+  if (li == 0u) { sums[wg] = tmp[255]; tmp[255] = 0u; }
+  workgroupBarrier();
+  for (var d = 1u; d < 256u; d = d << 1u) {
+    off = off >> 1u;
+    if (li < d) {
+      let ai = off * (2u * li + 1u) - 1u;
+      let bi = off * (2u * li + 2u) - 1u;
+      let t = tmp[ai];
+      tmp[ai] = tmp[bi];
+      tmp[bi] = tmp[bi] + t;
+    }
+    workgroupBarrier();
+  }
+  if (gi < s.n) { data[gi] = tmp[li]; }
+}`,
+  add: () => SRC.scanHead + `
+@group(0) @binding(1) var<storage, read_write> data: array<u32>;
+@group(0) @binding(2) var<storage, read> sums: array<u32>;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let wg = wid.y * s.nx + wid.x;
+  if (wg >= s.nb) { return; }
+  let gi = wg * 256u + li;
+  if (gi < s.n) { data[gi] = data[gi] + sums[wg]; }
+}`,
+};
+
+const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : NaN; };
+
+class GpuMesher {
+  constructor(device, adapter, info, log) {
+    this.device = device; this.adapter = adapter; this.info = info; this.log = log;
+    this.limits = device.limits; this.hasTS = device.features.has('timestamp-query');
+    this.res = null; this.out = null; this.pl = {};
+  }
+
+  static async create(log) {
+    const noGpu = (msg) => Object.assign(new Error(msg), { noGpu: true }); // main.mjs shows the plain message for these
+    if (!navigator.gpu) throw noGpu('navigator.gpu is missing');
+    let adapter, device, info;
+    try { adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }); } catch (e) { throw noGpu('requestAdapter failed: ' + e.message); }
+    if (!adapter) throw noGpu('no WebGPU adapter was found');
+    info = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : {});
+    const L = adapter.limits;
+    const requiredFeatures = adapter.features.has('timestamp-query') ? ['timestamp-query'] : [];
+    try {
+      device = await adapter.requestDevice({
+        requiredFeatures,
+        requiredLimits: { maxStorageBufferBindingSize: L.maxStorageBufferBindingSize, maxBufferSize: L.maxBufferSize },
+      });
+    } catch (e) { throw noGpu('requestDevice failed: ' + e.message); }
+    device.lost.then(l => log('DEVICE LOST: ' + l.reason + ' ' + l.message, 'err'));
+    device.addEventListener('uncapturederror', e => log('UNCAPTURED GPU ERROR: ' + e.error.message, 'err'));
+    const g = new GpuMesher(device, adapter, info, log);
+    await g.buildPipelines();
+    return g;
+  }
+
+  async module(label, code) {
+    this.device.pushErrorScope('validation');
+    const mod = this.device.createShaderModule({ label, code });
+    const ci = await mod.getCompilationInfo();
+    await this.device.popErrorScope(); // same problems are listed below through getCompilationInfo
+    let errs = 0;
+    const lines = code.split('\n');
+    for (const m of ci.messages) {
+      if (m.type === 'error') errs++;
+      this.log(`shader ${label} ${m.type} line ${m.lineNum}:${m.linePos}: ${m.message}\n    > ${(lines[m.lineNum - 1] || '').trim().slice(0, 160)}`, m.type === 'error' ? 'err' : 'warn');
+    }
+    if (errs) throw new Error(`shader ${label} failed to compile (${errs} errors, listed above)`);
+    this.log(`shader ${label}: compiled, ${ci.messages.length} messages`);
+    return mod;
+  }
+
+  async pipeline(label, code) {
+    const mod = await this.module(label, code);
+    this.device.pushErrorScope('validation');
+    const pl = this.device.createComputePipeline({ label, layout: 'auto', compute: { module: mod, entryPoint: 'main' } });
+    const err = await this.device.popErrorScope();
+    if (err) throw new Error(`pipeline ${label}: ${err.message}`);
+    return pl;
+  }
+
+  async buildPipelines() {
+    const d = this.device;
+    this.pl.field = await this.pipeline('field', SRC.field());
+    this.pl.countVerts = await this.pipeline('countVerts', SRC.countVerts());
+    this.pl.countTris = await this.pipeline('countTris', SRC.countTris());
+    this.pl.scan = await this.pipeline('scan', SRC.scan());
+    this.pl.add = await this.pipeline('add', SRC.add());
+    this.pl.emitVerts = await this.pipeline('emitVerts', SRC.emitVerts());
+    this.pl.emitTris = await this.pipeline('emitTris', SRC.emitTris());
+    if (this.hasTS) {
+      this.qs = d.createQuerySet({ type: 'timestamp', count: 8 });
+      this.qResolve = d.createBuffer({ size: 64, usage: U.QUERY_RESOLVE | U.COPY_SRC });
+      this.qRead = d.createBuffer({ size: 64, usage: U.MAP_READ | U.COPY_DST });
+    }
+    this.totalsRead = d.createBuffer({ size: 8, usage: U.MAP_READ | U.COPY_DST });
+  }
+
+  buf(size, usage, label) { return this.device.createBuffer({ size: Math.max(4, Math.ceil(size / 4) * 4), usage, label }); }
+
+  // Buffers that depend only on N.
+  ensure(N) {
+    if (this.res && this.res.N === N) return this.res;
+    if (this.res) for (const b of this.res.all) b.destroy();
+    const d = this.device, np = (N + 1) ** 3, nc = N ** 3, SB = U.STORAGE | U.COPY_SRC | U.COPY_DST;
+    const all = [];
+    const mk = (size, usage, label) => { const b = this.buf(size, usage, label); all.push(b); return b; };
+    const r = { N, np, nc, all };
+    r.field = mk(np * 4, SB, 'field'); r.masks = mk(np * 4, SB, 'masks');
+    r.vcount = mk(np * 4, SB, 'vcount'); r.tcount = mk(nc * 4, SB, 'tcount');
+    r.uPoints = mk(32, U.UNIFORM | U.COPY_DST, 'uPoints'); r.uCells = mk(32, U.UNIFORM | U.COPY_DST, 'uCells');
+    const levels = (data, n, tag) => {
+      const out = []; let cur = data, cn = n;
+      for (;;) {
+        const nb = Math.ceil(cn / 256), sums = mk(nb * 4, SB, `${tag}Sums${out.length}`);
+        const u = mk(16, U.UNIFORM | U.COPY_DST, `${tag}ScanU${out.length}`);
+        const dm = dims(nb);
+        this.device.queue.writeBuffer(u, 0, new Uint32Array([cn, dm.x, nb, 0]));
+        out.push({ data: cur, n: cn, nb, sums, u, dm });
+        if (nb === 1) break;
+        cur = sums; cn = nb;
+      }
+      return out;
+    };
+    r.vLevels = levels(r.vcount, np, 'v'); r.tLevels = levels(r.tcount, nc, 't');
+    const bg = (pl, entries) => d.createBindGroup({ layout: pl.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+    r.bgField = bg(this.pl.field, [r.uPoints, r.field]);
+    r.bgCountV = bg(this.pl.countVerts, [r.uPoints, r.field, r.masks, r.vcount]);
+    r.bgCountT = bg(this.pl.countTris, [r.uCells, r.field, r.tcount]);
+    const scanBGs = ls => ls.map(l => ({ scan: bg(this.pl.scan, [l.u, l.data, l.sums]), add: bg(this.pl.add, [l.u, l.data, l.sums]) }));
+    r.vBG = scanBGs(r.vLevels); r.tBG = scanBGs(r.tLevels);
+    this.res = r;
+    return r;
+  }
+
+  setParams(N, kind, cells, thick) {
+    const r = this.res, w = (count) => {
+      const dm = dims(Math.ceil(count / 64)), ab = new ArrayBuffer(32), dv = new DataView(ab);
+      dv.setUint32(0, N, true); dv.setUint32(4, kind, true); dv.setUint32(8, dm.x, true); dv.setUint32(12, count, true);
+      dv.setFloat32(16, cells, true); dv.setFloat32(20, thick, true);
+      return { ab, dm };
+    };
+    const a = w(r.np), b = w(r.nc);
+    this.device.queue.writeBuffer(r.uPoints, 0, a.ab); this.device.queue.writeBuffer(r.uCells, 0, b.ab);
+    return { dmP: a.dm, dmC: b.dm };
+  }
+
+  // Run the whole pipeline. Returns { N, nV, nT, verts, idx, times }.
+  // The caller owns the returned verts/idx buffers and must call release(result) when nothing draws or reads them
+  // any more. mesh() never destroys a previous result. transient=true (bench) frees its own outputs before returning.
+  async mesh(N, kind, cells, thick, transient = false) {
+    const d = this.device, L = this.limits, maxB = Math.min(L.maxStorageBufferBindingSize, L.maxBufferSize);
+    if ((N + 1) ** 3 * 4 > maxB) throw new Error(`skipped: buffer limits (field needs ${(N + 1) ** 3 * 4} bytes, limit ${maxB})`);
+    d.pushErrorScope('validation'); d.pushErrorScope('out-of-memory');
+    const times = {};
+    let r, dm;
+    const run = async (name, encode, qi, after) => {
+      const enc = d.createCommandEncoder();
+      const pass = enc.beginComputePass(this.hasTS ? { timestampWrites: { querySet: this.qs, beginningOfPassWriteIndex: qi * 2, endOfPassWriteIndex: qi * 2 + 1 } } : {});
+      encode(pass); pass.end(); if (after) after(enc);
+      const t0 = performance.now(); d.queue.submit([enc.finish()]); await d.queue.onSubmittedWorkDone();
+      times[name] = performance.now() - t0;
+    };
+    let result;
+    try {
+      r = this.ensure(N); dm = this.setParams(N, kind, cells, thick);
+      await run('field', p => { p.setPipeline(this.pl.field); p.setBindGroup(0, r.bgField); p.dispatchWorkgroups(dm.dmP.x, dm.dmP.y); }, 0);
+      await run('count', p => {
+        p.setPipeline(this.pl.countVerts); p.setBindGroup(0, r.bgCountV); p.dispatchWorkgroups(dm.dmP.x, dm.dmP.y);
+        p.setPipeline(this.pl.countTris); p.setBindGroup(0, r.bgCountT); p.dispatchWorkgroups(dm.dmC.x, dm.dmC.y);
+      }, 1);
+      const scanLevels = (p, ls, bgs) => {
+        for (let l = 0; l < ls.length; l++) { p.setPipeline(this.pl.scan); p.setBindGroup(0, bgs[l].scan); p.dispatchWorkgroups(ls[l].dm.x, ls[l].dm.y); }
+        for (let l = ls.length - 2; l >= 0; l--) { p.setPipeline(this.pl.add); p.setBindGroup(0, bgs[l].add); p.dispatchWorkgroups(ls[l].dm.x, ls[l].dm.y); }
+      };
+      const vTop = r.vLevels[r.vLevels.length - 1].sums, tTop = r.tLevels[r.tLevels.length - 1].sums;
+      // Each scan level is its own dispatch inside one pass; storage writes between dispatches are ordered by WebGPU.
+      await run('scan', p => { scanLevels(p, r.vLevels, r.vBG); scanLevels(p, r.tLevels, r.tBG); }, 2,
+        enc => { enc.copyBufferToBuffer(vTop, 0, this.totalsRead, 0, 4); enc.copyBufferToBuffer(tTop, 0, this.totalsRead, 4, 4); });
+      let t0 = performance.now();
+      await this.totalsRead.mapAsync(GPUMapMode.READ);
+      const tot = new Uint32Array(this.totalsRead.getMappedRange().slice(0)); this.totalsRead.unmap();
+      times.readback = performance.now() - t0;
+      const nV = tot[0], nT = tot[1];
+      if (nV === 0 || nT === 0) throw new Error(`empty mesh (verts ${nV}, tris ${nT}): check thickness / cells`);
+      if (nV * 12 > maxB || nT * 12 > maxB) throw new Error(`skipped: buffer limits (output ${nV * 12} / ${nT * 12} bytes, limit ${maxB})`);
+      const verts = this.buf(nV * 12, U.VERTEX | U.STORAGE | U.COPY_SRC, 'verts'), idx = this.buf(nT * 12, U.INDEX | U.STORAGE | U.COPY_SRC, 'idx');
+      const bg = (pl, entries) => d.createBindGroup({ layout: pl.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+      const bgV = bg(this.pl.emitVerts, [r.uPoints, r.field, r.masks, r.vcount, verts]);
+      const bgT = bg(this.pl.emitTris, [r.uCells, r.field, r.masks, r.vcount, r.tcount, idx]);
+      await run('emit', p => {
+        p.setPipeline(this.pl.emitVerts); p.setBindGroup(0, bgV); p.dispatchWorkgroups(dm.dmP.x, dm.dmP.y);
+        p.setPipeline(this.pl.emitTris); p.setBindGroup(0, bgT); p.dispatchWorkgroups(dm.dmC.x, dm.dmC.y);
+      }, 3);
+      times.total = times.field + times.count + times.scan + times.readback + times.emit;
+      if (this.hasTS) {
+        const enc = d.createCommandEncoder();
+        enc.resolveQuerySet(this.qs, 0, 8, this.qResolve, 0); enc.copyBufferToBuffer(this.qResolve, 0, this.qRead, 0, 64);
+        d.queue.submit([enc.finish()]); await this.qRead.mapAsync(GPUMapMode.READ);
+        const ts = new BigUint64Array(this.qRead.getMappedRange().slice(0)); this.qRead.unmap();
+        const ms = i => Number(ts[i * 2 + 1] - ts[i * 2]) / 1e6;
+        times.gpu = { field: ms(0), count: ms(1), scan: ms(2), emit: ms(3) };
+      }
+      result = { N, nV, nT, verts, idx, times, kind, cells, thick };
+      if (transient) { verts.destroy(); idx.destroy(); result.verts = result.idx = null; } // bench: all work is already awaited
+    } finally {
+      const oom = await d.popErrorScope(), val = await d.popErrorScope();
+      if (oom) this.log('GPU out-of-memory: ' + oom.message, 'err');
+      if (val) this.log('GPU validation error: ' + val.message, 'err');
+      if (oom || val) throw new Error('GPU error during mesh (see log)');
+    }
+    return result;
+  }
+
+  release(res) { if (res && res.verts) { res.verts.destroy(); res.idx.destroy(); res.verts = res.idx = null; } }
+
+  // The float32 field the GPU just evaluated (valid for the N of the last mesh() call).
+  async readField(N) { return new Float32Array(await this.readBuffer(this.ensure(N).field, (N + 1) ** 3 * 4)); }
+
+  async readBuffer(buffer, bytes) {
+    const d = this.device, st = this.buf(bytes, U.MAP_READ | U.COPY_DST, 'staging');
+    const enc = d.createCommandEncoder(); enc.copyBufferToBuffer(buffer, 0, st, 0, bytes); d.queue.submit([enc.finish()]);
+    await st.mapAsync(GPUMapMode.READ);
+    const out = st.getMappedRange().slice(0, bytes); st.unmap(); st.destroy();
+    return out;
+  }
+  async readMesh(res) {
+    const positions = new Float32Array(await this.readBuffer(res.verts, res.nV * 12));
+    const indices = new Uint32Array(await this.readBuffer(res.idx, res.nT * 12));
+    return { positions, indices, nV: res.nV, nT: res.nT, N: res.N };
+  }
+
+  // Bench: warm-up + repeats per N, median per phase. N=256 only when the buffers fit the adapter limits.
+  async bench(sizes, kind, cells, thick, repeats) {
+    const rows = [], L = this.limits, maxB = Math.min(L.maxStorageBufferBindingSize, L.maxBufferSize);
+    for (const N of sizes) {
+      if ((N + 1) ** 3 * 4 > maxB) { this.log(`bench N=${N}: skipped: buffer limits`, 'warn'); rows.push({ N, skipped: 'buffer limits' }); continue; }
+      try {
+        await this.mesh(N, kind, cells, thick, true); // warm-up
+        const acc = { field: [], count: [], scan: [], readback: [], emit: [], total: [] }, gacc = { field: [], count: [], scan: [], emit: [] };
+        let last;
+        for (let i = 0; i < repeats; i++) {
+          last = await this.mesh(N, kind, cells, thick, true);
+          for (const k in acc) acc[k].push(last.times[k]);
+          if (last.times.gpu) for (const k in gacc) gacc[k].push(last.times.gpu[k]);
+        }
+        const row = { N, nV: last.nV, nT: last.nT, wall: {}, gpu: null };
+        for (const k in acc) row.wall[k] = median(acc[k]);
+        if (this.hasTS) { row.gpu = {}; for (const k in gacc) row.gpu[k] = median(gacc[k]); }
+        rows.push(row);
+        this.log(`bench N=${N}: done`);
+      } catch (e) {
+        const msg = String(e.message || e); this.log(`bench N=${N}: ${msg}`, 'warn');
+        rows.push({ N, skipped: msg.includes('buffer limits') ? 'buffer limits' : msg });
+      }
+    }
+    return rows;
+  }
+
+  describe() {
+    const L = this.limits, i = this.info || {};
+    return [
+      `adapter: ${i.vendor || '?'} / ${i.architecture || '?'} / ${i.device || '?'} / ${i.description || '?'}`,
+      `user agent: ${navigator.userAgent}`,
+      `timestamp-query: ${this.hasTS ? 'yes' : 'no'}`,
+      `limits: maxStorageBufferBindingSize=${L.maxStorageBufferBindingSize} maxBufferSize=${L.maxBufferSize} maxStorageBuffersPerShaderStage=${L.maxStorageBuffersPerShaderStage} maxComputeWorkgroupsPerDimension=${L.maxComputeWorkgroupsPerDimension} maxComputeInvocationsPerWorkgroup=${L.maxComputeInvocationsPerWorkgroup}`,
+    ].join('\n');
+  }
+}
+
+// export { KINDS };
+
+// ===== viewer.mjs =====
+// WebGPU render view: orthographic camera, wheel = zoom (forward = in), right-drag = orbit,
+// middle-drag or shift+right-drag = pan, left-drag does nothing, two-finger pinch = zoom. Flat shading from derivatives.
+// Not run on a real GPU (checked on a software GPU).
+
+const SHADER = `
+struct U { view: mat4x4<f32>, cam: vec4<f32> }
+@group(0) @binding(0) var<uniform> u: U;
+struct VO { @builtin(position) pos: vec4<f32>, @location(0) v: vec3<f32> }
+@vertex fn vs(@location(0) p: vec3<f32>) -> VO {
+  let v = (u.view * vec4<f32>(p - vec3<f32>(0.5, 0.5, 0.5), 1.0)).xyz;
+  var o: VO;
+  o.pos = vec4<f32>(v.x * u.cam.x + u.cam.z, v.y * u.cam.y + u.cam.w, 0.5 - v.z * 0.5, 1.0);
+  o.v = v;
+  return o;
+}
+@fragment fn fs(in: VO) -> @location(0) vec4<f32> {
+  var n = normalize(cross(dpdx(in.v), dpdy(in.v)));
+  if (n.z < 0.0) { n = -n; }
+  let l = normalize(vec3<f32>(0.35, 0.55, 0.75));
+  let d = max(dot(n, l), 0.0);
+  let rim = pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0);
+  let jade = vec3<f32>(0.114, 0.620, 0.459);
+  let lime = vec3<f32>(0.784, 0.961, 0.259);
+  return vec4<f32>(jade * (0.22 + 0.85 * d) + lime * rim * 0.22, 1.0);
+}`;
+
+class Viewer {
+  constructor(canvas, device, log) {
+    this.canvas = canvas; this.device = device; this.log = log;
+    this.yaw = 0.6; this.pitch = 0.5; this.zoom = 1.1; this.pan = [0, 0];
+    this.mesh = null; this.ptrs = new Map(); this.pinch = 0;
+    this.ctx = canvas.getContext('webgpu');
+    this.format = navigator.gpu.getPreferredCanvasFormat();
+    this.ctx.configure({ device, format: this.format, alphaMode: 'opaque' });
+    this.ubuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.build();
+    this.bind();
+    new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
+    this.resize();
+  }
+
+  async build() {
+    const d = this.device;
+    const mod = d.createShaderModule({ label: 'render', code: SHADER });
+    const ci = await mod.getCompilationInfo();
+    for (const m of ci.messages) this.log(`shader render ${m.type} line ${m.lineNum}:${m.linePos}: ${m.message}`, m.type === 'error' ? 'err' : 'warn');
+    d.pushErrorScope('validation');
+    this.pipe = d.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: mod, entryPoint: 'vs', buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }] },
+      fragment: { module: mod, entryPoint: 'fs', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+    });
+    const err = await d.popErrorScope();
+    if (err) this.log('render pipeline error: ' + err.message, 'err');
+    this.bg = d.createBindGroup({ layout: this.pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: this.ubuf } }] });
+    this.draw();
+  }
+
+  setMesh(verts, idx, nIdx) { this.mesh = { verts, idx, nIdx }; this.draw(); }
+
+  resize() {
+    const c = this.canvas, r = c.parentElement.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.max(1, Math.floor(r.width * dpr)); c.height = Math.max(1, Math.floor(r.height * dpr));
+    if (this.depth) this.depth.destroy();
+    this.depth = this.device.createTexture({ size: [c.width, c.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    this.draw();
+  }
+
+  bind() {
+    const c = this.canvas;
+    c.style.touchAction = 'none';
+    c.addEventListener('contextmenu', e => e.preventDefault());
+    c.addEventListener('wheel', e => { e.preventDefault(); this.zoom *= e.deltaY < 0 ? 1.12 : 1 / 1.12; this.zoom = Math.min(Math.max(this.zoom, 0.2), 40); this.draw(); }, { passive: false });
+    c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); this.ptrs.set(e.pointerId, [e.clientX, e.clientY]); if (this.ptrs.size === 2) this.pinch = this.pinchDist(); });
+    c.addEventListener('pointerup', e => { this.ptrs.delete(e.pointerId); });
+    c.addEventListener('pointercancel', e => { this.ptrs.delete(e.pointerId); });
+    c.addEventListener('pointermove', e => {
+      const prev = this.ptrs.get(e.pointerId); if (!prev) return;
+      const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+      this.ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.ptrs.size === 2) { const dist = this.pinchDist(); if (this.pinch > 0) { this.zoom = Math.min(Math.max(this.zoom * dist / this.pinch, 0.2), 40); } this.pinch = dist; this.draw(); return; }
+      if (e.pointerType === 'mouse') {
+        if ((e.buttons & 4) || ((e.buttons & 2) && e.shiftKey)) { this.pan[0] += 2 * dx / this.canvas.clientWidth; this.pan[1] -= 2 * dy / this.canvas.clientHeight; this.draw(); }
+        else if (e.buttons & 2) { this.yaw += dx * 0.01; this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch + dy * 0.01)); this.draw(); }
+        // left button: intentionally nothing (CAD style, orbit is on right-drag)
+      }
+    });
+  }
+  pinchDist() { const p = [...this.ptrs.values()]; return Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]); }
+  aspect() { return this.canvas.width / this.canvas.height; }
+
+  viewMatrix() { // column-major R = Rx(pitch) * Ry(yaw)
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw), cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    // Ry = [[cy,0,sy],[0,1,0],[-sy,0,cy]], Rx = [[1,0,0],[0,cp,-sp],[0,sp,cp]]
+    const r = [[cy, 0, sy], [sp * sy, cp, -sp * cy], [-cp * sy, sp, cp * cy]];
+    return new Float32Array([r[0][0], r[1][0], r[2][0], 0, r[0][1], r[1][1], r[2][1], 0, r[0][2], r[1][2], r[2][2], 0, 0, 0, 0, 1]);
+  }
+
+  draw() {
+    if (!this.pipe || !this.bg) return;
+    const d = this.device, a = this.aspect(), s = this.zoom * 1.1;
+    d.queue.writeBuffer(this.ubuf, 0, this.viewMatrix());
+    d.queue.writeBuffer(this.ubuf, 64, new Float32Array([s / a, s, this.pan[0], this.pan[1]]));
+    const enc = d.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+      colorAttachments: [{ view: this.ctx.getCurrentTexture().createView(), clearValue: { r: 0.0235, g: 0.0314, b: 0.0471, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      depthStencilAttachment: { view: this.depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+    });
+    if (this.mesh) {
+      pass.setPipeline(this.pipe); pass.setBindGroup(0, this.bg);
+      pass.setVertexBuffer(0, this.mesh.verts); pass.setIndexBuffer(this.mesh.idx, 'uint32'); pass.drawIndexed(this.mesh.nIdx);
+    }
+    pass.end(); d.queue.submit([enc.finish()]);
+  }
+}
+
+// Binary STL from an indexed mesh (unit box scaled to `scale` mm).
+function toBinaryStl(positions, indices, scale = 20) {
+  const nT = indices.length / 3, buf = new ArrayBuffer(84 + nT * 50), dv = new DataView(buf);
+  dv.setUint32(80, nT, true);
+  let o = 84;
+  for (let t = 0; t < nT; t++) {
+    const a = indices[t * 3] * 3, b = indices[t * 3 + 1] * 3, c = indices[t * 3 + 2] * 3;
+    const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
+    const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+    for (const q of [nx / l, ny / l, nz / l]) { dv.setFloat32(o, q, true); o += 4; }
+    for (const i of [a, b, c]) for (let q = 0; q < 3; q++) { dv.setFloat32(o, positions[i + q] * scale, true); o += 4; }
+    o += 2;
+  }
+  return buf;
+}
+
+// ===== main.mjs =====
+// Page glue. Not run on a real GPU (checked on a software GPU).
+// gpu-mesher.mjs and viewer.mjs are loaded with dynamic import() inside start(), only after the navigator.gpu check.
+// (import removed: ./cpu-mesher.mjs)
+// (import removed: ./meshcheck.mjs)
+// (import removed: ./tables.mjs)
+
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(msg, cls) {
+  const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = msg;
+  logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+  (cls === 'err' ? console.error : console.log)(msg);
+}
+window.addEventListener('error', e => log('JS error: ' + e.message, 'err'));
+window.addEventListener('unhandledrejection', e => log('Unhandled promise rejection: ' + (e.reason && e.reason.message || e.reason), 'err'));
+
+const DEFAULT_THICK = [0.4, 0.6, 0.3];
+const st = { kind: 0, N: 64, last: null };
+const cells = () => Math.max(1, +$('iCells').value || 1);
+const thick = () => Math.max(0.01, +$('iThick').value || 0.4);
+
+function seg(id, fn) {
+  $(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    for (const x of $(id).children) x.classList.toggle('on', x === b);
+    fn(+b.dataset.v);
+  });
+}
+
+async function start() {
+  log('F13LD.mesh GPU mesh prototype. Requesting adapter...');
+// (dynamic import removed: ./gpu-mesher.mjs)
+// (dynamic import removed: ./viewer.mjs)
+  const gm = await GpuMesher.create(log);
+  log(gm.describe());
+  const view = new Viewer($('cv'), gm.device, log);
+  const busy = on => { for (const id of ['bMesh', 'bCmp', 'bBench', 'bStl']) $(id).disabled = on; };
+
+  seg('sKind', v => { st.kind = v; $('iThick').value = DEFAULT_THICK[v]; });
+  seg('sRes', v => { st.N = v; });
+
+  async function doMesh() {
+    const res = await gm.mesh(st.N, st.kind, cells(), thick());
+    const old = st.last;
+    st.last = res;
+    view.setMesh(res.verts, res.idx, res.nT * 3); // the view now draws the new buffers; only then free the old ones
+    gm.release(old);
+    const t = res.times;
+    log(`MESH ${KIND_NAMES[st.kind]} N=${st.N} cells=${cells()} wall=${thick()}: ${res.nT} triangles, ${res.nV} vertices. wall ms: field ${t.field.toFixed(1)}, count ${t.count.toFixed(1)}, scan ${t.scan.toFixed(1)}, readback ${t.readback.toFixed(1)}, emit ${t.emit.toFixed(1)}, total ${t.total.toFixed(1)}` +
+      (t.gpu ? `. gpu timestamps ms: field ${t.gpu.field.toFixed(2)}, count ${t.gpu.count.toFixed(2)}, scan ${t.gpu.scan.toFixed(2)}, emit ${t.gpu.emit.toFixed(2)}` : ' (no timestamp-query on this adapter)'));
+    return res;
+  }
+
+  async function compare() {
+    const res = await doMesh();
+    const gpu = await gm.readMesh(res);
+    log('Compare: the PASS/FAIL lines run the CPU mesher on the GPU\'s own float32 field (read back from the GPU), so they test the meshing kernels. The GPU evaluates the field in float32 and the CPU reference in float64, so a separate info line shows that field difference.');
+    const t0 = performance.now();
+    const gField = await gm.readField(res.N);
+    const cpu = meshField(gField, res.N);
+    log(`CPU mesher on the GPU field: ${cpu.nT} triangles, ${cpu.nV} vertices (${(performance.now() - t0).toFixed(0)} ms)`);
+    const tol = 1e-3 / st.N; // 1e-3 of a cell edge, in unit-box coordinates (only float32 division rounding is left)
+    const line = (ok, s) => log((ok ? 'PASS ' : 'FAIL ') + s, ok ? 'pass' : 'fail');
+    line(gpu.nT === cpu.nT, `triangle count GPU ${gpu.nT} vs CPU ${cpu.nT}`);
+    line(gpu.nV === cpu.nV, `vertex count GPU ${gpu.nV} vs CPU ${cpu.nV}`);
+    if (gpu.nV === cpu.nV) {
+      let maxd = 0; for (let i = 0; i < gpu.positions.length; i++) maxd = Math.max(maxd, Math.abs(gpu.positions[i] - cpu.positions[i]));
+      line(maxd <= tol, `vertex positions matched by edge id (same ordering): max difference ${maxd.toExponential(2)} box units = ${(maxd * st.N).toFixed(5)} cell; tolerance 1e-3 cell (${tol.toExponential(2)})`);
+    } else log('SKIP vertex position compare: counts differ', 'warn');
+    {
+      const f64 = meshCpu(res.N, res.kind, res.cells, res.thick);
+      if (f64.nV === gpu.nV && f64.nT === gpu.nT) {
+        const dd = new Float32Array(gpu.positions.length); for (let i = 0; i < dd.length; i++) dd[i] = Math.abs(gpu.positions[i] - f64.positions[i]);
+        const mx = dd.reduce((a, b) => Math.max(a, b), 0), p99 = dd.slice().sort()[Math.floor(dd.length * 0.99)];
+        log(`info (not PASS/FAIL): GPU float32 field vs CPU float64 field: same counts; vertex position difference max ${(mx * st.N).toFixed(5)} cell, 99th percentile ${(p99 * st.N).toFixed(5)} cell. Expected from float32 sin/cos rounding.`);
+      } else log(`info (not PASS/FAIL): GPU float32 field vs CPU float64 field: counts differ (CPU64 ${f64.nT} tris, ${f64.nV} verts): rare sign flips at near-zero field points.`, 'warn');
+    }
+    if (gpu.nT === cpu.nT) {
+      let diff = 0; for (let i = 0; i < gpu.indices.length; i++) if (gpu.indices[i] !== cpu.indices[i]) diff++;
+      line(diff === 0, `triangle index lists identical: ${diff} differing entries of ${gpu.indices.length}`);
+    }
+    const c = closedCheck(gpu.indices, gpu.nV), v = signedVolume(gpu.positions, gpu.indices);
+    line(c.closed, `GPU mesh closed: edges ${c.edges}, OPEN_EDGES ${c.openEdges}, non-manifold edges ${c.nonManifold}, bad orientation ${c.badOrient}`);
+    line(v > 0, `GPU mesh signed volume ${v.toFixed(6)} (CPU ${signedVolume(cpu.positions, cpu.indices).toFixed(6)})`);
+    log(`info: non-manifold vertices GPU ${nonManifoldVertexCount(gpu.indices, gpu.nV)}`);
+  }
+
+  async function bench() {
+    const rows = await gm.bench([64, 128, 256], st.kind, cells(), thick(), 5);
+    const out = ['=== F13LD.mesh GPU mesh bench (paste this block back) ===', gm.describe(), `settings: ${KIND_NAMES[st.kind]} cells=${cells()} wall=${thick()}, 1 warm-up + 5 repeats, median ms`];
+    for (const r of rows) {
+      if (r.skipped) { out.push(`N=${r.N}: ${r.skipped.startsWith('buffer') ? 'skipped: buffer limits' : 'skipped: ' + r.skipped}`); continue; }
+      const w = r.wall;
+      out.push(`N=${r.N}: ${r.nT} tris, ${r.nV} verts | wall: field ${w.field.toFixed(2)} count ${w.count.toFixed(2)} scan ${w.scan.toFixed(2)} readback ${w.readback.toFixed(2)} emit ${w.emit.toFixed(2)} total ${w.total.toFixed(2)}` +
+        (r.gpu ? ` | timestamps: field ${r.gpu.field.toFixed(2)} count ${r.gpu.count.toFixed(2)} scan ${r.gpu.scan.toFixed(2)} emit ${r.gpu.emit.toFixed(2)}` : ' | timestamps: n/a'));
+    }
+    out.push('=== end ===');
+    log(out.join('\n'), 'pass');
+  }
+
+  async function stl() {
+    if (!st.last) await doMesh();
+    const m = await gm.readMesh(st.last);
+    const blob = new Blob([toBinaryStl(m.positions, m.indices)], { type: 'model/stl' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `gpu-mesh-${KIND_NAMES[st.last.kind]}-${st.last.N}.stl`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    log(`STL: ${m.nT} triangles written`);
+  }
+
+  const guard = fn => async () => { busy(true); try { await fn(); } catch (e) { log('ERROR: ' + (e.message || e), 'err'); } finally { busy(false); } };
+  $('bMesh').onclick = guard(doMesh);
+  $('bCmp').onclick = guard(compare);
+  $('bBench').onclick = guard(bench);
+  $('bStl').onclick = guard(stl);
+  $('bCopy').onclick = async () => { try { await navigator.clipboard.writeText(logEl.innerText); log('log copied'); } catch (e) { log('copy failed: ' + e.message, 'warn'); } };
+  guard(doMesh)();
+}
+
+function showNoGpu(reason) {
+  document.body.classList.add('nogpu');
+  const r = document.getElementById('nogpuReason'); if (r) r.textContent = reason ? 'Reason: ' + reason : '';
+}
+if (!navigator.gpu) {
+  showNoGpu('navigator.gpu is not defined');
+} else {
+  start().catch(e => {
+    log('START FAILED: ' + (e.message || e), 'err');
+    if (e && e.noGpu) showNoGpu(e.message);
+  });
+}
+</script>
+</body>
+</html>

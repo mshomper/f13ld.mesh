@@ -22,4 +22,7 @@ From the repository (or worktree) root: `node proto/gpu-mesh/selftest.mjs`. Exit
 7. Press the **copy** icon (or select the log) and paste the whole log back, especially the block between `=== F13LD.mesh GPU mesh bench` and `=== end ===`.
 8. Optional: the download icon saves a binary STL (box scaled to 20 mm) for inspection.
 
+## Single file (double-click, no server)
+`proto/gpu-mesh/gpu-mesh-single.html` is the whole page with the modules inlined, so it opens from `file://` by double-clicking (Chrome or Edge). The `.mjs` files stay the source of truth; rebuild after changing them with `node proto/gpu-mesh/build-single.mjs` (plain Node, no install; it stops with an error on a non-relative import or a top-level name clash).
+
 If WebGPU is missing the page says so in plain words (use current Chrome or Edge).

@@ -531,7 +531,7 @@ function setCard(el, r){
   if(r.test) kv.push(['this build, '+(r.test.cores)+' workers used', fmtS(r.test.ms)]);
   if(r.ref&&r.test) kv.push(['speed-up', (r.ref.ms/r.test.ms).toFixed(2)+'×']);
   if(r.test) kv.push(['field / level set', fieldLsTxt(r.test)]);
-  if(r.test&&r.test.stages&&r.test.stages.jobCpu>0){ const st=r.test.stages; kv.push(['slab field bake', fmtS(st.field)+' of '+fmtS(st.mesh)+' slabs stage (CPU '+fmtS(st.fieldCpu)+' of '+fmtS(st.jobCpu)+', '+st.workers+' workers)'++', simplify in slabs '+fmtS(st.simp||0)+(st.shapeCoarse>0?', + shape coarse pass '+fmtS(st.shapeCoarse):'')+(st.weldField>0?', + weld main-thread bake '+fmtS(st.weldField):'')]); }
+  if(r.test&&r.test.stages&&r.test.stages.jobCpu>0){ const st=r.test.stages; kv.push(['slab field bake', fmtS(st.field)+' of '+fmtS(st.mesh)+' slabs stage (CPU '+fmtS(st.fieldCpu)+' of '+fmtS(st.jobCpu)+', '+st.workers+' workers)'+', simplify in slabs '+fmtS(st.simp||0)+(st.shapeCoarse>0?', + shape coarse pass '+fmtS(st.shapeCoarse):'')+(st.weldField>0?', + weld main-thread bake '+fmtS(st.weldField):'')]); }
   if(r.test&&r.test.field) kv.push(['points from cache', r.test.field.cached.toLocaleString()+(r.test.field.direct?' (+'+r.test.field.direct+' direct)':'')]);
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);

@@ -1,0 +1,208 @@
+{
+ "quick": false,
+ "opts": {
+  "siSample": 6000,
+  "devSamples": 1500,
+  "reps": 3
+ },
+ "cases": [
+  {
+   "case": "grain-spinodoid",
+   "meta": {
+    "case": "grain-spinodoid",
+    "family": "spinodoid",
+    "qual": "med",
+    "edgeWorld": 0.12,
+    "edgeMm": 0.12,
+    "domainMm": 10,
+    "tol": 0.018,
+    "featWorld": null,
+    "grid": [
+     83,
+     83,
+     83
+    ],
+    "layers": 169,
+    "gridMin": [
+     -5,
+     -5,
+     -5
+    ],
+    "gridMax": [
+     5,
+     5,
+     5
+    ],
+    "gridS": [
+     0.12048192771084337,
+     0.12048192771084337,
+     0.12048192771084337
+    ],
+    "slabs": 6,
+    "workersAssumed": 8,
+    "setupMs": 22,
+    "built": "Node-built job (one thread, m34 slabMeshLayers, no DUMPJOB)",
+    "rawTris": 1080582
+   },
+   "rawTris": 1080582,
+   "rows": [
+    {
+     "method": "today",
+     "label": "today",
+     "tris": 21622,
+     "open": 0,
+     "nonManifold": 0,
+     "selfX": 3,
+     "selfXNote": "sampled 6000 of 21622 triangles (pairs involving a sampled triangle)",
+     "devMaxMm": 0.03264620438903815,
+     "devMeanMm": 0.006321402901157225,
+     "devMaxCells": 0.2720517032419846,
+     "devMeanCells": 0.05267835750964354,
+     "devSamples": 3000,
+     "needlePct": 1.6002219961150679,
+     "minAngleP5": 7.7,
+     "meanMinAngle": 30.394156784545086,
+     "seamSlabsIdentical": true,
+     "seamBadSlabs": [],
+     "finalOpenEqualsRaw": true,
+     "slabMs": 3580.7549,
+     "finalMs": 348.40830000000096,
+     "totalMs": 3929.163200000001,
+     "slabTris": 70562,
+     "retries": 17,
+     "hash": "56c6aafbdaad5496",
+     "reps": 3,
+     "spreadMs": 1920.1755000000012
+    },
+    {
+     "method": "rings",
+     "label": "today, rings 3,3,4..",
+     "tris": 43138,
+     "open": 0,
+     "nonManifold": 0,
+     "selfX": 2,
+     "selfXNote": "sampled 6000 of 43138 triangles (pairs involving a sampled triangle)",
+     "devMaxMm": 0.03510877320304034,
+     "devMeanMm": 0.0062204450806506,
+     "devMaxCells": 0.29257311002533615,
+     "devMeanCells": 0.051837042338754996,
+     "devSamples": 3000,
+     "needlePct": 2.561546664193982,
+     "minAngleP5": 6.4,
+     "meanMinAngle": 32.08577436281158,
+     "seamSlabsIdentical": true,
+     "seamBadSlabs": [],
+     "finalOpenEqualsRaw": true,
+     "slabMs": 4213.006399999998,
+     "finalMs": 1224.6290999999983,
+     "totalMs": 5437.635499999997,
+     "slabTris": 90800,
+     "retries": 19,
+     "hash": "28c121f29601c2d5",
+     "reps": 3,
+     "spreadMs": 1288.026300000005
+    }
+   ],
+   "tuned": []
+  },
+  {
+   "case": "noise-simplex-sheet",
+   "meta": {
+    "case": "noise-simplex-sheet",
+    "family": "noise simplex sheet",
+    "qual": "med",
+    "edgeWorld": 0.12,
+    "edgeMm": 0.12,
+    "domainMm": 10,
+    "tol": 0.018,
+    "featWorld": null,
+    "grid": [
+     83,
+     83,
+     83
+    ],
+    "layers": 169,
+    "gridMin": [
+     -5,
+     -5,
+     -5
+    ],
+    "gridMax": [
+     5,
+     5,
+     5
+    ],
+    "gridS": [
+     0.12048192771084337,
+     0.12048192771084337,
+     0.12048192771084337
+    ],
+    "slabs": 6,
+    "workersAssumed": 8,
+    "setupMs": 21,
+    "built": "Node-built job (one thread, m34 slabMeshLayers, no DUMPJOB)",
+    "rawTris": 723020
+   },
+   "rawTris": 723020,
+   "rows": [
+    {
+     "method": "today",
+     "label": "today",
+     "tris": 19710,
+     "open": 0,
+     "nonManifold": 0,
+     "selfX": 0,
+     "selfXNote": "sampled 6000 of 19710 triangles (pairs involving a sampled triangle)",
+     "devMaxMm": 0.054424667478288266,
+     "devMeanMm": 0.006019589681440896,
+     "devMaxCells": 0.45353889565240224,
+     "devMeanCells": 0.0501632473453408,
+     "devSamples": 3000,
+     "needlePct": 0.9183155758498224,
+     "minAngleP5": 9.5,
+     "meanMinAngle": 31.58644815953461,
+     "seamSlabsIdentical": true,
+     "seamBadSlabs": [],
+     "finalOpenEqualsRaw": true,
+     "slabMs": 1529.0047999999952,
+     "finalMs": 279.4296999999933,
+     "totalMs": 1808.4344999999885,
+     "slabTris": 56034,
+     "retries": 6,
+     "hash": "28867ef9ad10bd9c",
+     "reps": 3,
+     "spreadMs": 1368.1138000000137
+    },
+    {
+     "method": "rings",
+     "label": "today, rings 3,3,4..",
+     "tris": 22342,
+     "open": 0,
+     "nonManifold": 0,
+     "selfX": 3,
+     "selfXNote": "sampled 6000 of 22342 triangles (pairs involving a sampled triangle)",
+     "devMaxMm": 0.060480660468375635,
+     "devMeanMm": 0.0058067047135912115,
+     "devMaxCells": 0.5040055039031304,
+     "devMeanCells": 0.04838920594659343,
+     "devSamples": 3000,
+     "needlePct": 1.7993017634947632,
+     "minAngleP5": 8.1,
+     "meanMinAngle": 31.645634154956635,
+     "seamSlabsIdentical": true,
+     "seamBadSlabs": [],
+     "finalOpenEqualsRaw": true,
+     "slabMs": 1566.5136999999959,
+     "finalMs": 260.32560000001104,
+     "totalMs": 1826.839300000007,
+     "slabTris": 58138,
+     "retries": 11,
+     "hash": "ec8813f4c064743f",
+     "reps": 3,
+     "spreadMs": 395.508799999996
+    }
+   ],
+   "tuned": []
+  }
+ ]
+}

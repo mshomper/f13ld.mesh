@@ -1,1 +1,1 @@
---sample --quals med --methods today,rings --only grain-spinodoid,noise-simplex-sheet --reps 3 --out proto/simplify-bench/results/exp-rings.json
+--quick --check

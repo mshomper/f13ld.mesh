@@ -219,8 +219,11 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
     if (GEOM && a.model !== undefined && b.model !== undefined) {
       // slab vs classic: same shape within GEOM_TOL % volume, new one closed
       const ga = geom(a.model), gb = geom(b.model), dv = 100 * (gb.vol / ga.vol - 1), da = 100 * (gb.area / ga.area - 1);
-      ok = !b.errors.length && !b.misses.length && gb.open === 0 && Math.abs(dv) <= GEOM_TOL;
-      gline = `  vol ${dv >= 0 ? '+' : ''}${dv.toFixed(2)}%  area ${da >= 0 ? '+' : ''}${da.toFixed(2)}%  open edges ${ga.open}/${gb.open}`;
+      // A reference with open edges has no sound volume: the limit is not
+      // applied then, and the change is printed as information only.
+      const refOpen = ga.open > 0;
+      ok = !b.errors.length && !b.misses.length && gb.open === 0 && (refOpen || Math.abs(dv) <= GEOM_TOL);
+      gline = `  vol ${dv >= 0 ? '+' : ''}${dv.toFixed(2)}%${refOpen ? ' (info only: the reference is not closed)' : ''}  area ${da >= 0 ? '+' : ''}${da.toFixed(2)}%  open edges ${ga.open}/${gb.open}`;
     }
     if (wrongMesher) ok = false;
     if (!ok) fail++;

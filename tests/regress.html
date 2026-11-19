@@ -98,7 +98,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">This build mesher</label>
         <div class="seg" id="mesherSeg"><button data-m="auto">Auto</button><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">Auto is the app's default; the reference always runs classic</span></div>
       <div class="row"><label class="k">This build simplify</label>
-        <div class="seg" id="checksSeg"><button data-c="standard">Standard</button><button data-c="fast">Fast</button></div><span class="note" style="margin:0">slab mesher only; Fast should give the same meshes, sooner (v0.16.5)</span></div>
+        <div class="seg" id="checksSeg"><button data-c="standard">Standard</button><button data-c="fast">Fast</button></div><span class="note" style="margin:0">slab mesher only; Fast (the app's default from v0.16.6) gives the same meshes, sooner</span></div>
       <div class="row"><label class="k">Loose pieces</label>
         <div class="seg" id="looseSeg"><button data-f="keep">Keep all</button><button data-f="specks">Remove specks</button><button data-f="largest">Largest piece only</button></div><span class="note" style="margin:0">specks are pieces under 10 mesh cells; the reference keeps all</span></div>
       <div class="row"><label class="k">Extra run</label><label class="chk"><input type="checkbox" id="oneCore"> this build on one core as well</label></div>
@@ -172,8 +172,9 @@ function bindSeg(id,key,cur,set){
 }
 bindSeg('mesherSeg','m',()=>MESHER,v=>{ MESHER=v; store('mesher',v); });
 bindSeg('looseSeg','f',()=>LOOSE,v=>{ LOOSE=String(v); store('looseMode',LOOSE); });
-// v0.16.5: Checks: Fast (job fastChecks:true; builds before v0.16.5 ignore it)
-let CHECKS=String(load('checks','standard')); if(!['standard','fast'].includes(CHECKS)) CHECKS='standard';
+// v0.16.5: Simplify Fast / Standard (job fastChecks; builds before v0.16.5 ignore it).
+// v0.16.6: Fast by default, as in the app; the job always says which.
+let CHECKS=String(load('checks','fast')); if(!['standard','fast'].includes(CHECKS)) CHECKS='fast';
 bindSeg('checksSeg','c',()=>CHECKS,v=>{ CHECKS=String(v); store('checks',CHECKS); });
 const checksLabel=()=>CHECKS==='fast'?'Fast':'Standard';
 const looseLabel=()=>{ const b=$('looseSeg').querySelector('button.on'); return b?b.textContent:String(LOOSE); };
@@ -360,7 +361,7 @@ function runMesh(workerUrl, job, cores, onStage, extra){
     };
     w.onerror=e=>{ end(); rej(new Error(e.message||'worker failed to load')); };
     const msg=structuredClone(job); msg.cores=cores;
-    if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; delete msg.fastChecks; if(extra.fastChecks) msg.fastChecks=true; }
+    if(extra){ msg.mesher=extra.mesher; msg.looseMode=extra.looseMode; msg.fastChecks=extra.fastChecks===true; }   // v0.16.6: explicit, since a v0.16.6 worker runs fast when the field is absent
     const tr=new Set(); const add=b=>{ if(b instanceof ArrayBuffer) tr.add(b); };
     add(msg.shapeSdfData); add(msg.huGridData);
     // weld job (msg.bodies + msg.weld): member grids, pre-baked regions, solid meshes

@@ -119,7 +119,7 @@ async function _exportWeldGroup(gid){
       weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes, bakeMs:Math.round(bakeMs), bakeWorkers},   // v0.16.3: bake timing, report only
       mesher:exportMesherPref(), looseMode:exportLooseMode()   // v0.16.0: welds use the Mesher setting too
     };
-    if(exportFastChecks()) workerMsg.fastChecks=true;   // v0.16.5 Checks: Fast (absent = standard)
+    workerMsg.fastChecks=exportFastChecks();   // v0.16.6: Simplify, always sent (worker: absent = fast)
     const transfer=specs.map(s=>s.shapeSdfData);
     for(const r of regions){ if(r.main){ transfer.push(r.main, r.off); } }
     for(const m of solidMeshes){ if(m){ transfer.push(m.pos, m.idx); } }
@@ -646,7 +646,7 @@ async function _triggerExportImpl(){
       // Build transfer list — only include buffers that are actually present.
       // shapeSdfData is mandatory for shape-clipped exports; huGridData is
       // optional (only set for HU recipes when the parallel pre-bake ran).
-      if(exportFastChecks()) workerMsg.fastChecks=true;   // v0.16.5 Checks: Fast (absent = standard)
+      workerMsg.fastChecks=exportFastChecks();   // v0.16.6: Simplify, always sent (worker: absent = fast)
       const transferList=[];
       if(workerMsg.shapeSdfData) transferList.push(workerMsg.shapeSdfData);
       if(workerMsg.huGridData) transferList.push(workerMsg.huGridData);

@@ -442,9 +442,10 @@ function safeSimplify(pos, idx, tol, open, flags, shared, seed, noRing){
 }
 
 // ── v0.16.5 fast checks (simplification expedition 2026-11-19, candidate
-// "B1a + lazy input check"). Off by default: SLAB_FAST_CHECKS is set per
-// export from the job's d.fastChecks (Export tab "Checks", localStorage
-// f13ld.mesh.fastchecks) in the mesh worker (m90) and from the job message's
+// "B1a + lazy input check"). SLAB_FAST_CHECKS is set per export from the
+// job's d.fastChecks (Export tab "Simplify", localStorage f13ld.mesh.fastchecks;
+// v0.16.6: Fast is the app's default and a job without the field runs fast)
+// in the mesh worker (m90) and from the job message's
 // `fast` in the slab / band workers (field-bake-worker.js). With it off,
 // safeSimplify and checkedFlip run exactly the code above.
 // Same meshopt calls with the same locks, so the same triangles come out:

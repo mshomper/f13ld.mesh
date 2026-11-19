@@ -219,10 +219,10 @@ const R = JSON.parse(fs.readFileSync(path.join(__dirname, 'recipes.json'), 'utf8
       const rm = reportMesher(b.report);
       if (rm && (rm.used !== opts.mesher || rm.skipped)) wrongMesher = `asked for the ${opts.mesher} mesher, the report says "${rm.text}"`;
     }
-    // CHECKS=fast on a slab result: the report must say so (v0.16.5 mesher chip "· fast checks")
+    // CHECKS=fast on a slab result: the report must say so (v0.16.5 mesher chip "· fast simplify")
     if (!wrongMesher && opts.checks && b.report) {
-      const rm = reportMesher(b.report), fast = /fast checks/.test(b.report);
-      if (rm && rm.used === 'slab' && fast !== (opts.checks === 'fast')) wrongMesher = `asked for ${opts.checks} checks, the report ${fast ? 'says' : 'does not say'} "fast checks"`;
+      const rm = reportMesher(b.report), fast = /fast simplify/.test(b.report);
+      if (rm && rm.used === 'slab' && fast !== (opts.checks === 'fast')) wrongMesher = `asked for ${opts.checks} checks, the report ${fast ? 'says' : 'does not say'} "fast simplify"`;
     }
     if (process.env.DUMP) { for (const [lbl, r] of [['orig', a], ['new', b]]) if (r.model) fs.writeFileSync(path.join(process.env.DUMP, name + '.' + lbl + '.model'), r.model); }
     const same = a.model !== undefined && a.model === b.model;

@@ -771,7 +771,7 @@ function expTimeSplitChip(bd){
 function expMesherChip(r){
   let v=r.mesher==='slab'?'slab':'classic';
   if(r.meshMode==='auto') v='auto \u00b7 '+v+(r.autoReason?' ('+r.autoReason+')':'');
-  if(r.fastChecks) v+=' \u00b7 fast checks';   // v0.16.5
+  if(r.fastChecks) v+=' \u00b7 fast simplify';   // v0.16.5 Export tab Simplify: Fast
   else if(r.mesher!=='slab' && r.slabFallback){
     // the reason sits in the chip's hover text (worker/m90 slabFallback)
     return expChip('mesher', v+' (slab skipped)').replace('<div class="exp-chip"', '<div class="exp-chip" title="'+esc('Slab mesher skipped: '+r.slabFallback+'. The classic mesher made this file.')+'"');

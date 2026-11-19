@@ -97,7 +97,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px}
       <div class="row"><label class="k">Time limit</label><input type="number" id="limit" min="30" max="1800" step="10" value="300"><span class="note" style="margin:0">seconds per export</span></div>
       <div class="row"><label class="k">This build mesher</label>
         <div class="seg" id="mesherSeg"><button data-m="auto">Auto</button><button data-m="slab">Slab</button><button data-m="classic">Classic</button></div><span class="note" style="margin:0">Auto is the app's default; the reference always runs classic</span></div>
-      <div class="row"><label class="k">This build checks</label>
+      <div class="row"><label class="k">This build simplify</label>
         <div class="seg" id="checksSeg"><button data-c="standard">Standard</button><button data-c="fast">Fast</button></div><span class="note" style="margin:0">slab mesher only; Fast should give the same meshes, sooner (v0.16.5)</span></div>
       <div class="row"><label class="k">Loose pieces</label>
         <div class="seg" id="looseSeg"><button data-f="keep">Keep all</button><button data-f="specks">Remove specks</button><button data-f="largest">Largest piece only</button></div><span class="note" style="margin:0">specks are pieces under 10 mesh cells; the reference keeps all</span></div>
@@ -515,7 +515,7 @@ const anyTxt=v=>v==null||v===false?'':(typeof v==='object'?JSON.stringify(v):Str
 function mesherTxt(t){
   if(!t||!t.mesher) return '—';
   const fb=anyTxt(t.slabFallback);
-  return t.mesher+(t.fastChecks?' · fast checks':'')+(fb?' (slab fallback'+(fb!=='true'?': '+fb:'')+')':'');
+  return t.mesher+(t.fastChecks?' · fast simplify':'')+(fb?' (slab fallback'+(fb!=='true'?': '+fb:'')+')':'');
 }
 // Simplify CPU split (timing counters from the simplification expedition):
 // CPU ms summed over the pool's jobs, not wall time. Slab jobs and the final
@@ -699,7 +699,7 @@ $('dlBtn').onclick=()=>{
   L.push('- This build: '+R.testBase+' ('+R.ver+')');
   L.push('- Reference: '+R.refBase);
   L.push('- Quality: '+R.quality+' · cores: '+R.cores+' · browser threads: '+R.threads);
-  L.push('- This build mesher: '+R.mesher+' · checks: '+R.checksLabel+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
+  L.push('- This build mesher: '+R.mesher+' · simplify: '+R.checksLabel+' · loose pieces: '+R.looseLabel+' · reference: classic, keep all');
   L.push('- Browser: '+R.ua,'');
   L.push('| Case | Triangles | Reference | This build | Speed-up | Field / level set | Mesher | Loose removed | Volume change | Area change | Triangle change | Open edges ref / this | Max vertex dist | Needles ref | Needles this | Min angle p5 ref / this | Result |');
   L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
@@ -722,7 +722,7 @@ $('dlBtn').onclick=()=>{
   // simplify CPU split per case (CPU summed over the pool's jobs, not wall time)
   const withSplit=R.rows.filter(r=>r.test&&r.test.stages&&r.test.stages.slabMeshoptMs!=null);
   if(withSplit.length){
-    L.push('','Simplify CPU split (this build, checks: '+R.checksLabel+'; CPU time summed over all slab and band jobs, not wall time; meshopt includes its retries):','','| Case | Checks | '+SPLIT_KEYS.map(([,l])=>l).join(' | ')+' |','|---|---|'+SPLIT_KEYS.map(()=>'---|').join(''));
+    L.push('','Simplify CPU split (this build, simplify: '+R.checksLabel+'; CPU time summed over all slab and band jobs, not wall time; meshopt includes its retries; checks = closed-mesh and seam checks):','','| Case | Simplify | '+SPLIT_KEYS.map(([,l])=>l).join(' | ')+' |','|---|---|'+SPLIT_KEYS.map(()=>'---|').join(''));
     for(const r of withSplit){ const st=r.test.stages; L.push('| '+r.name+' | '+(r.test.fastChecks?'Fast':'Standard')+' | '+SPLIT_KEYS.map(([k])=>fmtS(st[k]||0)).join(' | ')+' |'); }
   }
   L.push('','Triangles: reference, and this build when it differs. Volume, area and triangle changes are this build against the reference, shown only when the meshes are not bit-identical. Max vertex distance is approximate (sample of up to 20000 vertices of this build to the nearest reference vertex, in mm). Needles: triangles whose height over their longest edge is under '+NEEDLE_RATIO+', as a count and a share of all triangles. Min angle p5: the 5th percentile of each triangle\'s smallest angle. PASS means bit-identical, or closed (0 open edges) with a volume change within 2 %.');

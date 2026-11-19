@@ -173,7 +173,7 @@ self.onmessage=async function(e){
               agg.slabs+=sm.slabs; agg.workers=Math.max(agg.workers, sm.workers||1); agg.raw+=sm.raw||0; agg.retries+=sm.retries||0;
               agg.locked+=sm.locked||0; agg.gaveUp+=sm.gaveUp||0; agg.evals+=sm.evals||0; agg.seam=sm.seam||agg.seam;
               agg.ms.mesh+=sm.ms.mesh; agg.ms.seam+=sm.ms.seam;
-              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]+=st[k]; }
+              { const st=slabStageTimes(sm); agg.stages=agg.stages||{mesh:0, roundA:0, roundB:0, rows:0, flip:0}; for(const k in st) agg.stages[k]=k==='workers'?Math.max(agg.stages[k]||0, st[k]):(agg.stages[k]||0)+st[k]; }
               if(!sm.idx.length) continue;
               // v0.16.2: one region and no exact solids — nothing to union, so
               // the slab mesh is the result (checked closed below)
@@ -504,7 +504,8 @@ self.onmessage=async function(e){
       mesher:slabOut?'slab':'classic', meshMode:meshMode, quality:quality, finalFlips:slabOut?(slabOut.finalFlips||0):0, autoReason:autoReason, slabFallback:autoMode&&!slabOut?null:slabFallback, loose:loose, closedFix:closedFix,
       msBreakdown:{field:fieldBake?fieldBake.ms:0,levelSet:msLevelSet,simplify:msSimplify,total:ms},
       // v0.16.1: where the slab mesher's time went (ms)
-      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}):null},[vertProperties.buffer,triVerts.buffer]);
+      // v0.16.3: + field / march split of the slabs stage (fieldCpu, jobCpu, workers) and, for welds, the main thread's field bake (weldField)
+      stages:slabOut?Object.assign({}, slabOut.stages||slabStageTimes(slabOut), {cleanup:typeof msLoose==='number'?msLoose:0}, (d.weld&&d.weld.bakeMs>0)?{weldField:d.weld.bakeMs}:null):null},[vertProperties.buffer,triVerts.buffer]);
   }catch(e){
     const base=e.message||String(e);
     const msg=lastStage!=='initializing'?base+' — crashed during: '+lastStage:base;

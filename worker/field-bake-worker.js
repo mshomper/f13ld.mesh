@@ -63,7 +63,7 @@ self.onmessage=async function(e){
       else r.rawTris=r.idx.length/3;
       const tearV=r.tearV||new Uint32Array(0);
       self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer, tearV:tearV.buffer,
-        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, ms:performance.now()-t0},
+        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, fieldMs:r.fieldMs||0, ms:performance.now()-t0},
         [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer, tearV.buffer]);
       return;
     }

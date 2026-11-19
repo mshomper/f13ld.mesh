@@ -116,7 +116,7 @@ async function _exportWeldGroup(gid){
       mode:'export', bodies:specs, blendK,
       bbox:{mnx:gbb.mnx,mny:gbb.mny,mnz:gbb.mnz,mxx:gbb.mxx,mxy:gbb.mxy,mxz:gbb.mxz},
       relEdgeMm, simplifyTol, simplifyCappedByFeature, featMm, scale:1.0,
-      weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes},
+      weld:{hybrid:plan.hybrid, reachMm:plan.reachMm, regions, solidMeshes, bakeMs:Math.round(bakeMs), bakeWorkers},   // v0.16.3: bake timing, report only
       mesher:exportMesherPref(), looseMode:exportLooseMode()   // v0.16.0: welds use the Mesher setting too
     };
     const transfer=specs.map(s=>s.shapeSdfData);

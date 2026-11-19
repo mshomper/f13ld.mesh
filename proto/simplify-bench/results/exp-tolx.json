@@ -1,0 +1,104 @@
+{
+ "quick": false,
+ "opts": {
+  "siSample": 6000,
+  "devSamples": 1500,
+  "reps": 1
+ },
+ "cases": [
+  {
+   "case": "foam2-open-lloyd",
+   "meta": {
+    "case": "foam2-open-lloyd",
+    "family": "foam (open, Lloyd)",
+    "qual": "med",
+    "edgeWorld": 0.12,
+    "edgeMm": 0.12,
+    "domainMm": 10,
+    "tol": 0.005000000000000001,
+    "featWorld": 0.1,
+    "grid": [
+     83,
+     83,
+     83
+    ],
+    "layers": 169,
+    "gridMin": [
+     -5,
+     -5,
+     -5
+    ],
+    "gridMax": [
+     5,
+     5,
+     5
+    ],
+    "gridS": [
+     0.12048192771084337,
+     0.12048192771084337,
+     0.12048192771084337
+    ],
+    "slabs": 6,
+    "workersAssumed": 8,
+    "setupMs": 2,
+    "built": "Node-built job (one thread, m34 slabMeshLayers, no DUMPJOB)",
+    "rawTris": 601392
+   },
+   "rawTris": 601392,
+   "rows": [
+    {
+     "method": "today",
+     "label": "today",
+     "tris": 221690,
+     "open": 0,
+     "nonManifold": 0,
+     "selfX": 1,
+     "selfXNote": "sampled 6000 of 221690 triangles (pairs involving a sampled triangle)",
+     "devMaxMm": 0.007190328829542387,
+     "devMeanMm": 0.0008770986802505627,
+     "devMaxCells": 0.05991940691285323,
+     "devMeanCells": 0.007309155668754689,
+     "devSamples": 3000,
+     "needlePct": 1.2476882132707836,
+     "minAngleP5": 10.9,
+     "meanMinAngle": 36.140127503053414,
+     "seamSlabsIdentical": true,
+     "seamBadSlabs": [],
+     "finalOpenEqualsRaw": true,
+     "slabMs": 1324.8284000000003,
+     "finalMs": 1462.4246999999996,
+     "totalMs": 2787.2531,
+     "slabTris": 254464,
+     "retries": 6,
+     "hash": "8c6238b35dba2212",
+     "reps": 1,
+     "spreadMs": 0
+    }
+   ],
+   "tuned": []
+  }
+ ],
+ "tolx": [
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 1,
+   "tris": 221690,
+   "totalMs": 2985.2408
+  },
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 4,
+   "tris": 61278,
+   "totalMs": 1570.1067000000003
+  },
+  {
+   "case": "foam2-open-lloyd",
+   "qual": "med",
+   "tolScale": 10,
+   "tris": 16804,
+   "totalMs": 1263.9993000000004
+  }
+ ]
+}

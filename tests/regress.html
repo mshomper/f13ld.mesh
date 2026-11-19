@@ -539,6 +539,8 @@ function setCard(el, r){
   if(r.test){
     kv.push(['mesher (this build)', mesherTxt(r.test)]);
     if(r.test && r.test.stages) kv.push(['slab stages (this build)', stagesTxt(r.test.stages)]);
+    // timing only (simplify-expedition counters): CPU ms summed over the pool's jobs
+    if(r.test && r.test.stages && r.test.stages.slabMeshoptMs!=null){ const st=r.test.stages; kv.push(['simplify CPU split', 'slabs: meshopt '+fmtS(st.slabMeshoptMs)+' (retries '+fmtS(st.slabRetryMs)+') · checks '+fmtS(st.slabChkMs)+' · locks '+fmtS(st.slabLockMs)+' | final pass: meshopt '+fmtS(st.finalMeshoptMs)+' (retries '+fmtS(st.finalRetryMs)+') · checks '+fmtS(st.finalChkMs)+' · locks '+fmtS(st.finalLockMs)]); }
     kv.push(['loose pieces removed', looseTxt(r.test.loose)]);
     const cf=anyTxt(r.test.closedFix); if(cf) kv.push(['closed fix', cf]);
   }

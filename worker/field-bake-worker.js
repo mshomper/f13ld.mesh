@@ -64,7 +64,7 @@ self.onmessage=async function(e){
       else r.rawTris=r.idx.length/3;
       const tearV=r.tearV||new Uint32Array(0);
       self.postMessage({type:'meshslab', id:d.id, pos:r.pos.buffer, idx:r.idx.buffer, seamV:r.seamV.buffer, seamK:r.seamK.buffer, tearV:tearV.buffer,
-        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, fieldMs:r.fieldMs||0, simpMs, ms:performance.now()-t0},
+        rawTris:r.rawTris, retries:r.retries||0, locked:r.locked||0, gaveUp:!!r.gaveUp, evals:r.evals, fieldMs:r.fieldMs||0, simpMs, ms:performance.now()-t0, simpT:r.simpT||null, flipMs:r.flipMs||0, compactMs:r.compactMs||0},
         [r.pos.buffer, r.idx.buffer, r.seamV.buffer, r.seamK.buffer, tearV.buffer]);
       return;
     }
@@ -73,7 +73,7 @@ self.onmessage=async function(e){
       const t0=performance.now();
       const r=simplifyBandJob({pos:new Float32Array(d.pos), idx:new Uint32Array(d.idx), outer:new Uint8Array(d.outer), seed:d.seed?new Uint8Array(d.seed):null, noRing:!!d.noRing}, d.tol);
       const idx=new Uint32Array(r.idx), tv=r.tearV||new Uint32Array(0);
-      self.postMessage({type:'band', id:d.id, idx:idx.buffer, tearV:tv.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0}, [idx.buffer, tv.buffer]);
+      self.postMessage({type:'band', id:d.id, idx:idx.buffer, tearV:tv.buffer, retries:r.retries, locked:r.locked, gaveUp:r.gaveUp, unsafe:r.unsafe, ms:performance.now()-t0, simpT:r.simpT||null, flipMs:r.flipMs||0}, [idx.buffer, tv.buffer]);
       return;
     }
     if(d.type==='job'){

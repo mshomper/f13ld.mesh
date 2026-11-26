@@ -1,17 +1,21 @@
 /* ============================================================================
-   F13LD.mesh · 57-layout.js — sections (one at a time) + phone bottom sheet.
-   From the F13LD UI template layout.js (F13LD.tpms v1.4.0). Generic: sections come from
-   .sec[data-section] in DOM order (Design, Prep, Export).
-   window.F13UI is the hook surface the stage 3 wiring and the widgets use:
+   F13LD UI template · layout.js — sections (one at a time) + phone bottom sheet.
+   Extracted from F13LD.tpms v1.4.0. Generic: sections come from .sec[data-section] in DOM order.
+   window.F13UI is the hook surface the wiring and the widgets use:
      F13UI.sections / active / isPhone() / showSection(id) / scrollToSection(id) (alias)
-     F13UI.sectionOf(el) / setSheet('peek'|'full') / peekForViewer() / sheetState()
-     F13UI.onSectionChange(id)  set by the wiring (stage 3)
-   Loads after 56-dock.js and before 60-export-ui.js. The markup is static in index.html,
-   so it only needs the DOM.
-   Mesh changes against the template (PER-TOOL):
-     - the header is #hdr (no .f13ld-header class);
-     - the viewer redraw request is rm._dirty = true.
+     F13UI.sectionOf(el) / setSheet('peek'|'full')
+     F13UI.onSectionChange(id)  set by f13ui-wire.js
+   Optional options, set on window.F13UI BEFORE this script (all have defaults, so a tool needs no edit here):
+     F13UI.headerSelector   the header element (default .f13ld-header, #hdr, header); --hdr-h follows its height
+     F13UI.onResize()       the viewer's redraw, called when the layout changes (also the 'f13ui-resize' event)
+     F13UI.viewMenuSelector the button that opens the viewer's view menu (default '#cw .f13v>button')
+   Run it after the markup exists (end of body, or in the app script after the DOM is built).
    ========================================================================== */
+/* F13LD.mesh: everything below is the template layout.js, unchanged. Mesh's three options (header #hdr is found by the
+   template's fallback, so no headerSelector): the viewer redraw, and the button that opens the view menu. */
+window.F13UI=window.F13UI||{};
+window.F13UI.onResize=function(){ if(typeof rm!=='undefined'&&rm) rm._dirty=true; };   // the canvas changed size: redraw
+window.F13UI.viewMenuSelector='#viewOptsBtn';
 (function(){
   const UI=window.F13UI=window.F13UI||{};
   const SECS=[...document.querySelectorAll('.sec[data-section]')].map(s=>s.dataset.section);   // order = DOM order
@@ -52,10 +56,11 @@
   if(window.ResizeObserver){const ro=new ResizeObserver(updateFades);ro.observe(scroller);SECS.forEach(s=>ro.observe(secEl(s)));}
   document.querySelectorAll('.sb-fallback [data-section]').forEach(b=>b.addEventListener('click',()=>UI.showSection(b.dataset.section)));
 
-  // header height drives the phone viewer height
-  const hdr=document.querySelector('.f13ld-header')||document.getElementById('hdr');
+  // header height drives the phone viewer height (the header wraps on phones)
+  // The header is F13UI.headerSelector (set before this script), else .f13ld-header, #hdr, or the first <header>; none: skipped.
+  const hdr=(UI.headerSelector&&document.querySelector(UI.headerSelector))||document.querySelector('.f13ld-header')||document.getElementById('hdr')||document.querySelector('header');
   function setHdr(){document.documentElement.style.setProperty('--hdr-h',hdr.offsetHeight+'px');}
-  setHdr();if(window.ResizeObserver)new ResizeObserver(setHdr).observe(hdr);
+  if(hdr){setHdr();if(window.ResizeObserver)new ResizeObserver(setHdr).observe(hdr);}
 
   // phone bottom sheet: drag the handle between peek (~45dvh) and full (~88dvh)
   const handle=document.getElementById('sheetHandle');
@@ -72,8 +77,9 @@
   // viewer overlays (clip, view menu) lie under a full sheet: anything that targets the viewer collapses it to peek first
   UI.peekForViewer=()=>{if(mq.matches&&sheetState==='full')setSheet('peek',true);};
   UI.sheetState=()=>sheetState;
-  // opening the view menu from the button also brings the viewer into view
-  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#viewOptsBtn'))UI.peekForViewer();},true);
+  // the shared view menu (F13LD-VIEW) is not edited: opening it from the button also brings the viewer into view
+  // (the opener is F13UI.viewMenuSelector, default '#cw .f13v>button'; read at click time)
+  document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest(UI.viewMenuSelector||'#cw .f13v>button'))UI.peekForViewer();},true);
   let dragY=null,startH=0,lastY=0,lastT=0,vel=0,moved=false;
   handle.addEventListener('pointerdown',e=>{
     if(!mq.matches)return;
@@ -103,7 +109,11 @@
     applySections();
     if(mq.matches)setSheet(sheetState,false);
     else pane.style.removeProperty('--sheet-h');
-    if(typeof rm!=='undefined'&&rm)rm._dirty=true;   // PER-TOOL: the viewer redraws (the canvas changed size)
+    // the viewer changed size: redraw. Hooks (all optional, read now): F13UI.onResize() (a tool sets it, e.g. rm._dirty=true),
+    // a 'f13ui-resize' window event, and a global requestRender() (the original template's hook)
+    if(typeof UI.onResize==='function')try{UI.onResize();}catch(e){console.error(e);}
+    try{window.dispatchEvent(new Event('f13ui-resize'));}catch(e){}
+    if(typeof requestRender==='function')requestRender();
   }
   mq.addEventListener?mq.addEventListener('change',applyLayout):mq.addListener(applyLayout);
   window.addEventListener('resize',()=>{if(mq.matches)setSheet(sheetState,false);});

@@ -30,7 +30,12 @@ html.f13w .fh-mesh-btn{display:none}
 
 /* sliders: the widget carries label · value · hint · track; the row keeps only .row-extra.
    Hit geometry: the track's hit box runs 4px below the widget, the value's 4px above it. */
-html.f13w .sc-group.sl{display:block;margin:6px 0 10px}
+/* The block rule is wrapped in :where() so it weighs (0,1,0) only: it still beats the shell's `.sc-group{display:flex}` (it comes
+   later) but a tool's own one-class hiding rule (.dr-off{display:none}, .hide, ...) at its own weight is not beaten.
+   Hiding hooks that always win: [hidden] and .f13-hide on the row. */
+:where(html.f13w) .sc-group:where(.sl){display:block}
+html.f13w .sc-group.sl{margin:6px 0 10px}
+html.f13w .sc-group.sl[hidden],html.f13w .sc-group.sl.f13-hide{display:none}
 html.f13w .sc-group.sl>:not(.f13w-slider):not(.row-extra){display:none}
 html.f13w .f13w-slider{width:100%}
 html.f13w .sl>.row-extra{margin-top:2px}
@@ -87,6 +92,19 @@ html.f13w .f13v-p{padding:2px 10px 6px 12px;min-width:184px;gap:0}
 html.f13w .f13v-p .f13v-r{margin-top:4px;min-height:28px;padding:0 10px;position:relative}
 html.f13w .f13v-p .f13v-r::after{content:'';position:absolute;left:-6px;right:-6px;top:-8px;bottom:-12px}   /* 31 px face + 20 = 51 px hit height; the extra reach is below, where only panel padding is, so the toggle above keeps its hit area */
 
+/* inline slider (F13UI.mount.slider {inline:true}, from F13LD.mesh's axis rows): label left, track middle, value right, one 36 px row.
+   The kit slider is a 52 px box (head over track, track bar centred at y 36): the row lets it hang 18 px above itself, moves the
+   track's hit area down inside the row, and lifts label and value out of the head to the sides. --f13w-il = label column width. */
+html.f13w .f13w-inline{--f13w-il:20px;position:relative;display:block;height:36px;padding:0 56px 0 var(--f13w-il)}
+html.f13w .f13w-inline>:not(.f13w-slider){display:none}
+html.f13w .f13w-inline .f13w-slider{margin-top:-18px;overflow:visible;pointer-events:none}
+html.f13w .f13w-inline .lq-sl canvas{pointer-events:none}
+html.f13w .f13w-inline .lq-sl-track{top:18px;pointer-events:auto}
+html.f13w .f13w-inline .lq-sl-ring{margin-top:-6px}
+html.f13w .f13w-inline .lq-sl-label,html.f13w .f13w-inline .f13w-lab{position:absolute;right:calc(100% + 4px);top:27px;width:calc(var(--f13w-il) - 4px);overflow:visible;text-align:left;font:600 13px var(--lq-mono);color:var(--ink-faint)}
+html.f13w .f13w-inline .lq-sl-val{position:absolute;left:calc(100% + 6px);top:27px;width:46px;padding:0;text-align:right}
+html.f13w .f13w-inline .lq-sl-val::before{right:0;width:100%;top:-4px;bottom:-4px}
+
 /* ── PER-TOOL rules go here. F13LD.tpms examples: ──
 html.f13w #grp-mode{margin-bottom:20px}            margins collapse with the slider row below
 html.f13w #pi-controls .sc-group.sl{margin:4px 0 10px}
@@ -124,7 +142,6 @@ html.f13w #viewOptsPanel{padding:2px 10px 6px 12px;min-width:196px;gap:0}
 html.f13w #viewOptsPanel .f13w-tg-menu{width:100%}
 
 /* rows whose natives are hidden: rows with a widget fill the column (the rows are column flex boxes) */
-html.f13w .sc-group.sl.dr-off{display:none}                            /* F14: domain size hides while a bounding shape is loaded (the slider rule above sets display:block) */
 html.f13w .dr-f.sc-group>.f13w-dd,html.f13w .dr-f.sc-group>.f13w-seg,html.f13w .rl-erow>.f13w-dd,html.f13w .rl-erow>.f13w-seg{flex:0 0 auto;width:100%}
 .rl-erow.sc-group{align-items:stretch}
 html.f13w .rl-erow.f13w-sl1{display:block}
@@ -134,8 +151,6 @@ html.f13w .rl-sl.f13w-sl>:not(.f13w-slider),html.f13w .pp-sl.f13w-sl>:not(.f13w-
 .pp-sl{display:flex;align-items:center;gap:8px;font:500 13px var(--lq-mono);color:var(--ink-faint)}
 .pp-sl .dr-num{width:84px}
 .dr-f>label em{font-style:normal;font-size:11px;color:var(--ink-faint);margin-left:6px}
-.f13w-idle{opacity:.55}
-.lq-seg-opt[data-off]{opacity:.4}
 /* the Export mesh rows keep their one-line hints under the widget */
 html.f13w .dr-f.sc-group .dr-hint{margin-top:2px}
 html.f13w .rl-pair>.f13w-tg{flex:none}

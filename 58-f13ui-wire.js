@@ -11,7 +11,7 @@
    Only the CONFIG block changes per tool. Requires: liquid-ui bundle, layout.js (window.F13UI).
    No WebGL → nothing mounts, html.f13w is never set, the native controls remain.
    ========================================================================== */
-(function F13Wire(){
+(function F13Wire(afterDCL){
   'use strict';
   /* F13UI.ready(cb): runs cb(F13UI.w) at once if the wire has mounted, else right after it mounts (also fires the window event
      'f13ui-ready'). Defined synchronously, so a tool's add-on script placed after the wire script can call it at parse time.
@@ -24,9 +24,25 @@
       U.__flushReady=function(){U.mounted=true;q.splice(0).forEach(cb=>{try{cb(U.w);}catch(e){console.error(e);}});try{window.dispatchEvent(new Event('f13ui-ready'));}catch(e){}};
     }
   }
+  /* F13UI.run: report the app's own progress on the run / export button (the app drives the run itself, e.g. a worker export):
+       F13UI.run.progress(p)   p in 0..1 fills the bar; null = busy, no number (slosh)
+       F13UI.run.label(text)   the button label while it runs ("Meshing · 12 s"); done() restores the native button's text
+       F13UI.run.done(ok)      ok !== false: flood and pop; false (refusal, cancel, failure): drain, no pop
+     No-ops until the wire has mounted a run button (and when it cannot mount), so tools may call them unguarded. */
+  {
+    const U=window.F13UI=window.F13UI||{};
+    if(!U.run)U.run={progress(){},label(){},done(){}};
+  }
   /* Init timing: wait for the DOM (and one task after DOMContentLoaded, so handlers the app registered
-     later have run). Tools no longer reorder their code; a view menu built later still gets mounted below. */
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>setTimeout(F13Wire,0),{once:true});return;}
+     later have run). readyState is 'interactive' while DEFERRED scripts run, i.e. BEFORE DOMContentLoaded fires,
+     so it cannot be the test: use the navigation entry's domContentLoadedEventEnd (> 0 once the event has run),
+     with readyState 'complete' as the fallback where the entry is missing. Tools no longer reorder their code;
+     a view menu built later still gets mounted below. */
+  const domReady=()=>{
+    const n=window.performance&&performance.getEntriesByType&&performance.getEntriesByType('navigation')[0];
+    return n?n.domContentLoadedEventEnd>0:document.readyState==='complete';
+  };
+  if(afterDCL!==true&&!domReady()){document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>F13Wire(true),0),{once:true});return;}
   if(typeof Liquid==='undefined'||!Liquid.ok||!Liquid.ui)return;
   if(window.F13UI&&window.F13UI.w&&window.F13UI.w.__wired)return;
   const $=id=>document.getElementById(id);
@@ -36,7 +52,7 @@
 
   /* ============ PER-TOOL CONFIG ======================================== */
   /* F13LD.mesh. Only this block is mesh's. Everything the app rebuilds by innerHTML (rail editor, Part prep) and the
-     controls that use aria-pressed (section flip, trim, show joins, view menu) are mounted by 59-mesh-widgets.js. */
+     view menu are mounted by 59-mesh-widgets.js with F13UI.mount.*. */
   const sectionMm=v=>{                                               // section position: the mm readout as the slider value
     try{
       const ax=+(document.querySelector('#secAxis .on')||{dataset:{ax:0}}).dataset.ax,r=rm.clipRange(ax),
@@ -65,7 +81,7 @@
     ],
     switches:[],
     viewMenu:false,                    // mesh's view menu is its own (#viewOptsPanel, data-vo checkboxes): 59-mesh-widgets.js
-    run:{btn:'expBtn',host:'w-run'},   // progress comes from 59-mesh-widgets.js (the footer progress strip)
+    run:{btn:'expBtn',host:'w-run'},   // progress comes from 59-mesh-widgets.js (the footer progress strip, F13UI.run.*)
     // section plane radio over the viewer; no "none" (the Section tab is the off): tapping the active axis keeps it
     clip:{host:'w-clip',get:()=>1+Math.max(0,secAxisBtns().findIndex(b=>b.classList.contains('on'))),
       set:n=>{const bs=secAxisBtns();if(n&&bs[n-1])bs[n-1].click();else if(UI.w&&UI.w.clip)UI.w.clip.set(1+Math.max(0,bs.findIndex(b=>b.classList.contains('on'))));}},
@@ -85,9 +101,11 @@
   document.documentElement.classList.add('f13w');
 
   // ---- bridge helpers ----
-  function mirrorValue(el,proto,onWrite){
-    const d=Object.getOwnPropertyDescriptor(proto,'value');let q=false;
-    Object.defineProperty(el,'value',{configurable:true,enumerable:true,
+  // native.value (or .checked, prop='checked') written by the app → widget. Returns quiet(fn): writes inside fn do not echo back.
+  function mirrorValue(el,proto,onWrite,prop){
+    prop=prop||'value';
+    const d=Object.getOwnPropertyDescriptor(proto,prop);let q=false;
+    Object.defineProperty(el,prop,{configurable:true,enumerable:true,
       get(){return d.get.call(this);},
       set(v){d.set.call(this,v);if(!q)onWrite(d.get.call(this));}});
     return fn=>{q=true;try{fn();}finally{q=false;}};
@@ -95,21 +113,42 @@
   const fire=(el,type)=>el.dispatchEvent(new Event(type,{bubbles:true}));
   function hook(name,fn){const prev=UI[name];UI[name]=function(){if(prev)try{prev.apply(this,arguments);}catch(e){console.error(e);}fn.apply(this,arguments);};}
   const say=t=>setTimeout(()=>{if(UI.message)UI.message(t);},0);   // deferred: the triggering click must not dismiss it
-  function watch(el,fn,attrs){if(el)new MutationObserver(fn).observe(el,{childList:true,characterData:true,subtree:true,attributes:!!attrs,attributeFilter:attrs||undefined});}
+  function watch(el,fn,attrs){if(!el)return null;const mo=new MutationObserver(fn);mo.observe(el,{childList:true,characterData:true,subtree:true,attributes:!!attrs,attributeFilter:attrs||undefined});return mo;}
   const decimals=s=>{const t=String(s);return t.indexOf('.')<0?0:t.split('.')[1].length;};
+  // a switch button reports its state as aria-checked (role=switch) or aria-pressed (toggle button)
+  const SW_ATTRS=['aria-checked','aria-pressed'];
+  const swOn=b=>b.getAttribute('aria-checked')==='true'||b.getAttribute('aria-pressed')==='true';
 
-  // ---- sliders ----
-  W.sliders={};
-  document.querySelectorAll('.sc-group.sl[data-w-slider]').forEach(row=>{
-    const id=row.dataset.wSlider,inp=$(id);if(!inp)return;
-    const o=CONFIG.sliders[id]||{},lab=row.querySelector('label'),hintEl=row.querySelector('.mm-hint');
+  /* ============ F13UI.mount.* — the wire's own mount helpers, for controls the APP rebuilds ============
+     A tool whose rows are rebuilt by innerHTML (term lists, editors) wraps its render function and calls these on the
+     fresh rows; it does not copy the wire's code. Each mounts a widget over the native control (which stays as state,
+     hidden) and returns {host, w, destroy()}: call destroy() when the row is rebuilt (the host leaves the DOM with it).
+       mount.slider(input, {box, row, labelEl, label, hintEl, min,max,step, detents (array|fn(inp)), fmt (decimals),
+                            format(v), parse(text), unit, frac, inline, push(v,commit,ctx)})
+           box: element that receives the widget as first child (default: the input's parent); row: where the label's
+           help (i) buttons are (default box); labelEl: the row's <label>, moved into the widget head; inline: one 36 px row.
+       mount.select(select, {id, host, ariaLabel, compact, relabel, after(v)})
+           host: an element to reuse; else an EMPTY #<id> already in the page is reused; else one is created after the select.
+       mount.segmented(group, buttons, {on(btn), ariaLabel, host})
+           over native buttons; clicking an option clicks its button. Disabled buttons show dimmed and ignore taps; no
+           button on() = nothing selected. Kept in step by a MutationObserver on class / aria-* / disabled.
+       mount.toggle(button, {label, ariaLabel, cls})     over a switch button (aria-checked OR aria-pressed)
+       mount.mirror(el, proto, onWrite, prop='value')    the bridge itself: app writes to el.value/.checked reach onWrite;
+           returns quiet(fn) for the widget's own writes. */
+  const mount=UI.mount={mirror:mirrorValue};
+  mount.slider=function(inp,o){
+    o=o||{};
+    const box=o.box||inp.parentElement,row=o.row||box,lab=o.labelEl||null,hintEl=o.hintEl||null;
     const hintOf=()=>hintEl?hintEl.textContent.trim().replace(/^\((.*)\)$/,'$1'):'';
-    const host=document.createElement('div');host.className='f13w-slider'+(o.frac?' f13w-frac':'');row.insertBefore(host,row.firstChild);
+    const host=document.createElement('div');host.className='f13w-slider'+(o.frac?' f13w-frac':'');box.insertBefore(host,box.firstChild);
+    if(o.inline)box.classList.add('f13w-inline');
+    const rng=()=>({min:o.min!=null?o.min:+inp.min,max:o.max!=null?o.max:+inp.max,step:o.step!=null?o.step:(+inp.step||0)});
+    const det=()=>typeof o.detents==='function'?o.detents(inp):(o.detents||[]);   // array, or fn(input)→array (re-read when the range changes)
+    const r0=rng(),dec=o.fmt!=null?o.fmt:decimals(inp.step||'0.01');
     let quiet=fn=>fn();
-    const detentsOf=()=>typeof o.detents==='function'?o.detents(inp):(o.detents||[]);   // array, or fn(input)→array (re-read when the range changes)
-    const w=Liquid.ui.slider(host,{min:+inp.min,max:+inp.max,step:+inp.step||0,value:+inp.value,
-      label:lab?lab.textContent.trim():id,accent:ACC,hint:hintOf(),
-      format:o.format||(v=>(+v).toFixed(decimals(inp.step||'0.01'))),parse:o.parse,detents:detentsOf(),
+    const w=Liquid.ui.slider(host,{min:r0.min,max:r0.max,step:r0.step,value:+inp.value,
+      label:lab?lab.textContent.trim():(o.label||''),accent:ACC,hint:hintOf(),unit:o.unit||'',
+      format:o.format||(v=>(+v).toFixed(dec)),parse:o.parse,detents:det(),
       onInput:v=>push(v,false),onChange:v=>push(v,true)});
     function push(v,commit){
       if(o.push){quiet(()=>o.push(v,commit,{inp,w}));return;}
@@ -126,15 +165,24 @@
       ks.removeAttribute('id');lab.removeAttribute('for');
       wrap.appendChild(lab);ks.replaceWith(wrap);
       // help buttons the engine put in the row before we mounted (direct children, after the <label>) would stay hidden with the native row: carry them beside the label
-      [...row.children].forEach(c=>{if(c!==host&&c!==lab&&c.matches('button[class*="f13h-"]'))wrap.appendChild(c);});
+      [...row.children].forEach(c=>{if(c!==host&&c!==lab&&c.matches&&c.matches('button[class*="f13h-"]'))wrap.appendChild(c);});
     }
-    if(hintEl)watch(hintEl,()=>w.setHint(hintOf()));
+    const hmo=watch(hintEl,()=>w.setHint(hintOf()));
     // a tool re-ranging the native <input type=range> (setAttribute min/max/step) re-ranges the widget too
-    new MutationObserver(()=>{
-      w.setRange({min:+inp.min,max:+inp.max,step:+inp.step||0,detents:detentsOf()});
+    const mo=new MutationObserver(()=>{
+      w.setRange({...rng(),detents:det()});
       w.set(+inp.value);                                             // the browser already clamped the native value
-    }).observe(inp,{attributes:true,attributeFilter:['min','max','step']});
-    W.sliders[id]=w;
+    });
+    mo.observe(inp,{attributes:true,attributeFilter:['min','max','step']});
+    return {host,w,destroy(){mo.disconnect();if(hmo)hmo.disconnect();w.destroy();}};
+  };
+
+  // ---- sliders ----
+  W.sliders={};
+  document.querySelectorAll('.sc-group.sl[data-w-slider]').forEach(row=>{
+    const id=row.dataset.wSlider,inp=$(id);if(!inp)return;
+    const o=CONFIG.sliders[id]||{};
+    W.sliders[id]=mount.slider(inp,{...o,box:row,row,labelEl:row.querySelector('label'),hintEl:row.querySelector('.mm-hint'),label:id}).w;
   });
 
   // ---- segmented (native buttons) ----
@@ -164,9 +212,14 @@
     c.font='650 15px '+(css.getPropertyValue('--lq-font').trim()||'system-ui');
     return Math.ceil(Math.max(...labels.map(l=>c.measureText(l).width)))+18+14+8+18+4;
   }
-  function liquidSelect(sel,o){
-    const host=document.createElement('div');host.id=o.id;host.className='f13w-dd'+(o.compact?' f13w-dd-c':'');
-    sel.setAttribute('data-native','select');sel.after(host);
+  mount.select=function(sel,o){
+    o=o||{};
+    // reuse a host the shell already has (an empty #w-… mount, or o.host) instead of adding a second element with the same id
+    let host=o.host||(o.id&&$(o.id))||null,own=false;
+    if(host&&host.hasChildNodes()&&!o.host)host=null;
+    if(!host){host=document.createElement('div');if(o.id)host.id=o.id;own=true;sel.after(host);}
+    host.classList.add('f13w-dd');if(o.compact)host.classList.add('f13w-dd-c');
+    sel.setAttribute('data-native','select');
     const groups=selectGroups(sel,o.relabel);
     if(o.compact)host.style.width=faceWidth(groups.flatMap(g=>g.options.map(x=>x.label)))+'px';
     let quiet=fn=>fn();
@@ -175,25 +228,50 @@
     quiet=mirrorValue(sel,HTMLSelectElement.prototype,v=>{w.set(v);if(o.after)o.after(v);});
     // the tool rebuilding the <select>'s options (or toggling option disabled) rebuilds the widget's list
     let seen=JSON.stringify(groups);
-    watch(sel,()=>{
+    const mo=watch(sel,()=>{
       const gs=selectGroups(sel,o.relabel),k=JSON.stringify(gs);if(k===seen)return;seen=k;
       if(o.compact)host.style.width=faceWidth(gs.flatMap(g=>g.options.map(x=>x.label)))+'px';
       w.setOptions(gs,{value:sel.value});
     },['disabled','label','value']);
-    return w;
-  }
-  CONFIG.selects.forEach(s=>{const sel=$(s.sel);if(sel)W[s.id]=liquidSelect(sel,s);});
+    return {host,w,destroy(){mo.disconnect();w.destroy();if(own)host.remove();}};
+  };
+  CONFIG.selects.forEach(s=>{const sel=$(s.sel);if(sel)W[s.id]=mount.select(sel,s).w;});
 
-  // ---- switches (role=switch buttons) → toggles ----
+  // ---- native button group → segmented (clicks the native button, so the app's handler runs) ----
+  mount.segmented=function(group,btns,o){
+    o=o||{};
+    const host=o.host||document.createElement('div');host.classList.add('f13w-seg');
+    if(!o.host&&group)group.before(host);
+    if(group)group.setAttribute('data-native','seg');
+    const on=o.on||(b=>b.classList.contains('on')||b.getAttribute('aria-pressed')==='true'||b.getAttribute('aria-checked')==='true'||b.getAttribute('aria-selected')==='true');
+    const idx=()=>btns.findIndex(on);
+    const w=Liquid.ui.segmented(host,{options:btns.map((b,i)=>({value:i,label:(b.textContent||'').trim()||b.getAttribute('aria-label')||String(i),disabled:!!b.disabled})),
+      value:idx()>=0?idx():null,none:true,accent:ACC,ariaLabel:o.ariaLabel||'',
+      onChange:v=>{const b=btns[v];if(b&&!b.disabled)b.click();setTimeout(sync,0);}});   // a disabled option: the pill stays on the real choice
+    function sync(){
+      if(!host.isConnected)return;
+      const i=idx();w.set(i>=0?i:null);                                // nothing on: no pill
+      btns.forEach((b,j)=>w.setOptionDisabled(j,b.disabled));
+    }
+    const mos=btns.map(b=>watch(b,sync,['class','aria-pressed','aria-checked','aria-selected','disabled']));
+    return {host,w,destroy(){mos.forEach(m=>m&&m.disconnect());w.destroy();if(!o.host)host.remove();}};
+  };
+
+  // ---- switches (role=switch / aria-pressed buttons) → toggles ----
   const TG={size:'sm',accent:ACC};
   function tgHost(cls,id){const h=document.createElement('div');h.className='f13w-tg '+cls;if(id)h.id=id;return h;}
+  mount.toggle=function(nat,o){
+    o=o||{};
+    const host=o.host||tgHost('f13w-tg-sw'+(o.cls?' '+o.cls:''),o.id);
+    if(!o.host)nat.before(host);nat.setAttribute('data-native','toggle');
+    const w=Liquid.ui.toggle(host,{...TG,checked:swOn(nat),label:o.label||nat.textContent.trim(),ariaLabel:o.ariaLabel||nat.getAttribute('aria-label')||undefined,
+      onChange:v=>{if(swOn(nat)!==v)nat.click();}});
+    const mo=watch(nat,()=>w.set(swOn(nat)),SW_ATTRS);
+    return {host,w,destroy(){mo.disconnect();w.destroy();if(!o.host)host.remove();}};
+  };
   CONFIG.switches.forEach(s=>{
     const nat=$(s.btn);if(!nat)return;
-    const host=tgHost('f13w-tg-sw',s.id),on=()=>nat.getAttribute('aria-checked')==='true';
-    nat.before(host);nat.setAttribute('data-native','toggle');
-    const w=Liquid.ui.toggle(host,{...TG,checked:on(),label:s.label||nat.textContent.trim(),onChange:v=>{if(on()!==v)nat.click();}});
-    new MutationObserver(()=>w.set(on())).observe(nat,{attributes:true,attributeFilter:['aria-checked']});
-    W[s.id||s.btn]=w;
+    W[s.id||s.btn]=mount.toggle(nat,{id:s.id,label:s.label}).w;
   });
   // shared view menu: checkbox rows → label-first toggles; its reset sets .checked silently, so resync after it
   W.view=[];
@@ -226,11 +304,27 @@
       running=true;W.run.setBusy(true);W.run.setLabel('Running…');
       requestAnimationFrame(()=>requestAnimationFrame(()=>rb.click()));   // let the slosh paint before the solver blocks
     }});
+    let labelSet=null;                                               // F13UI.run.label(text) in force (the native text does not override it)
     watch(rb,()=>{
-      W.run.setLabel(rb.textContent.trim());
+      if(labelSet==null)W.run.setLabel(rb.textContent.trim());
       if(!rb.disabled&&running){running=false;W.run.setBusy(false);}   // ended without results
       W.run.setDisabled(rb.disabled&&!running);
     },['disabled']);
+    // the app reports its own progress / refusal / cancel (no native button state involved)
+    const R=UI.run;
+    R.progress=p=>{
+      running=true;
+      if(p==null){W.run.setBusy(true);W.run.setProgress(null);}
+      else W.run.setProgress(p);
+    };
+    R.label=t=>{labelSet=t==null?null:String(t);W.run.setLabel(labelSet==null?rb.textContent.trim():labelSet);};
+    R.done=ok=>{
+      running=false;labelSet=null;
+      W.run.setProgress(ok===false?null:1);                          // 1: flood and pop. null: drain
+      W.run.setBusy(false);                                          // a busy slosh with no progress yet ends too
+      W.run.setLabel(rb.textContent.trim());
+      W.run.setDisabled(rb.disabled);
+    };
   }
 
   // ---- clip radio (axis accents; tap the active axis to release) ----
@@ -341,7 +435,12 @@
   }
   UI.revealControl=function(sel,id){
     const spec=sel==null&&id!=null?targets()[id]:sel;
-    const el=resolveEl(spec);if(!el)return false;
+    const el=resolveEl(spec);
+    if(!el){                                                         // the target does not exist now (a closed editor, a part not loaded): say so, never nothing
+      const t=id!=null?targets()[id]:null,note=(t&&typeof t==='object'&&t.note)||(spec&&typeof spec==='object'&&spec.note);
+      say(note||'This control is not shown right now.');
+      return false;
+    }
     const sec=UI.sectionOf(el);if(sec)UI.showSection(sec);
     const inViewer=!!(el.closest&&el.closest('#viewPane'));
     // a control in the viewer (clip, view) lies under a full sheet: collapse to peek; sheet controls need the sheet full

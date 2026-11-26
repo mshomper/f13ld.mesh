@@ -1,4 +1,4 @@
-/* liquid-ui (mshomper/liquid-ui @ 33fd853) — core + widgets bundle. Do not edit here; edit the kit and rebuild. */
+/* liquid-ui (mshomper/liquid-ui @ 0258a0c) — core + widgets bundle. Do not edit here; edit the kit and rebuild. */
 /* ============================================================================
    Liquid UI core — SDF-shaded "liquid" controls for the web.
    One shared WebGL context renders every component into its own 2D canvas.
@@ -1858,7 +1858,9 @@ Liquid.ui = Liquid.ui || {}; Liquid.uiDemo = Liquid.uiDemo || [];
 .lq-seg-ink{ position:absolute; inset:0; pointer-events:none; }
 .lq-seg-ink span{ color:oklch(0.24 0.06 var(--ah)); }
 .lq-seg.dis{ opacity:.45; }
-.lq-seg.dis .lq-seg-opt{ cursor:default; }`;
+.lq-seg.dis .lq-seg-opt{ cursor:default; }
+.lq-seg-opt[data-off]{ opacity:.4; cursor:default; }
+.lq-seg.none{ opacity:.6; }`;
   function injectCSS() {
     if (document.getElementById('lq-ui-seg-css')) return;
     const s = document.createElement('style'); s.id = 'lq-ui-seg-css'; s.textContent = CSS; document.head.appendChild(s);
@@ -1900,7 +1902,7 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
   Liquid.ui.segmented = function segmented(host, opts = {}) {
     injectCSS();
     const o = { options: [], value: undefined, onChange: null, size: 'md', ariaLabel: '', role: 'radiogroup', accent: Liquid.ACCENTS.lime, ...opts };
-    const OPTS = o.options.map(x => (typeof x === 'object' ? x : { value: x, label: String(x) }));
+    const OPTS = o.options.map(x => (typeof x === 'object' ? { ...x } : { value: x, label: String(x) }));
     const N = Math.max(OPTS.length, 1);
     const tabs = o.role === 'tablist';
     const S = o.size === 'sm' ? { H: 44, bh: 38, pad: 3 } : { H: 48, bh: 48, pad: 4 };
@@ -1914,6 +1916,7 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'lq-seg-opt'; b.setAttribute('role', tabs ? 'tab' : 'radio');
       b.innerHTML = `<span class="lq-seg-lab">${esc(op.label)}</span>`;
+      if (op.disabled) { b.setAttribute('data-off', ''); b.setAttribute('aria-disabled', 'true'); }
       b.addEventListener('click', e => { if (e.detail === 0) select(i, { user: true }); });   // keyboard; pointer handled on host
       list.appendChild(b); return b;
     });
@@ -1925,7 +1928,8 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
     const G = { bx: 0, by: 0, bw: 0, bh: S.bh, pad: S.pad, seg: 0, cs: [], hh0: 0, hw0: 0, groove: 1.5, w: 0 };
     const SP = { lead: { k: 640, zeta: 0.66 }, trail: { k: 190, zeta: 0.86 } };
     const L = new Liquid.Spring(0, SP.trail), R = new Liquid.Spring(0, SP.lead);
-    let target = Math.max(0, OPTS.findIndex(op => op.value === o.value));
+    // target -1 = nothing selected (value null / unknown with opts.none, or api.clear()): no pill, no tab stop on a choice
+    let target = o.value == null && o.none ? -1 : Math.max(0, OPTS.findIndex(op => op.value === o.value));
     let dragging = false, dragC = 0, grabOff = 0, dir = 1, ready = false, dead = false, disabled = false;
 
     const surf = new Liquid.Surface(host, {
@@ -1937,7 +1941,7 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
         btns.forEach((el, i) => Object.assign(el.style, { left: (G.cs[i] - G.seg / 2) + 'px', width: G.seg + 'px' }));
         inkSpans.forEach((el, i) => Object.assign(el.style, { left: (G.cs[i] - G.seg / 2) + 'px', width: G.seg + 'px', right: 'auto' }));
         ready = true;
-        if (!dragging) { L.set(G.cs[target] - G.hw0); R.set(G.cs[target] + G.hw0); }
+        if (!dragging) { const t = Math.max(target, 0); L.set(G.cs[t] - G.hw0); R.set(G.cs[t] + G.hw0); }
         write();
       }
     });
@@ -1954,6 +1958,14 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
 
     function write() {
       if (!ready || dead) return;
+      if (target < 0) {   // nothing selected: the pill is parked out of sight, labels all show
+        surf.set('uBody', G.bx, G.by, G.bw, G.bh).set('uBodyR', G.bh / 2)
+          .set('uPill', -4000, -3900, G.by + G.bh / 2, G.hh0).set('uGroove', G.groove).set('uGK', 0);
+        surf.draw();
+        labs.forEach(el => { el.style.webkitMaskImage = el.style.maskImage = 'none'; });
+        ink.style.clipPath = 'inset(50%)';
+        return;
+      }
       const wl = G.bx + G.pad, wr = G.bx + G.bw - G.pad;
       let l = Math.max(L.x, wl), r = Math.min(R.x, wr);
       const width = r - l, base2 = 2 * G.hw0;
@@ -1980,6 +1992,7 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
     }
     const anim = Liquid.animator(dt => {
       if (dead || !ready) return false;
+      if (target < 0) { write(); return false; }
       const c = dragging ? dragC : G.cs[target];
       L.target = c - G.hw0; R.target = c + G.hw0;
       setSprings();
@@ -1991,16 +2004,20 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
     });
 
     function mark() {
+      const stop = target >= 0 ? target : Math.max(0, OPTS.findIndex(op => !op.disabled));   // nothing chosen: the first enabled option is the tab stop
+      host.classList.toggle('none', target < 0);
       btns.forEach((el, i) => {
         el.setAttribute(tabs ? 'aria-selected' : 'aria-checked', i === target);
-        el.tabIndex = disabled ? -1 : (i === target ? 0 : -1);
+        el.tabIndex = disabled ? -1 : (i === stop ? 0 : -1);
       });
     }
     function select(i, { user = false, focus = false, instant = false } = {}) {
       i = Math.max(0, Math.min(N - 1, i));
+      if (user && OPTS[i].disabled) { anim.wake(); return; }   // a disabled option ignores taps (the pill returns to the real choice)
       if (focus) btns[i].focus();
       if (i === target) return;
-      if (ready) dir = Math.sign(G.cs[i] - centre()) || 1;
+      if (target < 0) instant = true;                          // from nothing selected: appear in place
+      if (ready && target >= 0) dir = Math.sign(G.cs[i] - centre()) || 1;
       target = i; mark();
       if (instant && ready) { L.set(G.cs[i] - G.hw0); R.set(G.cs[i] + G.hw0); write(); } else anim.wake();
       if (user) { Liquid.haptic(); o.onChange && o.onChange(OPTS[i].value, OPTS[i]); }
@@ -2010,7 +2027,7 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
     // ---------- pointer: tap selects; dragging the pill needs horizontal intent on touch ----------
     let ptr = null;
     const loc = e => { const r = host.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-    const onPill = (x, y) => x > L.x - 4 && x < R.x + 4 && Math.abs(y - S.H / 2) < S.H / 2 + 4;
+    const onPill = (x, y) => target >= 0 && x > L.x - 4 && x < R.x + 4 && Math.abs(y - S.H / 2) < S.H / 2 + 4;
     function startDrag(x, e) {
       try { host.setPointerCapture(e.pointerId); } catch (_) {}
       dragging = true; grabOff = x - centre(); dragC = centre(); anim.wake();
@@ -2055,11 +2072,12 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
       if (disabled) return;
       const k = e.key;
       let i = null;
-      if (k === 'ArrowRight' || k === 'ArrowDown') i = (target + 1) % N;
-      else if (k === 'ArrowLeft' || k === 'ArrowUp') i = (target - 1 + N) % N;
-      else if (k === 'Home') i = 0;
-      else if (k === 'End') i = N - 1;
-      if (i === null) return;
+      const step = d => { let j = target < 0 ? (d > 0 ? -1 : N) : target; for (let n = 0; n < N; n++) { j = (j + d + N) % N; if (!OPTS[j].disabled) return j; } return null; };
+      if (k === 'ArrowRight' || k === 'ArrowDown') i = step(1);
+      else if (k === 'ArrowLeft' || k === 'ArrowUp') i = step(-1);
+      else if (k === 'Home') i = OPTS.findIndex(op => !op.disabled);
+      else if (k === 'End') i = N - 1 - [...OPTS].reverse().findIndex(op => !op.disabled);
+      if (i === null || i < 0 || i >= N) return;
       e.preventDefault();
       select(i, { user: true, focus: true });
     });
@@ -2067,9 +2085,23 @@ float accentSDF(vec2 p){ return pillSDF(p); }`;
     const api = {
       get: () => OPTS[target] ? OPTS[target].value : undefined,
       set(v, { silent = true, instant = false } = {}) {
+        if (v == null) return api.clear();
         const i = OPTS.findIndex(op => op.value === v);
         if (i >= 0) select(i, { user: !silent, instant });
         return api;
+      },
+      // nothing selected: no pill, every label shown; the next set() / tap brings it back
+      clear() {
+        if (target < 0) return api;
+        target = -1; mark(); anim.wake(); return api;
+      },
+      // per-option disabled: dimmed, ignores taps and keys (set() from the app still works)
+      setOptionDisabled(v, b) {
+        const i = typeof v === 'number' ? v : OPTS.findIndex(op => op.value === v);
+        if (!OPTS[i]) return api;
+        OPTS[i].disabled = !!b;
+        btns[i].toggleAttribute('data-off', !!b); btns[i].setAttribute('aria-disabled', !!b);
+        mark(); return api;
       },
       setDisabled(b) {
         disabled = !!b; host.classList.toggle('dis', disabled);

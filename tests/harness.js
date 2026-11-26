@@ -108,7 +108,12 @@ async function uiSetXform(page, key, v) {
   if (await uiIsRail(page)) {
     const sel = `#railEditor .rl-num[data-k="${key}"]`;
     await uiSection(page, 'design');
-    if (await page.$(sel)) { await page.fill(sel, String(v)); await page.waitForTimeout(300); return; }
+    // The box lives in the Transform fold (closed by default) and the widgets hide it, so fill() would wait for a
+    // visible box: set it directly and fire the same input / change the typed path ends in.
+    if (await page.$(sel)) {
+      await page.evaluate(([s, val]) => { const el = document.querySelector(s); el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, [sel, String(v)]);
+      await page.waitForTimeout(300); return;
+    }
   }
   await page.evaluate(([id, val]) => { document.getElementById(id).value = val; window.onStructXformInput(); }, [UI_XFORM_INPUT[key], v]);
 }

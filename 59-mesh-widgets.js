@@ -310,6 +310,8 @@
       const t=(sel==null&&id!=null)?(UI.helpTargets||{})[id]:sel,spec=t&&typeof t==='object'&&!t.nodeType?t.sel:t;
       const els=typeof spec==='string'?spec.split(',').map(s=>document.querySelector(s.trim())).filter(Boolean):(spec?[spec]:[]);
       if(!els.length){UI.message((t&&t.note)||'This control is not shown right now.');return false;}
+      // a control inside the closed Transform fold: open it first (and remember it, as a tap on its header would)
+      if(window.railXformOpen&&els.some(e=>e.closest&&e.closest('.rl-xf:not(.open)')))window.railXformOpen(true);
       return baseReveal.call(this,sel,id);
     };
     UI.revealControl.f13wire=true;

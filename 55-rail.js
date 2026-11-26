@@ -355,6 +355,27 @@ function rlShiftSliders(r, cell){
       '<input type="number" class="rl-num" data-k="spatialOffsetMm'+a+'" step="'+st+'" value="'+rlNum(rlGet('spatialOffsetMm'+a))+'" aria-label="Shift '+a+' value"></div>';
   }).join('');
 }
+// Transform fold: open / closed is remembered across rebuilds and part switches.
+const RL_XF_KEY='f13ld.mesh.xformOpen';
+function rlXfOpen(){ try{ return localStorage.getItem(RL_XF_KEY)==='1'; }catch(_){ return false; } }
+function rlXfSet(open){
+  try{ localStorage.setItem(RL_XF_KEY, open?'1':'0'); }catch(_){}
+  for(const x of document.querySelectorAll('#railEditor .rl-xf')){
+    x.classList.toggle('open', open);
+    const b=x.querySelector('.rl-xf-b'); if(b) b.setAttribute('aria-expanded', String(open));
+  }
+}
+window.railXformOpen=rlXfSet;
+// "wall 0 · rot -42 / 42 / -77 · shift 0" (shift lists three numbers once any axis is off zero)
+function rlXfSummary(){
+  const n=k=>{ const v=Math.round((+rlGet(k)||0)*100)/100; return String(Object.is(v,-0)?0:v); };
+  const sh=['X','Y','Z'].map(a=>n('spatialOffsetMm'+a));
+  return 'wall '+n('isoOffsetMm')+' · rot '+['X','Y','Z'].map(a=>n('rot'+a+'Deg')).join(' / ')+' · shift '+(sh.every(s=>s==='0')?'0':sh.join(' / '));
+}
+function rlXfSumSync(host){
+  const s=host.querySelector('.rl-xf-s'); if(!s) return;
+  const t=rlXfSummary(); if(s.textContent!==t) s.textContent=t;
+}
 function rlSeg(name, items, cur){
   return '<div class="rl-seg full" data-seg="'+name+'">'+items.map(it=>'<button type="button" data-act="'+name+'" data-v="'+it[0]+'"'+(it[0]===cur?' class="on"':'')+(it[2]?' disabled':'')+'>'+it[1]+'</button>').join('')+'</div>';
 }
@@ -403,11 +424,17 @@ function rlDefWeldColour(gid){
 
 function rlColourRow(act, curHex, defHex){
   return '<div class="rl-hue-w" data-colour="'+act+'" data-cur="'+esc(curHex||'')+'" data-def="'+esc(defHex||'')+'" data-h="" data-shade="" data-last="">'+
-    '<div class="rl-hue-top"><span class="rl-hdot"></span><span class="rl-hhex"></span></div>'+
-    '<div class="rl-hue idle" role="slider" tabindex="0" aria-label="Hue" aria-valuemin="0" aria-valuemax="359" aria-valuenow="0"><div class="rl-hue-track"></div><div class="rl-hue-thumb"></div></div>'+
-    '<div class="rl-hue-row"><div class="rl-hseg" role="group" aria-label="Shade">'+
+    // one row: swatch (tap: the hue strip opens under it) + name, Light / Mid / Deep, reset
+    '<div class="rl-hue-row"><button type="button" class="rl-hsw" aria-expanded="false" aria-label="Choose a hue"><span class="rl-hdot"></span><span class="rl-hhex"></span></button>'+
+    '<div class="rl-hseg" role="group" aria-label="Shade">'+
       RL_SHADES.map((s,i)=>'<button type="button" data-shade="'+i+'" aria-pressed="false"><span class="rl-hd"></span>'+s.name+'</button>').join('')+
-    '</div><button type="button" class="rl-hrst" data-act="'+act+'" data-hex="" title="Reset to the default colour" aria-label="Reset to the default colour">'+rlIc('reset',14)+'</button></div></div>';
+    '</div><button type="button" class="rl-hrst" data-act="'+act+'" data-hex="" title="Reset to the default colour" aria-label="Reset to the default colour">'+rlIc('reset',14)+'</button></div>'+
+    '<div class="rl-hue idle" role="slider" tabindex="0" aria-label="Hue" aria-valuemin="0" aria-valuemax="359" aria-valuenow="0"><div class="rl-hue-track"></div><div class="rl-hue-thumb"></div></div></div>';
+}
+// The hue strip is closed until the swatch is tapped; tapping again, or picking, closes it.
+function rlColOpen(root, open){
+  root.classList.toggle('hue-open', open);
+  const b=root.querySelector('.rl-hsw'); if(b) b.setAttribute('aria-expanded', String(open));
 }
 
 // Repaint one colour row from its data attributes (no events, no setters).
@@ -474,6 +501,7 @@ function rlColDragEnd(){
   if(d.timer){ clearTimeout(d.timer); d.timer=0; }
   _rlColDrag=null;
   if(d.hex && d.hex!==d.applied) rlColSet(d.root.dataset.colour, d.id, d.hex);
+  rlColOpen(d.root, false);                         // picked: the strip closes
   if(d.pending) renderRailEditor();
 }
 function rlColWire(ed){
@@ -501,8 +529,11 @@ function rlColWire(ed){
     rlColPush(root, rlColClamp(h,0,359), +root.dataset.shade||0, false);
   });
   ed.addEventListener('click',e=>{
+    const sw=e.target.closest&&e.target.closest('.rl-hsw');
+    if(sw){ const r=sw.closest('.rl-hue-w'); rlColOpen(r, !r.classList.contains('hue-open')); return; }
     const b=e.target.closest&&e.target.closest('.rl-hseg button'); if(!b) return;
     const root=b.closest('.rl-hue-w');
+    rlColOpen(root, false);
     rlColPush(root, +root.dataset.h||0, +b.dataset.shade, false);
   });
 }
@@ -523,8 +554,8 @@ function rlEdPart(id){
     const opts=[];
     for(const o of bodyOrder){ if(o===id||!bodies.has(o)) continue; const og=bodyGroup.get(o); opts.push(['p:'+o,(og?'Weld '+weldGroupLetter(og)+' · ':'')+rlName(o)]); }
     for(const g of weldGroups.keys()) opts.push(['g:'+g,'Weld '+weldGroupLetter(g)]);
-    h+=opts.length ? '<select data-sel="weldWith" aria-label="Weld with"><option value="">Not welded · weld with…</option>'+opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('')+'</select>'
-                   : rlHint('Add another part to weld it with this one.');
+    // no other part to weld with: the label and its (i) stand alone (the help card explains it)
+    if(opts.length) h+='<select data-sel="weldWith" aria-label="Weld with"><option value="">Not welded · weld with…</option>'+opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('')+'</select>';
   }
   h+='</div>';
   // Fill
@@ -535,11 +566,17 @@ function rlEdPart(id){
     h+='<div class="rl-erow sc-group"><label>Recipe</label><select data-sel="recipe" aria-label="Recipe">'+recipeOrder.filter(x=>recipes.has(x)).map(x=>'<option value="'+esc(x)+'"'+(x===assignments.get(id)?' selected':'')+'>'+esc(rlRecipeLabel(recipes.get(x)))+'</option>').join('')+'</select></div>';
     if(fill==='skin') h+='<div class="rl-erow sc-group"><label>Skin thickness <em>mm</em></label>'+rlSlider('skin','Skin thickness',0.1,2,0.05)+'</div>';
     const cell=rlGet('cell');
+    // Click test: wall offset, rotation, shift and their reset sit in one fold (closed by default, remembered).
+    const xo=rlXfOpen();
     h+='<div class="rl-erow sc-group"><label>Cell size <em>mm</em></label>'+rlSlider('cell','Cell size',0,0,0.1,null,null,{noRange:true})+'</div>'+
+       '<div class="rl-xf'+(xo?' open':'')+'" data-xf>'+
+         '<div class="rl-xf-h"><button type="button" class="rl-xf-b" data-act="xfold" aria-expanded="'+xo+'" aria-controls="rlXfBody"><span class="rl-xf-t">Transform</span><span class="rl-xf-s">'+esc(rlXfSummary())+'</span>'+rlIc('chev',16,'rl-xf-c')+'</button>'+
+         '<button type="button" class="rl-xf-r" data-act="xreset" title="Reset rotation, shift and wall offset" aria-label="Reset rotation, shift and wall offset">'+rlIc('undo',16)+'</button></div>'+
+         '<div class="rl-xf-body" id="rlXfBody">'+
        '<div class="rl-erow sc-group"><label>Wall offset <em>mm</em></label>'+rlSlider('isoOffsetMm','Wall offset',-2,2,0.01)+'</div>'+
-       '<div class="rl-erow sc-group"><label>Rotation <em>deg</em></label>'+rlSlider('rotXDeg','Rotate X',-180,180,1,null,'X')+rlSlider('rotYDeg','Rotate Y',-180,180,1,null,'Y')+rlSlider('rotZDeg','Rotate Z',-180,180,1,null,'Z')+'</div>'+
-       '<div class="rl-erow sc-group"><label>Shift <em>mm · one period each way</em></label>'+rlShiftSliders(r, cell)+
-         '<button type="button" class="rl-sbtn rl-reset" data-act="xreset">'+rlIc('undo')+'Reset rotation, shift and wall offset</button></div>';
+       '<div class="rl-erow sc-group rl-ax"><label>Rotation <em>deg</em></label>'+rlSlider('rotXDeg','Rotate X',-180,180,1,null,'X')+rlSlider('rotYDeg','Rotate Y',-180,180,1,null,'Y')+rlSlider('rotZDeg','Rotate Z',-180,180,1,null,'Z')+'</div>'+
+       '<div class="rl-erow sc-group rl-ax"><label>Shift <em>mm · one period each way</em></label>'+rlShiftSliders(r, cell)+'</div>'+
+       '</div></div>';
     if(trimOk){
       h+='<div class="rl-erow sc-group"><label>Trim to nodes</label><div class="rl-pair"><button type="button" class="rl-sw'+(trimOn?' on':'')+'" data-act="trim" aria-label="Trim struts to nodes" aria-pressed="'+trimOn+'"></button></div></div>';
       // stage 3: the inset is a slider (1 to 2), the number box beside it stays as the typed fallback
@@ -601,6 +638,7 @@ function renderRailEditor(){
 // Same structure: refresh the numbers in place (never rebuild under a finger).
 function rlEdSync(host, sel){
   rlColFollow(host, sel);
+  rlXfSumSync(host);
   if(sel.t==='part'){                              // a new cell size or recipe moves the shift range
     const b=bodies.get(sel.id), r=b&&recipes.get(assignments.get(sel.id));
     if(r&&bodyFill(sel.id)!=='solid'){
@@ -635,6 +673,7 @@ function rlEdit(k, v){
     if(g){ if(k==='w.fillet') g.filletMm=Math.max(0,v); else if(k==='w.anchor') g.anchorMm=Math.max(0,v); else g.gradeMm=Math.max(0.05,v); }
   }
   else railSetXform(k, v);
+  rlXfSumSync($rl('railEditor'));                  // the Transform fold's one-line summary
   renderRailParts();                               // fill summary / weld summary follow the slider
   if(k==='cell') renderRailEditor();               // the shift sliders' range follows the cell size
 }
@@ -887,7 +926,8 @@ function rlInit(){
       case 'rule':  weldSetRule(s.id, b.dataset.v); renderRail(); break;
       case 'trim':  railSetTrim(!($rl('trimToNodes')&&$rl('trimToNodes').checked)); renderRailEditor(); break;
       case 'joins': { const g=weldGroups.get(s.id); if(g){ weldSetShowJoins(s.id, !g.showJoins); renderRailEditor(); } break; }
-      case 'xreset': window.onStructXformReset&&window.onStructXformReset(); break;
+      case 'xreset': window.onStructXformReset&&window.onStructXformReset(); rlXfSumSync(ed); break;
+      case 'xfold': rlXfSet(!rlXfOpen()); break;
       case 'color': setBodyColor(s.id, b.dataset.hex||null); break;
       case 'wcolor': setWeldColor(s.id, b.dataset.hex||null); break;
       case 'goWeld': { const g=bodyGroup.get(s.id); if(g) railSelectWeld(g); break; }

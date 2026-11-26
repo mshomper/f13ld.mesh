@@ -147,3 +147,47 @@ html.f13w #progRow{display:none!important}
 html.f13w #dock:has(.pg-cancel-dock)>.dk-meta{flex-basis:100%}
 html.f13w #dock:has(.pg-cancel-dock)>#w-run{flex:1 1 auto;width:auto;min-width:0}
 html.f13w #dock>.pg-cancel-dock{flex:none}
+
+/* ---- compact part panel (click test 2026-11-26) ---------------------------------------------------------------- */
+/* Transform fold: header is a 44 px button (summary + drawn chevron), the reset is its own 44 px icon button beside it */
+.rl-xf{display:flex;flex-direction:column;min-width:0}
+.rl-xf-h{display:flex;align-items:stretch;gap:4px;min-width:0}
+.rl-xf-b{flex:1 1 auto;min-width:0;min-height:44px;display:flex;align-items:center;gap:8px;padding:0 6px 0 10px;background:var(--input);border:1px solid transparent;border-radius:10px;color:var(--ink-dim);font:500 13px var(--lq-font);text-align:left;cursor:pointer}
+.rl-xf-b:hover{border-color:var(--hair-strong)}
+.rl-xf-t{flex:none}
+.rl-xf-s{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 11px var(--lq-mono);color:var(--ink-faint)}
+.rl-xf-c{flex:none;transition:transform .15s var(--ease)}
+.rl-xf.open .rl-xf-c{transform:rotate(180deg)}
+.rl-xf-r{flex:none;width:44px;min-height:44px;display:grid;place-items:center;padding:0;background:var(--input);border:1px solid transparent;border-radius:10px;color:var(--ink-dim);cursor:pointer}
+.rl-xf-r:hover{border-color:var(--hair-strong);color:var(--accent)}
+.rl-xf-b:focus-visible,.rl-xf-r:focus-visible,.rl-hsw:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
+.rl-xf-body{display:none;flex-direction:column;gap:12px;padding-top:12px}
+.rl-xf.open .rl-xf-body{display:flex}
+@media (prefers-reduced-motion:reduce){.rl-xf-c{transition:none}}
+
+/* one-line axis rows: X / Y / Z label left, the kit slider's track in the middle, its value right (about 36 px a row).
+   The kit slider is a 52 px box (head over track, track bar centred at y 36); the row lets it hang 18 px above itself,
+   moves its track hit area down so it stays inside the row, and lifts the label and value out of the head to the sides. */
+html.f13w .rl-ax{gap:0}
+html.f13w .rl-ax>label{margin-bottom:4px}
+html.f13w .rl-ax .rl-sl.f13w-sl{position:relative;height:36px;padding:0 56px 0 20px}
+html.f13w .rl-ax .f13w-slider{margin-top:-18px;overflow:visible;pointer-events:none}
+html.f13w .rl-ax .lq-sl canvas{pointer-events:none}
+html.f13w .rl-ax .lq-sl-track{top:18px;pointer-events:auto}
+html.f13w .rl-ax .lq-sl-ring{margin-top:-6px}
+html.f13w .rl-ax .lq-sl-label{position:absolute;right:calc(100% + 4px);top:27px;width:16px;overflow:visible;text-align:left;font:600 13px var(--lq-mono);color:var(--ink-faint)}
+html.f13w .rl-ax .lq-sl-val{position:absolute;left:calc(100% + 6px);top:27px;width:46px;padding:0;text-align:right}
+html.f13w .rl-ax .lq-sl-val::before{right:0;width:100%;top:-4px;bottom:-4px}
+
+/* viewport colour: one row (swatch + name, Light / Mid / Deep, reset); the hue strip opens under it from the swatch */
+.rl-hue-w .rl-hue{display:none}
+.rl-hue-w.hue-open .rl-hue{display:block}
+.rl-hue-row{gap:6px}
+.rl-hsw{flex:0 1 auto;min-width:0;min-height:44px;display:flex;align-items:center;gap:6px;padding:0 6px;background:var(--input);border:1px solid transparent;border-radius:10px;color:var(--ink-dim);cursor:pointer}
+.rl-hsw:hover,.rl-hsw[aria-expanded=true]{border-color:var(--hair-strong)}
+.rl-hsw .rl-hdot{width:18px;height:18px}
+.rl-hsw .rl-hhex{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rl-hue-row .rl-hrst{width:44px;height:44px}
+.rl-hue-row .rl-hrst::after{display:none}
+/* an (i) in an editor row label must not reach down over the control under it (6 px gap): its hit box stops 5 px below */
+.rl-erow>label .f13h-i::after{inset:-14px -9px -5px -19px}

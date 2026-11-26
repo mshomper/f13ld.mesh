@@ -1,0 +1,142 @@
+/* ============================================================================
+   F13LD UI template · f13ui-style.css
+   Styles for the liquid widgets inside the F13LD shell. Everything is scoped to html.f13w,
+   which f13ui-wire.js adds only when WebGL works, so the native controls remain the fallback.
+   Inline as <style id="f13ui-style"> after the tool's main style.
+   ========================================================================== */
+html.f13w{--rail-w:72px}
+html.f13w [data-native]{display:none!important}
+
+/* header: the Recipe menu replaces Queue / Mesh / Lab / Export; the queue client's own buttons stay
+   mounted (invisible, no pointer) so its menus and feedback still work when a Recipe item triggers them */
+html.f13w #w-recipe{flex:none}
+html.f13w .fh-right>.f13ldq-split,html.f13w .fh-right>.f13ldq-main{position:absolute;right:14px;top:calc(env(safe-area-inset-top) + 8px);pointer-events:none;z-index:-1}
+html.f13w .fh-right>.f13ldq-split>.f13ldq-main,html.f13w .fh-right>.f13ldq-split>.f13ldq-caret,html.f13w .fh-right>.f13ldq-main{opacity:0}
+html.f13w .fh-right>.f13ldq-split>:not(.f13ldq-main):not(.f13ldq-caret){pointer-events:auto}
+html.f13w #f13ldq-fallback{display:none}
+html.f13w .fh-mesh-btn{display:none}
+@media (max-width:560px){
+  html.f13w .f13ld-header{flex-wrap:nowrap;padding:0 10px;padding-top:env(safe-area-inset-top);column-gap:8px}
+  html.f13w .f13ld-header::after{display:none}
+  html.f13w .fh-left{gap:8px;flex:none}
+  html.f13w .fh-right{display:flex;gap:6px}
+}
+@media (max-width:380px){
+  html.f13w .f13ld-header{column-gap:4px;padding-left:8px;padding-right:8px}
+  html.f13w .fh-divider{display:none}
+  html.f13w .fh-left{gap:6px}
+  html.f13w .fh-right{gap:3px}
+}
+
+/* sliders: the widget carries label · value · hint · track; the row keeps only .row-extra.
+   Hit geometry: the track's hit box runs 4px below the widget, the value's 4px above it. */
+html.f13w .sc-group.sl{display:block;margin:6px 0 10px}
+html.f13w .sc-group.sl>:not(.f13w-slider):not(.row-extra){display:none}
+html.f13w .f13w-slider{width:100%}
+html.f13w .sl>.row-extra{margin-top:2px}
+.f13w-lab{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}
+.f13w-lab>label{font-size:13px;font-weight:550;line-height:18px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.lq-sl-head .f13h-i{pointer-events:auto;flex:none;z-index:3}   /* z: its 44px hit box sits above the track's hit box */
+/* the help engine may append the (i) inside the <label>: a clipping label would cut its 44x44 ::after to the label box
+   (31x20 measured). overflow:clip keeps the ellipsis, and overflow-clip-margin lets the hit box reach past the label */
+.f13w-lab>label{overflow:clip;overflow-clip-margin:16px}
+.f13w-lab .f13h-i{position:relative;flex:none}
+/* (i) hit boxes never cover a neighbour (round 4). 44 px only where free space allows, else shrunk toward the glyph:
+   slider head: 46 wide; 5 px above (the row above's track hit box ends there) and 5 below (stops above the track's bar at 626 of 628), so 28 tall
+   label beside a control (dropdown, segmented, clip radio): the 8 px flex gap to the control is the right limit, the label side on the left is free: 44 x 44 */
+/* insets are measured from the padding box: the (i) is 18 px with a 1 px border (shell.css), so 16 px + insets */
+.f13w-lab .f13h-i::after{content:'';position:absolute;inset:-6px -15px -6px -15px}
+.sc-group>label .f13h-i::after,.sc-group>.f13h-i::after,.clip-lbl .f13h-i::after{inset:-14px -9px -14px -19px}
+/* fraction labels (⅛ ¼ …): mono faces lack the glyphs, so use the UI face for those sliders */
+.f13w-frac .lq-sl-num{font-family:var(--lq-font);font-size:15px}
+
+/* widget canvases bleed 24px for glow; clip where the column clips anyway (no sideways overflow) */
+html.f13w .sec{overflow-x:clip}
+@media (max-width:899px){html.f13w .sec{overflow-clip-margin:16px}}
+
+/* mounts */
+html.f13w .f13w-seg{flex:1 1 auto;min-width:0}
+html.f13w .f13w-dd{flex:1 1 120px;min-width:0}
+html.f13w .f13w-dd-c{flex:none}
+html.f13w #w-run{width:100%}
+html.f13w #w-clip{display:flex;align-items:center;gap:8px;height:44px;padding:0 6px 0 10px;background:oklch(0.13 0.012 265 / 0.72);border:1px solid var(--hair);border-radius:14px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+html.f13w #w-clip>.clip-lbl{margin:0}
+#w-recipe:not(.lq-wsd),#w-run:not(.lq-pb),#w-clip:empty{display:none}
+
+/* sections */
+html.f13w #sectionsRail>.f13w-rail{margin:14px 0 0 4px}
+html.f13w .sb-fallback,html.f13w #sectionsRail .sb-fallback,html.f13w #sectionsBar .sb-fallback{display:none}   /* id rules in a tool's stage-2 CSS would otherwise win */
+/* the clip overlay's native pills give way to the clip radio (the wire reuses its .clip-lbl) */
+html.f13w.f13w-clip #clipOverlay{display:none}
+html.f13w #sectionsBar{border-top:none;padding:0 8px env(safe-area-inset-bottom)}
+
+/* help: "show" jumps from a drawer card to its control */
+/* a real 44 px tall box (negative block margins keep the card header's height); the pill is drawn by ::before at 24 px, so no hit area reaches past the button */
+.f13w-show{position:relative;margin:-10px 0 -10px auto;display:inline-flex;align-items:center;gap:4px;height:44px;min-width:44px;padding:0 8px;border:0;background:none;color:var(--ink-dim);font:500 11px var(--lq-font);cursor:pointer;z-index:1}
+.f13w-show::before{content:'';position:absolute;left:0;right:0;top:10px;bottom:10px;border:1px solid var(--hair-strong);border-radius:999px;transition:color .15s,border-color .15s}
+.f13w-show>*{position:relative}
+.f13w-show:hover::before{border-color:var(--accent-line)}
+.f13w-show:hover{color:var(--accent);border-color:var(--accent-line)}
+.f13w-flash{border-radius:12px;animation:f13wFlash 1.4s var(--ease)}
+@keyframes f13wFlash{0%,60%{box-shadow:0 0 0 2px var(--accent-line),0 0 0 6px var(--accent-soft)}100%{box-shadow:0 0 0 0 transparent}}
+
+/* toggles (natives hidden as state) */
+.f13w-tg-sw{width:max-content;max-width:100%}
+.f13w-tg-menu{width:100%}
+html.f13w .f13v-p{padding:2px 10px 6px 12px;min-width:184px;gap:0}
+html.f13w .f13v-p .f13v-r{margin-top:4px;min-height:28px;padding:0 10px;position:relative}
+html.f13w .f13v-p .f13v-r::after{content:'';position:absolute;left:-6px;right:-6px;top:-8px;bottom:-12px}   /* 31 px face + 20 = 51 px hit height; the extra reach is below, where only panel padding is, so the toggle above keeps its hit area */
+
+/* ── PER-TOOL rules go here. F13LD.tpms examples: ──
+html.f13w #grp-mode{margin-bottom:20px}            margins collapse with the slider row below
+html.f13w #pi-controls .sc-group.sl{margin:4px 0 10px}
+html.f13w #termlist .sw.tog{display:none}           rebuilt rows: hide natives by class, not data-native
+.f13w-tg-term{flex:none;width:44px}
+*/
+
+/* ============================================================================
+   F13LD.mesh rules (stage 3). Everything above is the template, verbatim.
+   ========================================================================== */
+/* the template header rules are for tools with the Recipe menu / queue client; mesh has neither: header untouched */
+
+/* view tabs: the segmented widget replaces the native tab strip (#vsTabs is data-native) */
+html.f13w #w-view{width:264px;max-width:100%;flex:none}
+#w-view:empty{display:none}
+html.f13w .vs-l{flex:1 1 auto}
+
+/* section plane (bottom-right of the viewer): clip radio, position slider, flip toggle; the native axis buttons are state */
+html.f13w #secPanel .sp-t{display:none}
+html.f13w #secPanel{gap:2px 8px;padding:4px 8px 4px 10px}
+html.f13w #secPanel .sc-group.sl{flex:1 1 220px;width:220px;min-width:170px;margin:0}
+html.f13w #secPanel #w-clip{flex:none}
+#secPanel .clip-lbl{display:inline-flex;align-items:center;gap:4px;font:600 11px var(--lq-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+html.f13w #secPanel .f13w-tg-flip{flex:none}
+@media (max-width:899px){
+  html.f13w #secPanel{justify-content:flex-start}
+  html.f13w #secPanel .sc-group.sl{order:5;flex:1 1 100%}
+  html.f13w #secPanel #w-clip{flex:1 1 auto}
+  /* the open view menu reaches down over the cut controls in the short phone viewer: they step aside while it is open */
+  #previewArea:has(#viewOptsPanel:not([hidden])) #secPanel{visibility:hidden}
+}
+
+/* view menu toggles */
+html.f13w #viewOptsPanel{padding:2px 10px 6px 12px;min-width:196px;gap:0}
+html.f13w #viewOptsPanel .f13w-tg-menu{width:100%}
+
+/* rows whose natives are hidden: rows with a widget fill the column (the rows are column flex boxes) */
+html.f13w .sc-group.sl.dr-off{display:none}                            /* F14: domain size hides while a bounding shape is loaded (the slider rule above sets display:block) */
+html.f13w .dr-f.sc-group>.f13w-dd,html.f13w .dr-f.sc-group>.f13w-seg,html.f13w .rl-erow>.f13w-dd,html.f13w .rl-erow>.f13w-seg{flex:0 0 auto;width:100%}
+.rl-erow.sc-group{align-items:stretch}
+html.f13w .rl-erow.f13w-sl1{display:block}
+html.f13w .rl-erow.f13w-sl1>:not(.f13w-slider){display:none}
+html.f13w .rl-sl.f13w-sl,html.f13w .pp-sl.f13w-sl{display:block}
+html.f13w .rl-sl.f13w-sl>:not(.f13w-slider),html.f13w .pp-sl.f13w-sl>:not(.f13w-slider){display:none}
+.pp-sl{display:flex;align-items:center;gap:8px;font:500 13px var(--lq-mono);color:var(--ink-faint)}
+.pp-sl .dr-num{width:84px}
+.dr-f>label em{font-style:normal;font-size:11px;color:var(--ink-faint);margin-left:6px}
+.f13w-idle{opacity:.55}
+.lq-seg-opt[data-off]{opacity:.4}
+/* the Export mesh rows keep their one-line hints under the widget */
+html.f13w .dr-f.sc-group .dr-hint{margin-top:2px}
+html.f13w .rl-pair>.f13w-tg{flex:none}
+html.f13w .rl-hue-row>.f13w-seg{flex:1 1 auto;min-width:0}

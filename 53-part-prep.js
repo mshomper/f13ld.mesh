@@ -404,9 +404,13 @@ function ppInner(){
   }
   matOpts+='<option value="custom"'+(matSel==='custom'?' selected':'')+'>Custom density</option>';
   const m=ppMaterial();
+  // UI refresh stage 3: three groups (Process, Orientation, Supports) plus Plate in the Print view. Every row is a
+  // .sc-group with its own <label> (the help engine anchors on it); the sliders' native inputs are number boxes kept
+  // as state (data-pp), the widgets (59-mesh-widgets.js mountPrep) drive them.
   let h='<div class="dr-grid">';
-  h+='<div class="dr-f"><label for="ppProc">Process</label><select id="ppProc" class="dr-sel" onchange="ppSetProc(this.value)">'+procOpts+'</select></div>';
-  h+='<div class="dr-f"><label for="ppMat">Material</label><select id="ppMat" class="dr-sel" onchange="ppSetMat(this.value)">'+matOpts+'</select>';
+  h+='<h3 class="sub-h" style="margin:0">Process</h3>';
+  h+='<div class="dr-f sc-group"><label for="ppProc">Process</label><select id="ppProc" class="dr-sel" onchange="ppSetProc(this.value)">'+procOpts+'</select></div>';
+  h+='<div class="dr-f sc-group"><label for="ppMat">Material</label><select id="ppMat" class="dr-sel" onchange="ppSetMat(this.value)">'+matOpts+'</select>';
   if(matSel==='custom'){
     h+='<div class="dr-pair"><input type="number" id="ppRho" class="dr-num" min="0.1" max="25" step="0.01" value="'+partPrep.customRho+'" oninput="ppSetCustomRho(this.value)" aria-label="Density"><span>g/cm³</span></div>';
     if(!mats.length) h+='<div class="dr-hint">The F13LD material library has no '+(p.id==='resin'?'resins':'materials for this process')+' yet — enter the density from the data sheet.</div>';
@@ -414,22 +418,28 @@ function ppInner(){
     h+='<div class="dr-hint">'+_ppFmt(m.rho_kgm3/1000,2)+' g/cm³ · '+esc(m.process)+'</div>';
   }
   h+='</div>';
-  h+='<div class="dr-f"><label>Part axis facing up</label><div class="dr-chips" id="ppUp">';
+  h+='<h3 class="sub-h" style="margin:6px 0 0">Orientation</h3>';
+  h+='<div class="dr-f sc-group" id="grp-up"><label>Part axis facing up</label><div class="dr-chips" id="ppUp">';
   for(const c of PP_UP_CODES) h+='<button type="button" class="dr-chip'+(partPrep.up===c?' on':'')+'" aria-pressed="'+(partPrep.up===c)+'" onclick="ppSetUp(\''+c+'\')">'+(c.charAt(0)==='-'?'−'+c.slice(1):c)+'</button>';
   h+='</div></div>';
-  h+='<div class="dr-f dr-span2"><label>Tilt</label><div class="dr-pair"><span>about X</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltX+'" oninput="ppSetTilt(\'x\',this.value)" aria-label="Tilt about X"><span>about Y</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltY+'" oninput="ppSetTilt(\'y\',this.value)" aria-label="Tilt about Y"><span>°</span></div><div class="dr-hint" id="ppOrientNote">'+ppOrientNote()+'</div></div>';
+  h+='<div class="dr-f sc-group" id="grp-tilt"><label>Tilt <em>deg</em></label>'+
+     '<div class="pp-sl" data-pp="tiltX"><span>About X</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltX+'" oninput="ppSetTilt(\'x\',this.value)" aria-label="Tilt about X"><span>°</span></div>'+
+     '<div class="pp-sl" data-pp="tiltY"><span>About Y</span><input type="number" class="dr-num" step="5" value="'+partPrep.tiltY+'" oninput="ppSetTilt(\'y\',this.value)" aria-label="Tilt about Y"><span>°</span></div>'+
+     '<div class="dr-hint" id="ppOrientNote">'+ppOrientNote()+'</div></div>';
+  h+='<h3 class="sub-h" style="margin:6px 0 0">Supports</h3>';
   if(p.supports){
-    h+='<div class="dr-f"><label>Overhang limit</label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="89" step="1" value="'+partPrep.critDeg+'" oninput="ppSetCrit(this.value)" aria-label="Overhang limit"><span>° from the plate</span></div><div class="dr-hint">A downward face tilted less than this needs support.</div></div>';
-    h+='<div class="dr-f"><label>Standoff</label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="50" step="0.5" value="'+partPrep.standoff+'" oninput="ppSetStandoff(this.value)" aria-label="Standoff"><span>mm</span></div><div class="dr-hint">Gap between plate and part, filled with support. Changes the view and the support numbers; the export is not moved.</div></div>';
+    h+='<div class="dr-f sc-group sl" id="grp-crit" data-pp-row="crit"><label>Overhang limit <em>deg</em></label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="89" step="1" value="'+partPrep.critDeg+'" oninput="ppSetCrit(this.value)" aria-label="Overhang limit"><span>° from the plate</span></div><div class="dr-hint row-extra">A downward face tilted less than this needs support.</div></div>';
+    h+='<div class="dr-f sc-group sl" id="grp-standoff" data-pp-row="standoff"><label>Standoff <em>mm</em></label><div class="dr-pair"><input type="number" class="dr-num" min="0" max="50" step="0.5" value="'+partPrep.standoff+'" oninput="ppSetStandoff(this.value)" aria-label="Standoff"><span>mm</span></div><div class="dr-hint row-extra">Gap between plate and part, filled with support.</div></div>';
   } else {
-    h+='<div class="dr-f"><label>Supports</label><div class="dr-hint">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div></div>';
+    h+='<div class="dr-f sc-group"><label>Supports</label><div class="dr-hint">The powder bed holds the part up, so no supports are needed. Orientation still sets build height.</div></div>';
   }
-  h+='<div class="dr-f dr-wide"><label>Print view</label><div class="dr-pair">';
-  h+='<button type="button" id="ppViewBtn" class="dr-btn'+(partPrep.printView?' on':'')+'" aria-pressed="'+!!partPrep.printView+'" onclick="ppTogglePrintView()">'+PP_ICON_PRINT+'<span>'+(partPrep.printView?'Print view on':'Print view')+'</span></button>';
-  if(partPrep.printView) h+='<span>plate opacity</span><input type="range" class="dr-range" min="0" max="100" step="5" value="'+partPrep.plateOpacity+'" oninput="ppSetPlateOpacity(this.value)" aria-label="Build plate opacity"><span id="ppPlateOpVal">'+partPrep.plateOpacity+' %</span>';
+  // The Print view is the Print tab in the view strip (the Part prep button is gone); its plate opacity shows only there.
+  if(partPrep.printView){
+    h+='<h3 class="sub-h" style="margin:6px 0 0">Plate</h3>';
+    h+='<div class="dr-f sc-group sl" id="grp-plate" data-pp-row="plate"><label>Plate opacity <em>%</em></label><div class="dr-pair"><input type="range" class="dr-range" min="0" max="100" step="5" value="'+partPrep.plateOpacity+'" oninput="ppSetPlateOpacity(this.value)" aria-label="Build plate opacity"><span id="ppPlateOpVal">'+partPrep.plateOpacity+' %</span></div>'+
+       '<div class="dr-leg row-extra">'+(p.supports?'<span><i class="dr-sw red"></i>needs support</span><span><i class="dr-sw amb"></i>within 10° of limit</span>':'')+'<span><i class="dr-sw jade"></i>on plate</span></div></div>';
+  }
   h+='</div>';
-  if(partPrep.printView) h+='<div class="dr-leg">'+(p.supports?'<span><i class="dr-sw red"></i>needs support</span><span><i class="dr-sw amb"></i>within 10° of limit</span>':'')+'<span><i class="dr-sw jade"></i>on plate</span></div>';
-  h+='</div></div>';
   return h;
 }
 function ppOrientNote(){

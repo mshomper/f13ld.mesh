@@ -21,6 +21,9 @@
 <link rel="stylesheet" href="viewstrip.css">
 <link rel="stylesheet" href="rail.css">
 <link rel="stylesheet" href="dock.css">
+<!-- UI refresh stage 3: liquid widgets (template f13ui-style.css + mesh rules at its end) and the shared F13LD help system -->
+<link rel="stylesheet" href="f13ui.css">
+<link rel="stylesheet" href="help.css">
 </head>
 <body>
 <div id="container">
@@ -270,6 +273,8 @@
 <script defer src="01-config.js"></script>
 <script defer src="02-html.js"></script>
 <script defer src="03-registry.js"></script>
+<!-- UI refresh stage 3: the liquid-ui kit (liquid-ui main 5251e4b, web/dist/liquid-ui.js, byte-exact; never edit here) -->
+<script defer src="04-liquid-ui.js"></script>
 <!-- Design-tool families: one descriptor each (see 03-registry.js) -->
 <script defer src="families/fam-tpms.js"></script>
 <script defer src="families/fam-noise.js"></script>
@@ -309,6 +314,13 @@
 <script defer src="56-dock.js"></script>
 <!-- UI refresh stage 2: sections (one at a time) + phone bottom sheet; window.F13UI (template layout.js) -->
 <script defer src="57-layout.js"></script>
+<!-- Stage 3: the wire (template f13ui-wire.js, only its CONFIG block is mesh's). NOT deferred on purpose: the wire mounts
+     once the DOM is ready (it waits for DOMContentLoaded + one task when document.readyState is 'loading'); a deferred
+     script runs with readyState 'interactive' and would mount before 56-dock.js has built the Export controls. It
+     does nothing at parse time but define F13UI.ready, so it needs none of the files above. -->
+<script src="58-f13ui-wire.js"></script>
+<script defer src="59-help.js"></script>
+<script defer src="59-mesh-widgets.js"></script>
 <script defer src="60-export-ui.js"></script>
 <script defer src="61-export.js"></script>
 <script defer src="62-threemf.js"></script>

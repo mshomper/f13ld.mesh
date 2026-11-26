@@ -516,7 +516,7 @@ function rlEdPart(id){
   const key=['p',id,fill,assignments.get(id),gid,trimOk,trimOn,gid?weldGroupColor(gid):'',recipeOrder.join(','),rlTopoKey()].join('|');
   let h='<div class="rl-ed"><div class="rl-ch"><span class="rl-lbl">'+esc(rlName(id).toUpperCase())+'</span><div class="rl-r"><span class="rl-mini">'+(r?esc(FAMILY_LABEL[r.family]||r.family):'solid')+'</span></div></div><div class="rl-cb rl-eb">';
   // Weld row
-  h+='<div class="rl-erow"><label>Weld</label>';
+  h+='<div class="rl-erow sc-group"><label>Weld</label>';
   if(gid){
     h+='<div class="rl-pair"><span class="rl-in">In Weld '+weldGroupLetter(gid)+'</span><button type="button" class="rl-sbtn" data-act="goWeld">Edit weld</button><button type="button" class="rl-sbtn warn" data-act="leaveMe">'+rlIc('unlink')+'Leave</button></div>';
   }else{
@@ -528,28 +528,29 @@ function rlEdPart(id){
   }
   h+='</div>';
   // Fill
-  h+='<div class="rl-erow"><label>Fill</label>'+rlSeg('fill',[['solid','Solid'],['lattice','Lattice',noRec],['skin','Lattice + skin',noRec]], fill)+'</div>';
+  h+='<div class="rl-erow sc-group"><label>Fill</label>'+rlSeg('fill',[['solid','Solid'],['lattice','Lattice',noRec],['skin','Lattice + skin',noRec]], fill)+'</div>';
   if(fill==='solid'){
     h+=rlHint(noRec?'Add a recipe (left, above) to fill this part with a lattice.':'Exported exactly as imported. Drag a recipe onto this part, or pick Lattice, to fill it.');
   }else{
-    h+='<div class="rl-erow"><label>Recipe</label><select data-sel="recipe" aria-label="Recipe">'+recipeOrder.filter(x=>recipes.has(x)).map(x=>'<option value="'+esc(x)+'"'+(x===assignments.get(id)?' selected':'')+'>'+esc(rlRecipeLabel(recipes.get(x)))+'</option>').join('')+'</select></div>';
-    if(fill==='skin') h+='<div class="rl-erow"><label>Skin thickness <em>mm</em></label>'+rlSlider('skin','Skin thickness',0.1,2,0.05)+'</div>';
+    h+='<div class="rl-erow sc-group"><label>Recipe</label><select data-sel="recipe" aria-label="Recipe">'+recipeOrder.filter(x=>recipes.has(x)).map(x=>'<option value="'+esc(x)+'"'+(x===assignments.get(id)?' selected':'')+'>'+esc(rlRecipeLabel(recipes.get(x)))+'</option>').join('')+'</select></div>';
+    if(fill==='skin') h+='<div class="rl-erow sc-group"><label>Skin thickness <em>mm</em></label>'+rlSlider('skin','Skin thickness',0.1,2,0.05)+'</div>';
     const cell=rlGet('cell');
-    h+='<div class="rl-erow"><label>Cell size <em>mm</em></label>'+rlSlider('cell','Cell size',0,0,0.1,null,null,{noRange:true})+'</div>'+
-       '<div class="rl-erow"><label>Wall offset <em>mm</em></label>'+rlSlider('isoOffsetMm','Wall offset',-2,2,0.01)+'</div>'+
-       '<div class="rl-erow"><label>Rotation <em>deg</em></label>'+rlSlider('rotXDeg','Rotate X',-180,180,1,null,'X')+rlSlider('rotYDeg','Rotate Y',-180,180,1,null,'Y')+rlSlider('rotZDeg','Rotate Z',-180,180,1,null,'Z')+'</div>'+
-       '<div class="rl-erow"><label>Shift <em>mm · one period each way</em></label>'+rlShiftSliders(r, cell)+
+    h+='<div class="rl-erow sc-group"><label>Cell size <em>mm</em></label>'+rlSlider('cell','Cell size',0,0,0.1,null,null,{noRange:true})+'</div>'+
+       '<div class="rl-erow sc-group"><label>Wall offset <em>mm</em></label>'+rlSlider('isoOffsetMm','Wall offset',-2,2,0.01)+'</div>'+
+       '<div class="rl-erow sc-group"><label>Rotation <em>deg</em></label>'+rlSlider('rotXDeg','Rotate X',-180,180,1,null,'X')+rlSlider('rotYDeg','Rotate Y',-180,180,1,null,'Y')+rlSlider('rotZDeg','Rotate Z',-180,180,1,null,'Z')+'</div>'+
+       '<div class="rl-erow sc-group"><label>Shift <em>mm · one period each way</em></label>'+rlShiftSliders(r, cell)+
          '<button type="button" class="rl-sbtn rl-reset" data-act="xreset">'+rlIc('undo')+'Reset rotation, shift and wall offset</button></div>';
     if(trimOk){
-      h+='<div class="rl-erow"><label>Trim to nodes</label><div class="rl-pair"><button type="button" class="rl-sw'+(trimOn?' on':'')+'" data-act="trim" aria-label="Trim struts to nodes" aria-pressed="'+trimOn+'"></button>'+
-         (trimOn?'<span class="rl-mini">inset ×</span><input type="number" class="rl-num" data-k="inset" min="1" max="2" step="0.1" value="'+rlNum(rlGet('inset'))+'" aria-label="Trim inset multiplier">':'')+'</div></div>';
+      h+='<div class="rl-erow sc-group"><label>Trim to nodes</label><div class="rl-pair"><button type="button" class="rl-sw'+(trimOn?' on':'')+'" data-act="trim" aria-label="Trim struts to nodes" aria-pressed="'+trimOn+'"></button></div></div>';
+      // stage 3: the inset is a slider (1 to 2), the number box beside it stays as the typed fallback
+      if(trimOn) h+='<div class="rl-erow sc-group"><label>Trim inset <em>× cell</em></label>'+rlSlider('inset','Trim inset multiplier',1,2,0.1)+'</div>';
     }
   }
   // Colour: a weld member is drawn in its weld's colour (set on the weld)
   if(gid){
-    h+='<div class="rl-erow"><label>Viewport colour</label><div class="rl-pair"><span class="rl-fsw rl-fsw-dot" style="background:'+esc(weldGroupColor(gid))+'"></span><span class="rl-hint">Shown in Weld '+weldGroupLetter(gid)+'\'s colour</span><button type="button" class="rl-sbtn" data-act="goWeld">Edit weld</button></div></div>';
+    h+='<div class="rl-erow sc-group"><label>Viewport colour</label><div class="rl-pair"><span class="rl-fsw rl-fsw-dot" style="background:'+esc(weldGroupColor(gid))+'"></span><span class="rl-hint">Shown in Weld '+weldGroupLetter(gid)+'\'s colour</span><button type="button" class="rl-sbtn" data-act="goWeld">Edit weld</button></div></div>';
   }else{
-    h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('color', b.colorHex, rlDefBodyColour(id))+'</div>';
+    h+='<div class="rl-erow sc-group"><label>Viewport colour</label>'+rlColourRow('color', b.colorHex, rlDefBodyColour(id))+'</div>';
   }
   // v0.12.0: remove the part (two taps: the first asks, the second removes)
   h+='<button type="button" class="rl-sbtn warn rl-rm" data-act="rmPart">'+rlIc('trash')+'Remove part</button>';
@@ -567,20 +568,20 @@ function rlEdWeld(gid){
   for(const o of bodyOrder){ if(!bodies.has(o)||mem.includes(o)) continue; const og=bodyGroup.get(o); if(og) continue; opts.push(['p:'+o,rlName(o)]); }
   for(const x of weldGroups.keys()) if(x!==gid) opts.push(['g:'+x,'Weld '+weldGroupLetter(x)+' (merge)']);
   let h='<div class="rl-ed"><div class="rl-ch"><span class="rl-lbl">WELD '+weldGroupLetter(gid)+' · '+mem.length+' PARTS</span><div class="rl-r"><span class="rl-mini">one part on export</span></div></div><div class="rl-cb rl-eb">';
-  h+='<div class="rl-erow"><label>Parts in this weld</label><div class="rl-mlist">'+mem.map(id=>{
+  h+='<div class="rl-erow sc-group"><label>Parts in this weld</label><div class="rl-mlist">'+mem.map(id=>{
     const f=bodyFill(id), r=f!=='solid'?recipes.get(assignments.get(id)):null;
     return '<div class="rl-mrow" data-body-id="'+esc(id)+'"><button type="button" class="rl-mname" data-act="pickPart" title="Edit this part">'+esc(rlName(id))+'</button><small>'+(r?esc(FAMILY_LABEL[r.family]||r.family).toLowerCase():'solid')+'</small>'+
       '<button type="button" class="rl-ibtn" data-act="out" title="Take out of the weld" aria-label="Take out of the weld">'+rlIc('unlink')+'</button></div>';
   }).join('')+'</div>'+
     (opts.length?'<select data-sel="addTo" aria-label="Add a part or weld"><option value="">Add a part or weld…</option>'+opts.map(o=>'<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>').join('')+'</select>':'')+'</div>';
-  h+='<div class="rl-erow"><label>Fillet radius <em>mm</em></label>'+rlSlider('w.fillet','Fillet radius',0,1.5,0.05,gid)+'</div>';
-  h+='<div class="rl-erow"><label>Join rule</label>'+rlSeg('rule',[['union','Union'],['anchor','Anchor',!mix],['graded','Graded',!mix]], rule)+
+  h+='<div class="rl-erow sc-group"><label>Fillet radius <em>mm</em></label>'+rlSlider('w.fillet','Fillet radius',0,1.5,0.05,gid)+'</div>';
+  h+='<div class="rl-erow sc-group"><label>Join rule</label>'+rlSeg('rule',[['union','Union'],['anchor','Anchor',!mix],['graded','Graded',!mix]], rule)+
      (mix?'':rlHint('Anchor and Graded need a solid part and a lattice part in the weld.'))+
      rlHint(({union:'Plain union with the fillet above.',anchor:'The lattice runs into the solid by the depth below, so it bonds through the joint instead of touching at a face.',graded:'Lattice walls thicken toward the solid over the distance below.'})[rule])+'</div>';
-  if(rule==='anchor') h+='<div class="rl-erow"><label>Anchor depth <em>mm</em></label>'+rlSlider('w.anchor','Anchor depth',0,2,0.1,gid)+'</div>';
-  if(rule==='graded') h+='<div class="rl-erow"><label>Grade over <em>mm</em></label>'+rlSlider('w.grade','Grade distance',0.2,5,0.1,gid)+'</div>';
-  h+='<div class="rl-erow"><label>Show joins</label><div class="rl-pair"><button type="button" class="rl-sw'+(g.showJoins?' on':'')+'" data-act="joins" aria-label="Show joins" aria-pressed="'+!!g.showJoins+'"></button><span class="rl-mini">highlight where parts meet</span></div></div>';
-  h+='<div class="rl-erow"><label>Viewport colour</label>'+rlColourRow('wcolor', g.colorHex, rlDefWeldColour(gid))+'</div>';
+  if(rule==='anchor') h+='<div class="rl-erow sc-group"><label>Anchor depth <em>mm</em></label>'+rlSlider('w.anchor','Anchor depth',0,2,0.1,gid)+'</div>';
+  if(rule==='graded') h+='<div class="rl-erow sc-group"><label>Grade over <em>mm</em></label>'+rlSlider('w.grade','Grade distance',0.2,5,0.1,gid)+'</div>';
+  h+='<div class="rl-erow sc-group"><label>Show joins</label><div class="rl-pair"><button type="button" class="rl-sw'+(g.showJoins?' on':'')+'" data-act="joins" aria-label="Show joins" aria-pressed="'+!!g.showJoins+'"></button><span class="rl-mini">highlight where parts meet</span></div></div>';
+  h+='<div class="rl-erow sc-group"><label>Viewport colour</label>'+rlColourRow('wcolor', g.colorHex, rlDefWeldColour(gid))+'</div>';
   h+='<button type="button" class="rl-sbtn warn rl-wide" data-act="sepAll">'+rlIc('split')+'Separate all parts</button>';
   return {key, html:h+'</div></div>'};
 }

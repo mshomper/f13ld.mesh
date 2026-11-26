@@ -42,7 +42,7 @@
   tabsEl.setAttribute('role','tablist');
   tabsEl.setAttribute('aria-label','View');
   tabsEl.innerHTML=TABS.map(function(t){
-    return '<button type="button" class="vtab" role="tab" data-v="'+t.id+'" title="'+t.tip+'"><span class="ti">'+ico(t.icon,14)+'</span><span class="vt-l">'+t.label+'</span></button>';
+    return '<button type="button" class="vtab" role="tab" id="vtab-'+t.id+'" data-v="'+t.id+'" title="'+t.tip+'"><span class="ti">'+ico(t.icon,14)+'</span><span class="vt-l">'+t.label+'</span></button>';
   }).join('');
   var tabBtns=[].slice.call(tabsEl.querySelectorAll('.vtab'));
 
@@ -96,14 +96,16 @@
   panel.setAttribute('role','group'); panel.setAttribute('aria-label','Section plane');
   panel.innerHTML=
     '<span class="sp-t">CUT</span>'+
-    '<div id="w-clip"></div>'+   // stage 3: clip radio mounts here over #secAxis
-    '<div class="sp-seg" id="secAxis">'+
+    '<div id="w-clip"></div>'+   // stage 3: clip radio mounts here over #secAxis (the native axis buttons stay as state)
+    '<div class="sp-seg" id="secAxis" data-native="clip">'+
       '<button type="button" data-ax="0" class="on" title="Plane normal along X" style="--ax:#f87171">X</button>'+
       '<button type="button" data-ax="1" title="Plane normal along Y" style="--ax:#4ade80">Y</button>'+
       '<button type="button" data-ax="2" title="Plane normal along Z" style="--ax:#60a5fa">Z</button>'+
     '</div>'+
-    '<input type="range" id="secPos" min="-100" max="100" step="1" value="0" aria-label="Section position">'+
-    '<span class="sp-read" id="secRead">0.00 mm</span>'+
+    // stage 3: the row is a slider row for the wire (the widget shows the mm readout as its value; #secRead stays native-only)
+    '<div class="sc-group sl" data-w-slider="secPos"><label>Position</label>'+
+      '<input type="range" id="secPos" min="-100" max="100" step="1" value="0" aria-label="Section position">'+
+      '<span class="sp-read" id="secRead">0.00 mm</span></div>'+
     '<button type="button" class="sp-flip" id="secFlip" title="Flip which side is cut away" aria-label="Flip cut side" aria-pressed="false">'+ico(IC.flip,14)+'</button>';
   area.appendChild(panel);
   var posEl=panel.querySelector('#secPos'), readEl=panel.querySelector('#secRead');

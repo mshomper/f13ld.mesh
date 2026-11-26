@@ -98,20 +98,20 @@ function dockEnsure(){
   expBody.innerHTML=
     '<h3 class="sub-h" style="margin-top:0">Mesh</h3>'+
     '<div class="dr-grid">'+
-      '<div class="dr-f sc-group" id="grp-quality"><label>Quality</label><div id="w-quality"></div><div class="dr-chips" id="qualChips">'+
+      '<div class="dr-f sc-group" id="grp-quality"><label>Quality</label><div id="w-quality"></div><div class="dr-chips" id="qualChips" data-native="seg">'+
         ['draft','low','med','high','ultra'].map(q=>{ const N=q[0].toUpperCase()+q.slice(1); return '<button type="button" class="dr-chip" id="q'+N+'" onclick="setQual(\''+q+'\')"><span class="dr-ql-n">'+N+'</span><small class="ql" id="ql'+N+'">—</small></button>'; }).join('')+
       '</div><div class="dr-hint">Triangle edge length of the exported mesh.</div></div>'+
-      '<div class="dr-f sc-group" id="grp-domain"><label for="expDomainMm">Domain size (open cube)</label><div id="w-domain"></div><div class="dr-pair"><input type="number" id="expDomainMm" class="dr-num" min="1" max="100" step="1" value="'+((typeof exportDomainMm!=='undefined')?exportDomainMm:10)+'" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()"><span>mm</span></div><div class="dr-hint" id="expDomainHint"></div></div>'+
-      '<div class="dr-f sc-group" id="grp-mesher"><label for="expMesher">Mesher</label><div id="w-mesher"></div><select id="expMesher" class="dr-sel" onchange="setExportMesher(this.value)">'+
+      '<div class="dr-f sc-group sl" id="grp-domain" data-w-slider="expDomainMm"><label for="expDomainMm">Domain size (open cube)</label><div class="dr-pair"><input type="number" id="expDomainMm" class="dr-num" min="1" max="100" step="1" value="'+((typeof exportDomainMm!=='undefined')?exportDomainMm:10)+'" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()"><span>mm</span></div><div class="dr-hint row-extra" id="expDomainHint"></div></div>'+
+      '<div class="dr-f sc-group" id="grp-mesher"><label for="expMesher">Mesher</label><select id="expMesher" class="dr-sel" onchange="setExportMesher(this.value)">'+
         [['auto','Auto'],['slab','Slab · every core'],['classic','Classic · Manifold']].map(o=>'<option value="'+o[0]+'"'+(_dkMesher()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-      '</select><div class="dr-hint">Auto meshes with Classic and switches to Slab when Classic runs out of memory or its mesh comes out torn. Slab splits the part into layers and meshes them on every core. Welds follow this setting too.</div></div>'+
-      '<div class="dr-f sc-group" id="grp-loose"><label for="expLoose">Loose pieces</label><div id="w-loose"></div><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
+      '</select><div class="dr-hint">Auto tries Classic, then Slab if Classic runs short of memory or tears.</div></div>'+
+      '<div class="dr-f sc-group" id="grp-loose"><label for="expLoose">Loose pieces</label><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
         [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-      '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+
-      // v0.16.5: Simplify (60-export-ui.js exportChecksPref, "fast checks"); helper text in the hover tooltip
-      '<div class="dr-f sc-group" id="grp-checks" title="While the slab mesher simplifies, it keeps checking that the mesh has not torn open. Fast (the default) does those checks a quicker way and gives the same mesh; on test parts simplify took about a fifth to a half less time. Standard is the older, slower way, kept for comparison. The classic mesher is not affected."><label for="expChecks">Simplify</label><div id="w-checks"></div><select id="expChecks" class="dr-sel" onchange="setExportChecks(this.value)">'+
+      '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells.</div></div>'+
+      // v0.16.5: Simplify (60-export-ui.js exportChecksPref, "fast checks"); the long explanation is the Simplify help card (59-help.js)
+      '<div class="dr-f sc-group" id="grp-checks"><label for="expChecks">Simplify</label><select id="expChecks" class="dr-sel" onchange="setExportChecks(this.value)">'+
         [['standard','Standard'],['fast','Fast']].map(o=>'<option value="'+o[0]+'"'+(_dkChecks()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-      '</select></div>'+
+      '</select><div class="dr-hint">Fast gives the same mesh in less time.</div></div>'+
     '</div>'+
     '<h3 class="sub-h">File</h3>'+
     '<div class="dr-grid">'+

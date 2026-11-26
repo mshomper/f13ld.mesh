@@ -138,7 +138,7 @@ const sel = (page, id) => page.evaluate(id => (window.railSelectPart || window.s
   check(s7.bakes === s6.bakes, 'weld member wall offset: no bake', `bakes +${s7.bakes - s6.bakes}`);
   // 7. A newer preview cancels the running one; nothing is left running.
   const c0 = s7.cancelled;
-  await page.evaluate(() => { triggerPreview('high'); setTimeout(() => triggerPreview('med'), 30); });
+  await page.evaluate(() => { triggerPreview('ultra'); setTimeout(() => triggerPreview('med'), 30); });
   await page.waitForTimeout(200); await idle();
   let s8 = await stats();
   const w = await page.evaluate(() => window.F13LD_previewBake.workers());

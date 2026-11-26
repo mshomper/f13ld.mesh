@@ -129,7 +129,7 @@ T['D6 structure edit keeps the selected preview quality'] = async () => {
     const p = await open(root, q(R['noise-ridged-half'].recipe)); await idle(p);
     await addBody(p, F('body.stl'));
     await uiAssignRecipe(p); await idle(p);
-    await p.click('#btnMed'); await idle(p);
+    await p.evaluate(() => setQual('med')); await idle(p);
     await uiSetXform(p, 'rotZDeg', 20);
     await p.waitForTimeout(800); await idle(p);
     const r = await p.evaluate(() => rm._quality); await p.close2(); return { quality: String(r) };

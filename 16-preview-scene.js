@@ -112,7 +112,7 @@ function _scSelected(id){
 function previewSceneSig(quality){
   const p=[quality,PSC.ver,PSC.lowDetail?1:0,activeBodyId,bodies.size,
     (typeof railSel==='function'&&railSel())?JSON.stringify(railSel()):'',
-    importedShape?1:0, currentRecipe?currentRecipe.id||currentRecipe.family:'',
+    importedShape?1:0, (typeof currentRecipe!=='undefined'&&currentRecipe)?currentRecipe.id||currentRecipe.family:'',
     document.getElementById('shapeCellSizeMm')?.value];
   for(const id of bodyOrder){
     const b=bodies.get(id); if(!b) continue;
@@ -139,7 +139,7 @@ function buildPreviewScene(quality){
     baseStep:10/(PREVIEW_BAKE_N[quality]||64), cube:false};
   // ── Open cube (no part): the recipe drawn in its own world frame.
   if(!importedShape || bodies.size===0){
-    if(!currentRecipe) return null;
+    if(typeof currentRecipe==='undefined'||!currentRecipe) return null;
     const nd=sceneSourceNeed(currentRecipe, quality, null, 10, _SC_IDENT);
     nd.forActive=true; nd.bodyId=null;
     const j=addNeed(nd);

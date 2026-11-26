@@ -6,6 +6,8 @@ Converts implicit scaffold recipes from F13LD's design tools into watertight 3MF
 
 **Live tool:** [mshomper.github.io/f13ld.mesh](https://mshomper.github.io/f13ld.mesh)
 
+<img width="1440" height="900" alt="F13LD.mesh" src="docs/screenshot.png" />
+
 ---
 
 ## What it does
@@ -97,16 +99,20 @@ The **part prep** section above the export controls gives the numbers you need t
 - **Estimate.** Volume filled, porosity, part volume, mass and build size update live from the preview. Volume filled is measured against the export cube, or against the bounding shape's own volume for shape-clipped parts.
 - **Measured.** After each export the exported mesh is measured exactly: volume, mass, volume filled, surface area, area ÷ volume, build size, separate pieces, the area of downward surfaces in 15° bands, the area needing support, its footprint on the plate, and the plate contact area. **Download print report** saves all of it as Markdown.
 
-### Layout (v0.12.0)
+### Layout (v0.17.0)
 
-Same pattern as F13LD.lab and F13LD.sweep:
+Same standard as the other F13LD tools (liquid-ui controls):
 
-- **Header:** Open recipe, Add part, and a status mark that ripples while the tool works.
-- **View strip:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only). The view menu sits at the right. Render quality is automatic: while you turn the view or drag a control the preview draws quicker, lower-resolution frames, then one sharp frame a moment after you stop; nothing redraws while idle.
-- **Left rail:** recipes (family-coloured cards, details on hover or tap; drag one onto a part to fill it), parts (welds shown as cards with their members inside), and the editor for whatever is selected, right under the list so the view stays clear.
-- **Inspector (right):** Estimate from the preview, Measured after an export (with the field · mesh · simplify split and the print report), Homogenization.
-- **Dock:** Configure opens a drawer with Part prep and Export; the dock tags summarise them (click one to jump to its tab); Export 3MF with its estimate. While an export runs, a strip above the dock shows the stage, elapsed time and Cancel.
-- **Phone:** one column, viewport first, the dock stays at the bottom and the drawer opens as a sheet.
+- **Header:** Open recipe, Add part, help, and a status mark that ripples while the tool works.
+- **Viewer:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only) sit over the view, with the view menu at the right. Render quality is automatic: while you turn the view or drag a control the preview draws quicker, lower-resolution frames, then one sharp frame a moment after you stop; nothing redraws while idle.
+- **Control column (left), one section at a time:**
+  - **01 Design:** recipes (family-coloured cards; drag one onto a part to fill it), parts (welds shown as cards with their members inside), and the editor for whatever is selected. Wall offset, rotation and shift fold into one Transform row with a summary; it remembers whether you left it open.
+  - **02 Prep:** process, material, build orientation, supports, plate.
+  - **03 Export:** quality, domain size, mesher, loose pieces, simplify.
+  - **Footer, under every section:** the export estimate and Export 3MF. While an export runs, the button shows the stage and time left, with Cancel beside it.
+- **Inspector (right, 1280 px and wider):** Estimate, Measured after an export (with the field · mesh · simplify split and the print report), Homogenization. Below 1280 px they move into Prep and Export. Measured and the print report clear when the design changes.
+- **Help:** an (i) beside each control opens its card; "show" jumps to the control.
+- **Phone:** viewer on top, the control column as a bottom sheet with a Design / Prep / Export tab bar.
 
 ### Preview (v0.14.0)
 
@@ -166,9 +172,11 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | File | What it holds |
 |---|---|
 | `index.html` | Page markup, import map, script tags |
-| `ui12.css` · `viewstrip.css` · `rail.css` · `dock.css` | v0.12.0 layout and component styles (on top of `mesh.css`) |
+| `ui12.css` · `viewstrip.css` · `rail.css` · `dock.css` | Layout and component styles on the F13LD tokens (v0.17.0; on top of `mesh.css`) |
+| `f13ui.css` · `help.css` | liquid-ui widget styles (template `f13ui-style.css` + mesh rules) · help cards |
 | `mesh.css` | All styles |
 | `00-libs.js` · `01-config.js` · `02-html.js` | Library loader · version + worker URL helper · HTML escaping |
+| `04-liquid-ui.js` | liquid-ui kit bundle, vendored byte-exact (never edit; rebuild in liquid-ui) |
 | `03-registry.js` | Family and loader registries (`registerFamily`, `registerLoader`), family labels/colours, type badge |
 | `families/fam-*.js` | One descriptor per design tool: detection, validation, summary, periodicity, bake bounds, export caps and estimates |
 | `loaders/ld-*.js` | One file per recipe source: `?queue=`, `?r=`, `#r=` |
@@ -183,7 +191,8 @@ Files load in numeric order and share one global scope, so a file can use anythi
 | `40-mesh-worker-host.js` · `41-quality-estimate.js` | Quality tiers, mesh worker launcher, cancel · grid clamp and estimates |
 | `42-preview-bake.js` · `43-bundle-cells.js` · `44-preview-trigger.js` · `45-structure-handlers.js` | Preview pipeline (v0.13.0: warm bake-worker pool, slab split, baked-field cache in `42`; v0.14.0: keyed cancel and shared in-flight bakes, `triggerPreview` = quality + scene settle in `44`) |
 | `50-recipe-router.js` · `51-summaries.js` | Recipe family detection + validation · summary cards |
-| `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` · `55-rail.js` · `56-dock.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · homogenization card · left rail (recipes, parts, welds, editor) · dock, Configure drawer, progress strip, inspector |
+| `52-materials.js` · `53-part-prep.js` · `54-sidebar.js` · `55-rail.js` · `56-dock.js` | Print processes and material densities (from F13LD.lab) · part prep panel, estimate, measured stats, build orientation, print report · homogenization card · recipes, parts, welds and the part / weld editor · export footer, Export section, inspector placement |
+| `57-layout.js` · `58-f13ui-wire.js` · `59-help.js` · `59-mesh-widgets.js` | Sections, rail, phone sheet (template `layout.js`) · liquid widgets over the native controls (template wire, mesh `CONFIG`) · help cards · widgets for rows the app rebuilds, export progress |
 | `60-export-ui.js` · `61-export.js` · `62-threemf.js` | Export pipeline and 3MF writer |
 | `70-view-state.js` · `99-init.js` | Overlay / error / recipe view state · boot, `?r=`, `?queue=`, file drop |
 
@@ -230,19 +239,9 @@ Worker files are requested with `?v=<version>` so a deploy never mixes a fresh p
 
 ---
 
-## F13LD suite
+## Part of the F13LD Suite
 
-| Tool | Description |
-|---|---|
-| [f13ld.tpms-builder](https://mshomper.github.io/f13ld.tpms) | Periodic TPMS surface design with PI-TPMS and FFT-CG homogenisation |
-| [f13ld.beam](https://mshomper.github.io/f13ld.beam) | Strut/beam lattice design — multiple unit-cell topologies, 3MF Beam Lattice export |
-| [f13ld.bundle](https://mshomper.github.io/f13ld.bundle) | Twisted fiber bundles, helicoids, braids, and weaves |
-| [f13ld.noise](https://mshomper.github.io/f13ld.noise) | Stochastic noise scaffold explorer |
-| [f13ld.grain](https://mshomper.github.io/f13ld.grain) | Spinodoid / Gaussian / hyperuniform anisotropic grain fields |
-| [f13ld.foam](https://mshomper.github.io/f13ld.foam) | Voronoi foams — open, closed and Plateau-border cellular scaffolds |
-| **f13ld.mesh** | This tool — implicit scaffold → watertight 3MF |
-
-All tools share a common JSON recipe schema. Any recipe exported from one tool can be ingested by f13ld.mesh.
+The full tool list, what each one does and how recipes move between them: **[f13ld.app](https://f13ld.app)**.
 
 ---
 

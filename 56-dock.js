@@ -1,21 +1,24 @@
 /* ============================================================
-   F13LD.mesh · 56-dock.js  (v0.12.0)
-   The dock (Configure, summary tags, estimate, Export 3MF), the Configure
-   drawer (Part prep | Export tabs), the export progress strip and the right
-   inspector cards (Estimate, Measured, Homogenization).
+   F13LD.mesh · 56-dock.js  (v0.12.0; UI refresh stage 2 layout)
+   The footer under every section (estimate line, Export 3MF, export progress strip), the
+   Export section's controls, and the inspector cards (Estimate, Measured, Homogenization).
+
+   Stage 2: the Configure drawer and the dock tags are gone. Part prep and Export are
+   sections of the control pane (index.html: #sec-prep holds #ppBox, #sec-export holds
+   #expBody). The inspector stays on the right at 1280 px and wider; below that its cards
+   move into Prep (Estimate) and Export (Measured, Homogenization) — dockPlaceInspector.
 
    Everything is built lazily by dockEnsure() — the first call comes after
    all scripts have loaded — so nothing here reads a later file at load time.
-   The old sidebar panel is gone; its controls keep their element ids:
-     drawer, Part prep tab : #ppBox (53-part-prep.js ppInner)
-     drawer, Export tab    : #qDraft … #qUltra, #qlDraft …, #expDomainMm,
-                             #expEstimate, #expFileName, #expCoresNote
-     dock                  : #expBtn, #dockMeta
-     progress strip        : #expElapsed, #pgStage, #pgCancel
-     inspector             : #ppEst (Estimate), #expReport + #ppExact
-                             (Measured), homogenization block (Homogenization)
-   dockRefresh() re-reads state and repaints the tags, tab hints and estimate;
-   it runs from updateExportEstimate (41) and ppSave (53).
+   Element ids kept for the app and the tests:
+     Part prep section : #ppBox (53-part-prep.js ppInner)
+     Export section    : #qDraft … #qUltra, #qlDraft …, #expDomainMm,
+                         #expEstimate, #expFileName, #expCoresNote, #expMesher, #expLoose, #expChecks
+     footer            : #expBtn, #dockMeta, progress strip #pgFill #pgStage #pgEta #pgCancel #expElapsed
+     inspector cards   : #ppEst (Estimate), #expReport + #ppExact (Measured), homogenization block
+   dockRefresh() re-reads state and repaints the estimate line, quality chips and export
+   fields; it runs from updateExportEstimate (41) and ppSave (53).
+   dockOpen / dockTab / dockClose stay as thin shims over F13UI.showSection (57-layout.js).
    ============================================================ */
 'use strict';
 
@@ -51,6 +54,26 @@ function dockFold(k, folded){
   _dkFold[k]=!!folded; _dkSaveFold();
 }
 
+// ── Inspector placement ─────────────────────────────────────────────────────
+// >= 1280 px: the cards sit in #inspector, right of the viewer. Below: Estimate goes
+// under the Prep controls, Measured and Homogenization into Export's Results group.
+// Only the three card hosts move (ids and contents unchanged).
+const _dkWide=window.matchMedia?window.matchMedia('(min-width:1280px)'):null;
+function dockPlaceInspector(){
+  const insp=_dkEl('inspector'), est=_dkEl('inspEst'), meas=_dkEl('inspMeas'), homo=_dkEl('inspHomo');
+  const hEst=_dkEl('resEst'), hOut=_dkEl('resOut');
+  if(!insp||!est||!meas||!homo||!hEst||!hOut) return;
+  const wide=!_dkWide||_dkWide.matches;
+  if(wide){ for(const h of [est,meas,homo]) if(h.parentNode!==insp) insp.appendChild(h); }
+  else{
+    if(est.parentNode!==hEst) hEst.appendChild(est);
+    if(meas.parentNode!==hOut) hOut.appendChild(meas);
+    if(homo.parentNode!==hOut) hOut.appendChild(homo);
+  }
+  hEst.hidden=wide; hOut.hidden=wide;
+}
+if(_dkWide){ if(_dkWide.addEventListener) _dkWide.addEventListener('change',dockPlaceInspector); else _dkWide.addListener(dockPlaceInspector); }
+
 // ── Build ───────────────────────────────────────────────────────────────────
 let _dkBuilt=false;
 function _icard(host, key, label, extra, bodyHtml){
@@ -63,56 +86,40 @@ function _icard(host, key, label, extra, bodyHtml){
 }
 function dockEnsure(){
   if(_dkBuilt) return true;
-  const dock=_dkEl('dock'), drawer=_dkEl('drawer'), prog=_dkEl('progRow');
-  if(!dock||!drawer) return false;
+  const dock=_dkEl('dock'), expBody=_dkEl('expBody'), prog=_dkEl('progRow');
+  if(!dock||!expBody) return false;
   _dkBuilt=true;
-  // Dock
+  // Footer: estimate line + Export 3MF (under every section). #w-run is the stage 3 mount for the progress button.
   dock.innerHTML=
-    '<button type="button" id="cfgBtn" class="dk-cfg" aria-expanded="false" aria-controls="drawer">'+dkIcon('sliders',15)+'<span class="dk-cfg-t">Configure</span>'+dkIcon('chevUp',14,'dk-chev')+'</button>'+
-    '<div class="dk-tags" id="dkTags">'+
-      '<button type="button" class="dk-tag" data-p="prep" title="Process and material"><span class="dk-ti">'+dkIcon('plate')+'</span><b id="dkProc"></b><span id="dkMat"></span></button>'+
-      '<button type="button" class="dk-tag" data-p="prep" title="Build orientation"><span class="dk-ti">'+dkIcon('orient')+'</span><b id="dkOri"></b><span id="dkTilt"></span></button>'+
-      '<button type="button" class="dk-tag dk-static" id="dkTagPart" title="Active part"><span class="dk-ti">'+dkIcon('cube')+'</span><b id="dkPart"></b><span id="dkFill"></span></button>'+
-      '<button type="button" class="dk-tag" data-p="exp" title="Export quality"><span class="dk-ti">'+dkIcon('export')+'</span><b id="dkQual"></b><span id="dkEdge"></span></button>'+
-    '</div>'+
     '<div class="dk-meta" id="dockMeta"></div>'+
+    '<div id="w-run"></div>'+
     '<button type="button" id="expBtn" class="dk-run" onclick="triggerExport()">Export 3MF</button>';
-  // Drawer
-  drawer.setAttribute('role','dialog'); drawer.setAttribute('aria-label','Configure');
-  drawer.innerHTML=
-    '<div class="dr-tabs" id="drTabs" role="tablist">'+
-      '<button type="button" class="dr-tab on" data-p="prep" role="tab" aria-selected="true">'+dkIcon('plate')+'<span class="dr-nm">Part prep</span><span class="dr-mv" id="drMvPrep"></span></button>'+
-      '<button type="button" class="dr-tab" data-p="exp" role="tab" aria-selected="false">'+dkIcon('export')+'<span class="dr-nm">Export</span><span class="dr-mv" id="drMvExp"></span></button>'+
+  // Export section. Rows are .sc-group; w-* divs are the stage 3 widget mounts.
+  expBody.innerHTML=
+    '<h3 class="sub-h" style="margin-top:0">Mesh</h3>'+
+    '<div class="dr-grid">'+
+      '<div class="dr-f sc-group" id="grp-quality"><label>Quality</label><div id="w-quality"></div><div class="dr-chips" id="qualChips">'+
+        ['draft','low','med','high','ultra'].map(q=>{ const N=q[0].toUpperCase()+q.slice(1); return '<button type="button" class="dr-chip" id="q'+N+'" onclick="setQual(\''+q+'\')"><span class="dr-ql-n">'+N+'</span><small class="ql" id="ql'+N+'">—</small></button>'; }).join('')+
+      '</div><div class="dr-hint">Triangle edge length of the exported mesh.</div></div>'+
+      '<div class="dr-f sc-group" id="grp-domain"><label for="expDomainMm">Domain size (open cube)</label><div id="w-domain"></div><div class="dr-pair"><input type="number" id="expDomainMm" class="dr-num" min="1" max="100" step="1" value="'+((typeof exportDomainMm!=='undefined')?exportDomainMm:10)+'" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()"><span>mm</span></div><div class="dr-hint" id="expDomainHint"></div></div>'+
+      '<div class="dr-f sc-group" id="grp-mesher"><label for="expMesher">Mesher</label><div id="w-mesher"></div><select id="expMesher" class="dr-sel" onchange="setExportMesher(this.value)">'+
+        [['auto','Auto'],['slab','Slab · every core'],['classic','Classic · Manifold']].map(o=>'<option value="'+o[0]+'"'+(_dkMesher()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+      '</select><div class="dr-hint">Auto meshes with Classic and switches to Slab when Classic runs out of memory or its mesh comes out torn. Slab splits the part into layers and meshes them on every core. Welds follow this setting too.</div></div>'+
+      '<div class="dr-f sc-group" id="grp-loose"><label for="expLoose">Loose pieces</label><div id="w-loose"></div><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
+        [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+      '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+
+      // v0.16.5: Simplify (60-export-ui.js exportChecksPref, "fast checks"); helper text in the hover tooltip
+      '<div class="dr-f sc-group" id="grp-checks" title="While the slab mesher simplifies, it keeps checking that the mesh has not torn open. Fast (the default) does those checks a quicker way and gives the same mesh; on test parts simplify took about a fifth to a half less time. Standard is the older, slower way, kept for comparison. The classic mesher is not affected."><label for="expChecks">Simplify</label><div id="w-checks"></div><select id="expChecks" class="dr-sel" onchange="setExportChecks(this.value)">'+
+        [['standard','Standard'],['fast','Fast']].map(o=>'<option value="'+o[0]+'"'+(_dkChecks()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
+      '</select></div>'+
     '</div>'+
-    '<div class="dr-panes">'+
-      '<section class="dr-pane on" id="drPrep" data-p="prep">'+
-        '<div class="dr-ph"><div class="dr-pt">Part prep</div><div class="dr-ps">Process, material and how the part sits on the plate. Drives the estimate, the Print view and the measured numbers.</div></div>'+
-        '<div id="ppBox"></div>'+
-      '</section>'+
-      '<section class="dr-pane" id="drExp" data-p="exp">'+
-        '<div class="dr-ph"><div class="dr-pt">Export</div><div class="dr-ps">Mesh quality and size of the 3MF. The estimate learns from your own exports.</div></div>'+
-        '<div class="dr-grid">'+
-          '<div class="dr-f dr-span2"><label>Quality</label><div class="dr-chips" id="qualChips">'+
-            ['draft','low','med','high','ultra'].map(q=>{ const N=q[0].toUpperCase()+q.slice(1); return '<button type="button" class="dr-chip" id="q'+N+'" onclick="setQual(\''+q+'\')"><span class="dr-ql-n">'+N+'</span><small class="ql" id="ql'+N+'">—</small></button>'; }).join('')+
-          '</div><div class="dr-hint">Triangle edge length of the exported mesh.</div></div>'+
-          '<div class="dr-f"><label for="expDomainMm">Domain size (open cube)</label><div class="dr-pair"><input type="number" id="expDomainMm" class="dr-num" min="1" max="100" step="1" value="'+((typeof exportDomainMm!=='undefined')?exportDomainMm:10)+'" oninput="exportDomainMm=Math.max(1,Math.min(100,parseFloat(this.value)||10));updateExportEstimate()"><span>mm</span></div><div class="dr-hint" id="expDomainHint"></div></div>'+
-          '<div class="dr-f"><label>File name</label><div class="dr-file" id="expFileName"></div></div>'+
-          '<div class="dr-f"><label>Cores</label><div class="dr-hint" id="expCoresNote"></div></div>'+
-          '<div class="dr-f"><label for="expMesher">Mesher</label><select id="expMesher" class="dr-sel" onchange="setExportMesher(this.value)">'+
-            [['auto','Auto'],['slab','Slab · every core'],['classic','Classic · Manifold']].map(o=>'<option value="'+o[0]+'"'+(_dkMesher()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-          '</select><div class="dr-hint">Auto meshes with Classic and switches to Slab when Classic runs out of memory or its mesh comes out torn. Slab splits the part into layers and meshes them on every core. Welds follow this setting too.</div></div>'+
-          '<div class="dr-f"><label for="expLoose">Loose pieces</label><select id="expLoose" class="dr-sel" onchange="setExportLoose(this.value)">'+
-            [['specks','Remove specks'],['keep','Keep all'],['largest','Largest piece only']].map(o=>'<option value="'+o[0]+'"'+(_dkLoose()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-          '</select><div class="dr-hint">Specks are loose pieces under 10 mesh cells, left over from meshing. Woven or separate regions and sealed cavities are kept. Largest piece only keeps the biggest piece and the cavities inside it.</div></div>'+
-          // v0.16.5: Simplify (60-export-ui.js exportChecksPref, "fast checks"); helper text in the hover tooltip
-          '<div class="dr-f" title="While the slab mesher simplifies, it keeps checking that the mesh has not torn open. Fast (the default) does those checks a quicker way and gives the same mesh; on test parts simplify took about a fifth to a half less time. Standard is the older, slower way, kept for comparison. The classic mesher is not affected."><label for="expChecks">Simplify</label><select id="expChecks" class="dr-sel" onchange="setExportChecks(this.value)">'+
-            [['standard','Standard'],['fast','Fast']].map(o=>'<option value="'+o[0]+'"'+(_dkChecks()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+
-          '</select></div>'+
-          '<div class="dr-f dr-wide"><label>Estimate</label><div class="dr-est" id="expEstimate"></div></div>'+
-        '</div>'+
-      '</section>'+
+    '<h3 class="sub-h">File</h3>'+
+    '<div class="dr-grid">'+
+      '<div class="dr-f sc-group"><label>File name</label><div class="dr-file" id="expFileName"></div></div>'+
+      '<div class="dr-f sc-group"><label>Cores</label><div class="dr-hint" id="expCoresNote"></div></div>'+
+      '<div class="dr-f sc-group"><label>Estimate</label><div class="dr-est" id="expEstimate"></div></div>'+
     '</div>';
-  // Progress strip
+  // Progress strip (above the footer)
   if(prog){
     prog.innerHTML='<div class="pg-bar"><div class="pg-fill" id="pgFill"></div></div>'+
       '<span class="pg-st" id="pgStage"></span>'+
@@ -129,16 +136,12 @@ function dockEnsure(){
   if(meas) _icard(meas,'meas','MEASURED <b>&middot; last export</b>','','<div id="expReport"></div><div id="ppExact"></div>');
   if(homo){ _icard(homo,'homo','HOMOGENIZATION','<span class="ic-mini" id="homoMethod"></span>','<div id="homoBody"></div>'); homo.hidden=true; }
   for(const [k,id] of [['est','inspEst'],['meas','inspMeas'],['homo','inspHomo']]){ const h=_dkEl(id); if(h){ h.classList.toggle('collapsed',_dkFolded(k)); const b=h.querySelector('[data-fold]'); if(b) b.setAttribute('aria-expanded',String(!_dkFolded(k))); } }
+  dockPlaceInspector();
   // Fill the panels that other modules render into
   if(typeof ppInner==='function') _dkEl('ppBox').innerHTML=ppInner();
   if(typeof ppEstimateHtml==='function') _dkEl('ppEst').innerHTML=ppEstimateHtml();
   if(typeof ppExactHtml==='function') _dkEl('ppExact').innerHTML=ppExactHtml();
-  // Events
-  _dkEl('cfgBtn').addEventListener('click',()=>dockToggle());
-  for(const t of dock.querySelectorAll('.dk-tag[data-p]')) t.addEventListener('click',()=>dockOpen(t.dataset.p));
-  for(const t of drawer.querySelectorAll('.dr-tab')) t.addEventListener('click',()=>dockTab(t.dataset.p));
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape' && drawer.classList.contains('open')) dockClose(); });
-  // An export error or fresh result lands in the Measured card: show it.
+  // An export error or fresh result lands in the Measured card: unfold it.
   const rep=_dkEl('expReport');
   if(rep && window.MutationObserver) new MutationObserver(()=>{
     if(!rep.firstChild) return;
@@ -149,82 +152,37 @@ function dockEnsure(){
   return true;
 }
 
-// ── Drawer ──────────────────────────────────────────────────────────────────
+// ── Sections (the old Configure drawer) ─────────────────────────────────────
+// Shims for callers of the drawer API: 'prep' and 'exp' map to the Prep and Export sections.
 function dockTab(p){
-  if(!dockEnsure()) return;
-  const d=_dkEl('drawer');
-  for(const t of d.querySelectorAll('.dr-tab')){ const on=t.dataset.p===p; t.classList.toggle('on',on); t.setAttribute('aria-selected',String(on)); }
-  for(const s of d.querySelectorAll('.dr-pane')) s.classList.toggle('on', s.dataset.p===p);
+  dockEnsure();
+  if(window.F13UI && F13UI.showSection) F13UI.showSection(p==='exp'||p==='export'?'export':'prep');
 }
-function dockOpen(p){
-  if(!dockEnsure()) return;
-  _dkEl('drawer').classList.add('open'); _dkEl('cfgBtn').classList.add('open'); _dkEl('cfgBtn').setAttribute('aria-expanded','true');
-  if(p) dockTab(p);
-}
-function dockClose(){
-  const d=_dkEl('drawer'); if(!d) return;
-  d.classList.remove('open'); const b=_dkEl('cfgBtn'); if(b){ b.classList.remove('open'); b.setAttribute('aria-expanded','false'); }
-}
-function dockToggle(){ const d=_dkEl('drawer'); if(d && d.classList.contains('open')) dockClose(); else dockOpen(); }
+function dockOpen(p){ dockTab(p||'prep'); }
+function dockClose(){ if(window.F13UI && F13UI.showSection) F13UI.showSection('design'); }
+function dockToggle(){ dockTab('prep'); }
 window.dockOpen=dockOpen; window.dockClose=dockClose; window.dockTab=dockTab;
 
-// ── Tags, tab hints, estimate ───────────────────────────────────────────────
+// ── Estimate line, quality chips, export fields ─────────────────────────────
 function _dkNum(v){ v=+v||0; return String(Math.round(v*100)/100); }
-function _dkProcShort(p){
-  const m=/\(([^)]+)\)/.exec(p.name);
-  return m?m[1].split(' ')[0]:p.name.split(' ')[0];
-}
 function _dkEdgeStr(mm){ return (mm>=0.1?mm.toFixed(2):mm.toFixed(3))+' mm'; }
-// The part tag: the active body (name + what fills it), or the open cube.
-function _dkPart(){
-  try{
-    const wg=(typeof activeGroupId==='function')?activeGroupId():null;
-    if(activeBodyId!==null && bodies.has(activeBodyId)){
-      const b=bodies.get(activeBodyId);
-      const name=String((b.meta&&b.meta.name)||'shape').replace(/\.[^.]+$/,'');
-      if(wg && groupMembers(wg).length>=2) return {name, fill:'weld '+weldGroupLetter(wg)+' · '+groupMembers(wg).length+' bodies'};
-      const rid=assignments.get(activeBodyId);
-      if(isSolidAssignment(rid)||!recipes.has(rid)) return {name, fill:'solid'};
-      const r=recipes.get(rid);
-      const cell=parseFloat(document.getElementById('shapeCellSizeMm')?.value)||b.cellSizeMm||3;
-      return {name, fill:String(r.subtype||r.family||'lattice').toLowerCase()+' · '+_dkNum(cell)+' mm'+(b.fill==='skin'?' · skin':'')};
-    }
-    if(currentRecipe){
-      const r=currentRecipe;
-      return {name:(FAMILY_LABEL[r.family]||r.family).toLowerCase(), fill:(r.subtype?String(r.subtype).toLowerCase()+' · ':'')+'open cube'};
-    }
-  }catch(_){}
-  return {name:'no part', fill:''};
-}
 // Latest estimate, set by updateExportEstimate (41-quality-estimate.js).
 let lastExportEstimate=null;   // {tris, sec, cores, text}
 function dockSetEstimate(info){ lastExportEstimate=info||null; dockRefresh(); }
 function _dkTris(n){ return n>=1e6?(n/1e6).toFixed(1)+' M':(n>=1e3?Math.round(n/1e3)+' k':String(n)); }
 function dockRefresh(){
   if(!dockEnsure()) return;
-  // Part prep tags
-  const p=ppProcess(partPrep.proc), m=ppMaterial();
-  _dkSet('dkProc', _dkProcShort(p));
-  _dkSet('dkMat', (m && m.pp===partPrep.proc)?m.name.replace(/\s*\([^)]*\)/g,'').trim():('custom '+_dkNum(partPrep.customRho)+' g/cm³'));
-  _dkSet('dkOri', partPrep.up);
-  _dkSet('dkTilt', _dkNum(partPrep.tiltX)+'° · '+_dkNum(partPrep.tiltY)+'°');
-  _dkSet('drMvPrep', _dkProcShort(p));
-  // Part tag
-  const pt=_dkPart(); _dkSet('dkPart', pt.name); _dkSet('dkFill', pt.fill);
-  // Export tag, quality chips
+  // Export quality chips
   const q=(typeof currentExportQual!=='undefined')?currentExportQual:'low';
-  const Q=q[0].toUpperCase()+q.slice(1);
-  const edge=(typeof exportEdgeMm==='function')?exportEdgeMm(q):null;
-  const dom=(typeof importedShape!=='undefined'&&importedShape)?'shape':((typeof exportDomainMm!=='undefined'?exportDomainMm:10)+' mm');
-  _dkSet('dkQual', Q); _dkSet('dkEdge', (edge?_dkEdgeStr(edge)+' · ':'')+dom); _dkSet('drMvExp', Q);
   for(const k of ['draft','low','med','high','ultra']){ const b=_dkEl('q'+k[0].toUpperCase()+k.slice(1)); if(b){ b.classList.toggle('active',k===q); b.classList.toggle('on',k===q); b.setAttribute('aria-pressed',String(k===q)); } }
-  const hint=_dkEl('expDomainHint'); if(hint){ const t=(typeof importedShape!=='undefined'&&importedShape)?'Not used while a bounding shape is loaded.':'Edge of the exported cube; one design cell.'; if(hint.textContent!==t) hint.textContent=t; }
+  // Domain size applies to the open cube only: hide the row while a bounding shape is loaded (F14)
+  const hint=_dkEl('expDomainHint'); if(hint){ const t='Edge of the exported cube; one design cell.'; if(hint.textContent!==t) hint.textContent=t; }
   const dm=_dkEl('expDomainMm'); if(dm) dm.closest('.dr-f').classList.toggle('dr-off', !!(typeof importedShape!=='undefined'&&importedShape));
   // File name and cores
   if(typeof exportFileNamePreview==='function') _dkSet('expFileName', exportFileNamePreview());
   const hc=navigator.hardwareConcurrency||2, use=Math.min(15,Math.max(1,hc-1));
   _dkSet('expCoresNote', 'The field bake runs on '+use+' of your '+hc+' cores (all but one, at most 15). Meshing and simplify use one.');
-  // Dock estimate
+  // Footer estimate line
   const meta=_dkEl('dockMeta');
   if(meta){
     const e=lastExportEstimate;
@@ -261,7 +219,6 @@ function dockExportState(on){
   if(!dockEnsure()) return;
   const prog=_dkEl('progRow');
   if(on){
-    dockClose();
     const e=lastExportEstimate;
     if(_dkExport&&_dkExport.timer) clearInterval(_dkExport.timer);
     _dkExport={t0:performance.now(), estSec:e?e.sec:0, pct:null, timer:setInterval(_dkTick,250)};

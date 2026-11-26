@@ -124,7 +124,7 @@ function check(label, ok, detail) { if (!ok) fails++; console.log((ok ? 'PASS ' 
       });
       console.log(name, JSON.stringify(info));
       check(name + ': no sideways overflow', info.overflowX <= 0, info.overflowX);
-      await page.click('#cfgBtn');   // close the drawer again
+      await uiSection(page, 'design');   // back to the Design section (old build: close the drawer)
       await page.screenshot({ path: S + '/sb-' + name + '.png' });
       await page.hover('.rl-rc'); await page.waitForTimeout(400);
       const pop = await page.evaluate(() => { const p = document.getElementById('rlPop'); const r = p.getBoundingClientRect(); return { shown: !p.hidden, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth }; });

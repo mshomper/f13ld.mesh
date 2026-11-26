@@ -96,6 +96,7 @@
   panel.setAttribute('role','group'); panel.setAttribute('aria-label','Section plane');
   panel.innerHTML=
     '<span class="sp-t">CUT</span>'+
+    '<div id="w-clip"></div>'+   // stage 3: clip radio mounts here over #secAxis
     '<div class="sp-seg" id="secAxis">'+
       '<button type="button" data-ax="0" class="on" title="Plane normal along X" style="--ax:#f87171">X</button>'+
       '<button type="button" data-ax="1" title="Plane normal along Y" style="--ax:#4ade80">Y</button>'+
@@ -103,7 +104,7 @@
     '</div>'+
     '<input type="range" id="secPos" min="-100" max="100" step="1" value="0" aria-label="Section position">'+
     '<span class="sp-read" id="secRead">0.00 mm</span>'+
-    '<button type="button" class="sp-flip" id="secFlip" title="Flip which side is cut away" aria-label="Flip cut side">'+ico(IC.flip,14)+'</button>';
+    '<button type="button" class="sp-flip" id="secFlip" title="Flip which side is cut away" aria-label="Flip cut side" aria-pressed="false">'+ico(IC.flip,14)+'</button>';
   area.appendChild(panel);
   var posEl=panel.querySelector('#secPos'), readEl=panel.querySelector('#secRead');
   var axBtns=[].slice.call(panel.querySelectorAll('#secAxis button'));
@@ -124,7 +125,8 @@
     });
   });
   panel.querySelector('#secFlip').addEventListener('click',function(){
-    sec.flip=!sec.flip; if(view==='section'){ applyClip(); readout(); }
+    sec.flip=!sec.flip; this.setAttribute('aria-pressed',sec.flip?'true':'false');   // F12: show the state
+    if(view==='section'){ applyClip(); readout(); }
   });
 
   // ── viewport chips: triPill / seamPill / timingsPill share one row ───────
@@ -133,18 +135,8 @@
   area.appendChild(chips);
   ['triPill','seamPill','timingsPill'].forEach(function(id){ var e=document.getElementById(id); if(e) chips.appendChild(e); });
 
-  // ── glyph-free buttons that live in index.html ───────────────────────────
-  var cancel=document.getElementById('cancelMeshBtn');
-  if(cancel){ cancel.innerHTML=ico(IC.x,10,'btn-ico')+'<span>cancel</span>'; cancel.style.display=cancel.style.display||'none'; }
-  var stale=document.getElementById('staleRefreshBtn');
-  if(stale){ stale.innerHTML=ico(IC.refresh,12,'btn-ico')+'<span>Update preview</span>'; }
-  var banner=document.getElementById('staleBanner');
-  if(banner){
-    // keep the message, drop the nbsp spacing; the button stays the same element
-    var txt=document.createElement('span'); txt.className='sb-t'; txt.textContent='Cell size changed. Preview is out of date.';
-    while(banner.firstChild&&banner.firstChild!==stale) banner.removeChild(banner.firstChild);
-    banner.insertBefore(txt,stale);
-  }
+  // (UI refresh stage 2: the stale banner and the overlay Cancel button were dead / duplicates and are gone from
+  // index.html; setStale / showCancelBtn stay null-tolerant. Export Cancel is #pgCancel in the footer progress strip.)
 
   // ── weld "show joins" ─────────────────────────────────────────────────────
   // weldGroups[gid].showJoins (set by the rail) tints the lattice where two or

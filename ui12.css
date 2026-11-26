@@ -1,29 +1,153 @@
 /* ============================================================
-   F13LD.mesh · ui12.css — v0.12.0 layout (Lab / Sweep pattern)
-   Tokens, header, view-strip / work-area / dock grid, phone layout.
-   Component styles: viewstrip.css (view strip + viewport overlays),
-   rail.css (recipes, parts, welds, editor), dock.css (dock, drawer,
-   progress strip, inspector).
-   Mesh tool colours (brand): tile #FCEAF5 / stroke #6B0A4C; --mesh is the
-   on-dark accent derived from the pair (as Lab does with #E06A6F).
+   F13LD.mesh · ui12.css — tokens + shell (UI refresh stage 2)
+   From the F13LD UI template shell.css (F13LD.tpms v1.4.0): OKLCH tokens, two-pane
+   desktop / bottom-sheet phone, sections, control rows, header.
+   Component styles: viewstrip.css (viewer overlays), rail.css (recipes, parts, welds,
+   editor), dock.css (footer, progress, export + part prep controls, inspector cards).
+   Layout: control pane (left) | viewer | inspector (right, >= 1280 px).
+   Mesh accent (brand stroke #6B0A4C lifted to L 0.80): oklch(0.80 0.13 345.7) = #f99ad0.
    ============================================================ */
+/* ── Tokens (OKLCH). Depth comes from lighter surfaces: bg < panel < card < input. ── */
 :root{
-  --mesh:#E46BB0; --mesh-deep:#6B0A4C; --mesh-tile:#FCEAF5; --mesh-ink:#F3B5DA;
-  --mesh-soft:rgba(107,10,76,0.34); --mesh-ring:rgba(228,107,176,0.45);
-  --s1:#0c0e16; --s2:#12141f; --s3:#181b29;
-  --hair:rgba(255,255,255,0.07); --hair2:rgba(255,255,255,0.13);
-  --t1:#e4e6f2; --t2:#9a9fb7; --t3:#5f6582; --sec:#5f9470;
-  --neon:#c8f542; --brand-green:#1D9E75; --good:#34d399; --bad:#fb7185; --warn:#f59e0b;
-  --mono:'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace;
+  --bg:oklch(0.13 0.012 265);
+  --panel:oklch(0.17 0.014 265);
+  --card:oklch(0.215 0.016 265);
+  --input:oklch(0.255 0.018 265);
+  --hair:oklch(1 0 0 / 0.09);
+  --hair-strong:oklch(1 0 0 / 0.17);
+  --ink:oklch(0.95 0.01 265);          /* 16.5:1 on panel */
+  --ink-dim:oklch(0.75 0.018 265);     /* 8.6:1 on panel  */
+  --ink-faint:oklch(0.60 0.018 265);   /* 4.8:1 on panel  */
+  /* PER-TOOL: accent and family colour (mesh pink). */
+  --accent:oklch(0.80 0.13 345.7);     /* #f99ad0 */
+  --accent-ink:oklch(0.22 0.06 345.7); /* dark text on the accent, 8.9:1 */
+  --accent-soft:oklch(0.80 0.13 345.7 / 0.14);
+  --accent-line:oklch(0.80 0.13 345.7 / 0.45);
+  --family:var(--accent);
+  --axis-x:oklch(0.797 0.134 211.5);
+  --axis-y:oklch(0.748 0.207 322.2);
+  --axis-z:oklch(0.861 0.173 91.9);
+  --warn:oklch(0.807 0.126 74.3);
+  --danger:oklch(0.68 0.19 25);
+  --lime:oklch(0.908 0.201 123);       /* #c8f542: selected-part outline, ticks, lime edges (not UI chrome) */
+  --lq-ink:var(--ink);--lq-ink-dim:var(--ink-dim);--lq-ink-faint:var(--ink-faint);
+  --lq-font:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --lq-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --hdr-h:48px;
+  --pane-w:clamp(400px,30vw,440px);
+  --rail-w:56px;
+  --peek:45dvh;
+  --full:88dvh;
+  --ease:cubic-bezier(.4,0,.2,1);
+  /* Older names used by rail.css / dock.css / mesh.css, now aliases of the tokens above */
+  --mesh:var(--accent);
+  --mesh-deep:oklch(0.34 0.09 345.7);  /* selected fill (segments, tabs) */
+  --mesh-tile:oklch(0.95 0.035 345.7);
+  --mesh-ink:oklch(0.88 0.08 345.7);
+  --mesh-soft:var(--accent-soft);
+  --mesh-ring:var(--accent-line);
+  --s1:var(--card);--s2:var(--input);--s3:var(--input);
+  --hair2:var(--hair-strong);
+  --t1:var(--ink);--t2:var(--ink-dim);--t3:var(--ink-faint);--sec:var(--ink-faint);
+  --neon:var(--lime);--brand-green:oklch(0.65 0.12 165);--good:oklch(0.78 0.15 165);--bad:var(--danger);
+  --mono:var(--lq-mono);
+  --text:var(--ink);--dim:var(--ink-dim);--muted:var(--ink-faint);--border:var(--hair-strong);--fail:var(--danger);--amber:var(--warn);
 }
-body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
-#container{max-width:1680px;margin:0 auto;width:100%}
-/* header */
-#hdr .fh-tool-name{color:var(--mesh)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);font:400 13px/1.45 var(--lq-font);overflow:hidden;-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+/* drawn icons (template .ic); svg-scoped because the inspector cards in dock.css are div.ic */
+svg.ic{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;display:block}
+svg.ic.sm{width:14px;height:14px}
+/* 44px hit areas: the drawn element may be smaller; ::after carries the hit box */
+.hit{position:relative}
+.hit::after{content:'';position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}
+
+/* ── Shell ── */
+#container{max-width:none;margin:0;width:100%;height:100dvh;display:flex;flex-direction:column}
+/* the recipe view is shown by JS (display:flex); empty state is #dropzone */
+#recipeView{flex:1 1 auto;min-height:0;flex-direction:column;margin:0;gap:0;position:relative}
+#main{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:var(--pane-w) minmax(0,1fr)}
+#viewPane{position:relative;min-width:0;min-height:0}
+#previewArea{position:absolute;inset:0;min-height:0;min-width:0;border:0;border-radius:0;background:var(--bg)}
+#ctrlPane{position:relative;min-height:0;min-width:0;display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;background:var(--panel);border-right:1px solid var(--hair)}
+#sectionsRail{grid-column:1;grid-row:1/3;min-height:0;position:relative;border-right:1px solid var(--hair);background:var(--bg)}
+/* one section at a time; the column scrolls only if that section is taller than it.
+   Edges fade only where content is hidden (.ft / .fb set by 57-layout.js). */
+#ctrlScroll{grid-column:2;grid-row:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;--ft:0px;--fb:0px;scrollbar-width:thin;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--ft),#000 calc(100% - var(--fb)),transparent 100%);
+          mask-image:linear-gradient(to bottom,transparent 0,#000 var(--ft),#000 calc(100% - var(--fb)),transparent 100%)}
+#ctrlScroll.ft{--ft:20px}
+#ctrlScroll.fb{--fb:28px}
+#ctrlFoot{grid-column:2;grid-row:2;min-width:0}
+#sheetHandle,#sectionsBar{display:none}
+/* inspector: read-only results beside the view at 1280 and wider; below that its cards live in Prep / Export */
+#inspector{display:none;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;flex-direction:column;gap:12px;padding:12px;background:var(--panel);border-left:1px solid var(--hair);scrollbar-width:thin}
+@media (min-width:1280px){
+  #main{grid-template-columns:var(--pane-w) minmax(0,1fr) 300px}
+  #inspector{display:flex}
+}
+.res-host{display:flex;flex-direction:column;gap:12px;margin-top:20px}
+.res-host[hidden]{display:none}
+.res-host>.sub-h{margin:0}
+#legacyHold{display:none}
+
+/* ── Sections ── */
+.sec{display:none;padding:20px 16px 32px 16px;min-width:0}
+.sec.on{display:block}
+.sec-h{display:flex;align-items:baseline;gap:8px;font-size:15px;font-weight:600;color:var(--ink);letter-spacing:0.01em;margin-bottom:14px}
+.sec-h .sec-n{font:500 11px/1 var(--lq-mono);color:var(--ink-faint)}
+.sub-h{font-size:11px;font-weight:600;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;display:flex;align-items:center}
+/* section rail (desktop) and tab bar (phone): fallback buttons until the liquid widgets (stage 3) replace them */
+.sb-fallback{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}
+.sb-fallback button{min-height:52px;background:none;border:0;color:var(--ink-faint);font-size:13px;font-weight:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative;transition:color .15s var(--ease)}
+.sb-fallback button:hover{color:var(--ink)}
+.sb-fallback button.on{color:var(--accent)}
+.sb-fallback button:focus-visible{outline:2px solid var(--accent-line);outline-offset:-3px;border-radius:10px}
+.sb-fallback svg.ic{width:20px;height:20px}
+#sectionsRail .sb-fallback{display:flex;flex-direction:column;padding-top:8px;gap:2px}
+#sectionsRail .sb-fallback button{width:100%;min-height:56px;font-size:11px}
+#sectionsRail .sb-fallback button.on::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+
+/* ── Control rows (help system ROW_SEL = .sc-group) ── */
+.sc-group{display:flex;align-items:center;gap:8px;min-width:0}
+.sc-group>label,.lbl{font-size:13px;color:var(--ink-dim);white-space:nowrap;display:inline-flex;align-items:center}
+.sc-group .sv{font:500 13px/1 var(--lq-mono);color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;min-width:44px}
+.mm-hint{font:400 11px/1 var(--lq-mono);color:var(--ink-faint);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--accent);background:transparent;cursor:pointer;touch-action:pan-y}
+/* text / number / select fields */
+.fld,.fld-num,select.fld,.dr-sel,.dr-num,.rl-num,.rl-erow select{
+  height:44px;min-width:44px;padding:0 10px;background:var(--input);border:1px solid transparent;border-radius:10px;color:var(--ink);
+  font:400 13px var(--lq-font);outline:none;transition:border-color .15s var(--ease)}
+.fld-num,.dr-num,.rl-num{font-family:var(--lq-mono);text-align:center;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.fld:focus,.fld-num:focus,.dr-sel:focus,.dr-num:focus,.rl-num:focus,.rl-erow select:focus{border-color:var(--accent-line)}
+select{cursor:pointer}
+select option,select optgroup{background:var(--card);color:var(--ink)}
+.unit{font-size:13px;color:var(--ink-faint)}
+
+/* ── Switch ── */
+.sw{display:inline-flex;align-items:center;gap:8px;min-height:44px;background:none;border:0;padding:0 2px;color:var(--ink-dim);font-size:13px;white-space:nowrap}
+.sw-t{position:relative;width:30px;height:18px;border-radius:9px;background:var(--input);box-shadow:inset 0 0 0 1px var(--hair-strong);transition:background .18s var(--ease);flex:0 0 auto}
+.sw-t::after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--ink-faint);transition:transform .18s var(--ease),background .18s var(--ease)}
+.sw.on .sw-t{background:var(--accent);box-shadow:none}
+.sw.on .sw-t::after{transform:translateX(12px);background:var(--accent-ink)}
+.sw:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;border-radius:8px}
+
+/* ── Header (shared F13LD markup, restyled to tokens) ── */
+#hdr{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border-bottom:1px solid var(--hair);padding:0 14px;padding-top:env(safe-area-inset-top);min-height:48px;height:auto;flex:0 0 auto;font-family:'Exo 2',system-ui,sans-serif;position:relative;z-index:60}
+#hdr .fh-divider{width:1px;background:var(--hair)}
+#hdr .fh-brand{min-height:44px}
+#hdr .fh-tool-name{color:var(--family)}
 #hdr .fh-right{display:flex;align-items:center;gap:8px;min-width:0}
-.fh-act{display:inline-flex;align-items:center;gap:6px;font:600 12.5px 'Exo 2',sans-serif;letter-spacing:.03em;padding:6px 13px;border-radius:20px;border:.5px solid #1d2030;background:transparent;color:#8a8fa8;cursor:pointer;white-space:nowrap}
-.fh-act:hover{color:var(--mesh);border-color:var(--mesh)}
+#hdr .fh-version{font-size:11px;color:var(--ink-faint);letter-spacing:0.08em}
+.fh-act{position:relative;display:inline-flex;align-items:center;gap:6px;height:36px;font:500 13px var(--lq-font);letter-spacing:.02em;padding:0 13px;border-radius:999px;border:1px solid var(--hair-strong);background:var(--card);color:var(--ink-dim);cursor:pointer;white-space:nowrap;transition:color .15s var(--ease),border-color .15s var(--ease)}
+.fh-act::after{content:'';position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
+.fh-act:hover{color:var(--ink);border-color:var(--accent-line)}
+.fh-act:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px}
 .fh-act svg{flex:none}
+#hdr .mpill{background:var(--card);border:1px solid var(--hair);color:var(--ink-faint);font-size:11px}
 #statusPill{gap:6px;padding:3px 10px 3px 6px}
 #statusPill .mdot{display:none}
 #statusPill .st-wave{transform-origin:50% 50%}
@@ -33,38 +157,49 @@ body{font-family:'Exo 2',system-ui,sans-serif;overflow-x:hidden}
 @keyframes stRippleV{0%,100%{transform:translateX(0)}50%{transform:translateX(9px)}}
 @media (prefers-reduced-motion:reduce){#statusPill.busy .st-wave{animation:none}}
 #statusPill .st-mark{flex:none}
-/* recipe view = column: view strip, work area, progress, dock */
-#recipeView{flex-direction:column;margin:0;gap:0;position:relative}
-#workArea{flex:1;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr) 280px;gap:12px;padding:12px 14px}
-#rail,#inspector{min-height:0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;scrollbar-width:thin}
-#previewArea{min-height:0}
-#legacyHold{display:none}
-#toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:#141725;border:1px solid var(--mesh-ring);color:var(--t1);font:500 13px 'Exo 2',sans-serif;padding:9px 16px;border-radius:9px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
+#toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:var(--card);border:1px solid var(--accent-line);color:var(--ink);font:500 13px var(--lq-font);padding:10px 16px;border-radius:12px;z-index:80;box-shadow:0 10px 30px oklch(0 0 0 / .5);opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100% - 32px)}
 #toast.on{opacity:1}
-/* phone: one column, viewport first, dock stays at the bottom */
-@media (max-width:860px){
-  #container{height:auto;min-height:100vh}
-  #hdr .fh-act .lbl,.fh-version,#hdr .fh-divider{display:none}
-  #hdr .fh-act{padding:6px 8px}
-  #statusPill span{display:none}
-  #recipeView{flex:none}
-  #workArea{grid-template-columns:minmax(0,1fr);padding:10px}
-  #previewArea{order:-1;height:56vh;flex:none}
-  #rail,#inspector{overflow:visible}
-  #dockWrap{position:sticky;bottom:0;z-index:25}
-}
+
 /* empty state (no recipe yet) */
-#dropzone{margin:14px;border-color:var(--hair2);background:radial-gradient(ellipse at 50% 40%,rgba(107,10,76,.10),transparent 60%)}
-#dropzone:hover,#dropzone.dragover{border-color:var(--mesh);background:radial-gradient(ellipse at 50% 40%,rgba(107,10,76,.22),transparent 65%)}
-.dz-icon{font-size:0;opacity:1;color:var(--mesh);margin-bottom:14px}
-.dz-main{font:600 16px 'Exo 2',sans-serif;color:var(--t1)}
-.dz-sub{font:500 12.5px var(--mono);color:var(--t3)}
-.dz-pick{color:var(--mesh);font-weight:600}
+#dropzone{margin:14px;border-color:var(--hair-strong);background:radial-gradient(ellipse at 50% 40%,oklch(0.34 0.09 345.7 / .16),transparent 60%)}
+#dropzone:hover,#dropzone.dragover{border-color:var(--accent);background:radial-gradient(ellipse at 50% 40%,oklch(0.34 0.09 345.7 / .3),transparent 65%)}
+.dz-icon{font-size:0;opacity:1;color:var(--accent);margin-bottom:14px}
+.dz-main{font:600 15px var(--lq-font);color:var(--ink)}
+.dz-sub{font:500 13px var(--lq-mono);color:var(--ink-faint);text-align:center;padding:0 12px}
+.dz-pick{color:var(--accent);font-weight:600;font-size:13px;min-height:44px;display:inline-flex;align-items:center;margin-top:4px}
 
 /* v0.13.1: the viewer handles its own touch gestures (rotate, pinch zoom, pan) — the browser must not zoom or scroll the page from the canvas. */
 #rmCanvas{touch-action:none}
 /* v0.13.2: the canvas draws at up to 1.5× screen pixels (20-raymarcher.js); show it at the size of its pane.
-   Without this, on high-density screens (phones, Windows scaling above 100 %) it showed at its pixel size and
-   the pane cropped its right and bottom — the model sat off-centre. Absolute, so its pixel size never feeds back
-   into the pane's layout. */
+   Absolute, so its pixel size never feeds back into the pane's layout. */
 #rmCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+/* Phones (header): icon-only actions, no divider / version. */
+@media (max-width:560px){
+  #hdr .fh-act .lbl,#hdr .fh-version,#hdr .fh-divider{display:none}
+  .fh-act{width:44px;padding:0;justify-content:center}
+  #statusPill span{display:none}
+}
+
+/* ── Phone / narrow (< 900px): viewer on top, controls in a draggable bottom sheet ── */
+@media (max-width:899px){
+  #main{display:block;position:relative}
+  #viewPane{height:calc(100dvh - var(--hdr-h) - var(--peek))}
+  #ctrlPane{position:fixed;left:0;right:0;bottom:0;z-index:50;height:var(--sheet-h,var(--peek));max-height:calc(100dvh - var(--hdr-h));
+    display:flex;flex-direction:column;border-right:none;border-radius:18px 18px 0 0;
+    box-shadow:0 -1px 0 var(--hair-strong),0 -12px 32px oklch(0 0 0 / 0.35);transition:height .26s var(--ease)}
+  #ctrlPane.dragging{transition:none}
+  #sectionsRail{display:none}
+  /* the handle is a real 44 px box INSIDE the sheet: nothing above it loses a pixel, nothing below it is covered. */
+  #sheetHandle{display:flex;flex:0 0 44px;align-items:flex-start;justify-content:center;padding-top:9px;position:relative;touch-action:none;cursor:grab;background:none;border:0;width:100%}
+  #sheetHandle::before{content:'';width:36px;height:4px;border-radius:2px;background:var(--hair-strong)}
+  #ctrlScroll{flex:1 1 auto;padding:0 16px}
+  #ctrlFoot{flex:0 0 auto}
+  .sec{padding:6px 0 20px}
+  .res-host{margin-top:16px}
+  #sectionsBar{display:block;flex:0 0 auto;border-top:1px solid var(--hair);padding-bottom:env(safe-area-inset-bottom);background:var(--panel)}
+  .sb-fallback button{flex-direction:row;gap:8px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0s !important;animation-duration:0s !important}
+}

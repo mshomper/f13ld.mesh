@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>F13LD.mesh — Scaffold Exporter</title>
 <script type="importmap">
 {
@@ -91,47 +91,88 @@
     <input type="file" id="fileInput" accept=".json,application/json">
   </div>
   <div id="recipeView">
-    <!-- ── View strip (v0.12.0): tabs, preview quality, view menu — viewstrip.css ── -->
-    <div id="vstrip">
-      <span class="vs-label">VIEW</span>
-      <div class="vs-tabs" id="vsTabs"></div>
-      <div class="vs-right" id="vsRight">
-        <span class="vs-mini">PREVIEW</span>
-        <div id="resStrip">
-          <button class="res-btn active" id="btnDraft">Draft</button>
-          <button class="res-btn"       id="btnLow">Low</button>
-          <button class="res-btn"       id="btnMed">Med</button>
-          <button class="res-btn"       id="btnHigh">High</button>
-          <button class="res-btn"       id="btnUltra">Ultra</button>
+    <!-- ── v0.17.0 layout (UI refresh stage 2): control pane (sections) | viewer | inspector ── -->
+    <div id="main">
+      <aside id="ctrlPane" aria-label="Controls">
+        <button id="sheetHandle" type="button" aria-label="Drag to resize the controls"></button>
+        <nav id="sectionsRail" aria-label="Sections">
+          <div class="sb-fallback">
+            <button type="button" data-section="design" class="on" aria-label="Design"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg><span>Design</span></button>
+            <button type="button" data-section="prep" aria-label="Prep"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18"/><path d="M7 18v-3h10v3"/><path d="M9 15V8l3-3 3 3v7"/></svg><span>Prep</span></button>
+            <button type="button" data-section="export" aria-label="Export"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg><span>Export</span></button>
+          </div>
+        </nav>
+        <div id="ctrlScroll">
+          <section class="sec" id="sec-design" data-section="design">
+            <h2 class="sec-h"><span class="sec-n">01</span>Design</h2>
+            <div id="rail">
+              <div id="railRecipes"></div>
+              <div id="railParts"></div>
+              <div id="railEditor"></div>
+            </div>
+          </section>
+          <section class="sec" id="sec-prep" data-section="prep">
+            <h2 class="sec-h"><span class="sec-n">02</span>Prep</h2>
+            <div id="ppBox"></div>
+            <!-- Estimate card: moves here below 1280 px (56-dock.js dockPlaceInspector) -->
+            <div class="res-host" id="resEst" hidden></div>
+          </section>
+          <section class="sec" id="sec-export" data-section="export">
+            <h2 class="sec-h"><span class="sec-n">03</span>Export</h2>
+            <div id="expBody"></div>
+            <!-- Results: Measured + Homogenization cards move here below 1280 px -->
+            <div class="res-host" id="resOut" hidden><h3 class="sub-h">Results</h3></div>
+          </section>
         </div>
-      <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
-        <div id="viewOpts">
-          <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> view</button>
-          <div id="viewOptsPanel" hidden>
-            <label><input type="checkbox" data-vo="shadows">Shadows</label>
-            <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
-            <label><input type="checkbox" data-vo="warmCool">Warm / cool light</label>
-            <label><input type="checkbox" data-vo="cutFaces">Shade cut faces</label>
-            <label><input type="checkbox" data-vo="limeEdges">Lime edges</label>
-            <button type="button" id="viewOptsReset">reset</button>
+        <footer id="ctrlFoot">
+          <div id="progRow"></div>
+          <div id="dock"></div>
+        </footer>
+        <nav id="sectionsBar" aria-label="Sections">
+          <div class="sb-fallback">
+            <button type="button" data-section="design" class="on"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg><span>Design</span></button>
+            <button type="button" data-section="prep"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18"/><path d="M7 18v-3h10v3"/><path d="M9 15V8l3-3 3 3v7"/></svg><span>Prep</span></button>
+            <button type="button" data-section="export"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg><span>Export</span></button>
+          </div>
+        </nav>
+      </aside>
+
+      <section id="viewPane" aria-label="3D view">
+      <div id="previewArea">
+      <canvas id="rmCanvas"></canvas>
+      <!-- ── Viewer overlays: Design / Print / Section, view menu (23-view-strip.js, 22-view-opts.js) ── -->
+      <div id="vstrip">
+        <div class="vs-l">
+          <div id="w-view"></div>
+          <div class="vs-tabs" id="vsTabs" data-native="view"></div>
+        </div>
+        <div class="vs-right" id="vsRight">
+          <!-- PREVIEW quality: hidden in the layout stage; stage 4 removes it -->
+          <div id="resStrip">
+            <button class="res-btn active" id="btnDraft">Draft</button>
+            <button class="res-btn"       id="btnLow">Low</button>
+            <button class="res-btn"       id="btnMed">Med</button>
+            <button class="res-btn"       id="btnHigh">High</button>
+            <button class="res-btn"       id="btnUltra">Ultra</button>
+          </div>
+          <!-- ── Viewer shading options (v0.9.5) ────────────────────────────── -->
+          <div id="viewOpts">
+            <button id="viewOptsBtn" type="button" aria-expanded="false" title="Viewer shading options"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg> view</button>
+            <div id="viewOptsPanel" hidden>
+              <label><input type="checkbox" data-vo="shadows">Shadows</label>
+              <label><input type="checkbox" data-vo="occlusion">Occlusion</label>
+              <label><input type="checkbox" data-vo="warmCool">Warm / cool light</label>
+              <label><input type="checkbox" data-vo="cutFaces">Shade cut faces</label>
+              <label><input type="checkbox" data-vo="limeEdges">Lime edges</label>
+              <button type="button" id="viewOptsReset">reset</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    <!-- ── Work area: left rail | viewport | inspector (v0.12.0) ── -->
-    <div id="workArea">
-      <aside id="rail">
-        <div id="railRecipes"></div>
-        <div id="railParts"></div>
-        <div id="railEditor"></div>
-      </aside>
-      <div id="previewArea">
-      <canvas id="rmCanvas"></canvas>
       <div id="computeOverlay">
   <div id="orbSpinner" role="img" aria-label="Working" style="width:88px;height:88px;margin:0 auto 8px;animation:none"></div>
       <div class="co-main" id="coMain">awaiting recipe…</div>
         <div class="co-sub"  id="coSub"></div>
-        <button id="cancelMeshBtn" onclick="window.cancelMesh()" style="display:none;margin-top:10px;font-size:10px;font-family:inherit;padding:3px 12px;border:.5px solid var(--fail);border-radius:4px;background:rgba(248,113,113,.08);color:var(--fail);cursor:pointer"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg> cancel</button>
       </div>
       <div id="typeBadge"></div>
       <div id="triPill"></div>
@@ -160,19 +201,15 @@
         <span class="tp-sep">·</span>
         <span class="tp-label">total</span><span class="tp-val" id="tpTotal">—</span>
       </div>
-      <div id="staleBanner" style="display:none">Cell size changed — preview outdated &nbsp;<button id="staleRefreshBtn" onclick="window.triggerPreview((typeof rm!=='undefined'&&rm&&rm._quality)||'low')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg> Update Preview</button></div>
       </div>
-      <aside id="inspector">
+      </section>
+
+      <!-- Inspector: read-only results beside the view at 1280 px and wider; below that its cards live in Prep / Export -->
+      <aside id="inspector" aria-label="Results">
         <div id="inspEst"></div>
         <div id="inspMeas"></div>
         <div id="inspHomo"></div>
       </aside>
-    </div>
-    <!-- ── Export progress strip + dock with Configure drawer — dock.css ── -->
-    <div id="progRow"></div>
-    <div id="dockWrap">
-      <div id="drawer"></div>
-      <div id="dock"></div>
     </div>
     <!-- Legacy holders: older modules still render into these until they move;
          hidden in the new layout (ui12.css). -->
@@ -270,6 +307,8 @@
 <script defer src="54-sidebar.js"></script>
 <script defer src="55-rail.js"></script>
 <script defer src="56-dock.js"></script>
+<!-- UI refresh stage 2: sections (one at a time) + phone bottom sheet; window.F13UI (template layout.js) -->
+<script defer src="57-layout.js"></script>
 <script defer src="60-export-ui.js"></script>
 <script defer src="61-export.js"></script>
 <script defer src="62-threemf.js"></script>

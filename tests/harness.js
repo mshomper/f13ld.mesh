@@ -56,10 +56,12 @@ async function uiAssignRecipe(page) {
 }
 // Remove the first recipe (old: chip x; rail: card x).
 async function uiRemoveRecipe(page) {
+  await uiSection(page, 'design');
   await page.click((await uiIsRail(page)) ? '.rl-rc .rl-rx' : '.libraryChip .lc-x');
 }
 // Make a body the active one by clicking its card / part row.
 async function uiSelectBody(page, id) {
+  await uiSection(page, 'design');
   await page.click((await uiIsRail(page)) ? `.rl-part[data-body-id="${id}"] .rl-nm` : `.shapeCard[data-body-id="${id}"] .sc-name`);
 }
 // Remove the first body. The rail has no remove button on a part row, so the
@@ -68,10 +70,22 @@ async function uiRemoveBody(page) {
   if (await uiIsRail(page)) await page.evaluate(() => window.clearImportedShape(activeBodyId));
   else await page.click('.shapeCard[data-body-id] .sc-x');
 }
-// Open the Configure drawer on a tab ('prep' | 'exp'); no-op on the old UI,
-// where the same controls were always on screen.
+// Show a section of the control pane ('design' | 'prep' | 'export'). UI refresh stage 2 build:
+// F13UI.showSection. v0.12.0 – v0.16.x builds (Configure drawer): 'design' closes the drawer.
+async function uiSection(page, id) {
+  if (!(await uiIsRail(page))) return;
+  const done = await page.evaluate(sec => { if (window.F13UI && F13UI.showSection) { F13UI.showSection(sec); return true; } return false; }, id);
+  if (done) return;
+  if (id === 'design') { if (await page.evaluate(() => { const d = document.getElementById('drawer'); return !!(d && d.classList.contains('open')); })) await page.click('#cfgBtn'); return; }
+  const tab = id === 'export' ? 'exp' : 'prep';
+  if (!(await page.evaluate(() => document.getElementById('drawer').classList.contains('open')))) await page.click('#cfgBtn');
+  await page.click(`#drawer .dr-tab[data-p="${tab}"]`);
+}
+// Open the controls on a tab ('prep' | 'exp'); no-op on the old UI, where the
+// same controls were always on screen. With no tab, the Prep section (old build: the drawer, as before).
 async function uiOpenDrawer(page, tab) {
   if (!(await uiIsRail(page))) return;
+  if (await page.evaluate(() => !!(window.F13UI && F13UI.showSection))) return uiSection(page, tab === 'exp' ? 'export' : 'prep');
   if (!(await page.evaluate(() => document.getElementById('drawer').classList.contains('open')))) await page.click('#cfgBtn');
   if (tab) await page.click(`#drawer .dr-tab[data-p="${tab}"]`);
 }
@@ -81,6 +95,7 @@ async function uiOpenDrawer(page, tab) {
 async function uiSetCell(page, mm) {
   if (await uiIsRail(page)) {
     const sel = '#railEditor .rl-num[data-k="cell"]';
+    await uiSection(page, 'design');
     if (await page.$(sel)) { await page.fill(sel, String(mm)); await page.waitForTimeout(500); return; }
   }
   await page.evaluate(v => { const i = document.getElementById('shapeCellSizeMm'); if (i) { i.value = v; window.onCellSizeInput && window.onCellSizeInput(); } }, mm);
@@ -92,6 +107,7 @@ var UI_XFORM_INPUT = { rotXDeg: 'sxRotX', rotYDeg: 'sxRotY', rotZDeg: 'sxRotZ', 
 async function uiSetXform(page, key, v) {
   if (await uiIsRail(page)) {
     const sel = `#railEditor .rl-num[data-k="${key}"]`;
+    await uiSection(page, 'design');
     if (await page.$(sel)) { await page.fill(sel, String(v)); await page.waitForTimeout(300); return; }
   }
   await page.evaluate(([id, val]) => { document.getElementById(id).value = val; window.onStructXformInput(); }, [UI_XFORM_INPUT[key], v]);

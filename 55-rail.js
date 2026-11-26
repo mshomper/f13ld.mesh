@@ -167,9 +167,9 @@ function rlPopShow(card, mode){
     '<button type="button" class="rl-sbtn prim rl-pop-use" data-act="useRecipe">'+(target?'Use on '+esc(target):'Preview this recipe')+'</button>';
   el.hidden=false; el.style.visibility='hidden';
   const cr=card.getBoundingClientRect(), vw=window.innerWidth, vh=window.innerHeight;
-  const rail=$rl('rail'), rr=(rail||card).getBoundingClientRect();
+  const rail=$rl('ctrlPane')||$rl('rail'), rr=(rail||card).getBoundingClientRect();   // stage 2: the pane (rail + section) is the column
   let left, top, w;
-  if(vw>860){
+  if(vw>899){   // same breakpoint as the layout (ui12.css, 57-layout.js)
     w=Math.min(280, vw-16); el.style.width=w+'px';
     left=rr.right+8; top=cr.top;
     if(left+w>vw-8) left=Math.max(8, vw-w-8);
@@ -177,7 +177,7 @@ function rlPopShow(card, mode){
     w=vw-16; el.style.width=w+'px'; left=8; top=cr.bottom+6;
   }
   const h=el.offsetHeight;
-  if(top+h>vh-8) top=(vw>860)?Math.max(8, vh-h-8):Math.max(8, cr.top-h-6);
+  if(top+h>vh-8) top=(vw>899)?Math.max(8, vh-h-8):Math.max(8, cr.top-h-6);
   el.style.left=left+'px'; el.style.top=top+'px'; el.style.visibility='';
   rlPopFor=rid; rlPopMode=mode;
   for(const c of document.querySelectorAll('.rl-rc')) c.classList.toggle('open', c.dataset.recipeId===rid);
@@ -739,7 +739,7 @@ function rlInit(){
     if(rlPopFor && !e.target.closest('.rl-rc') && !e.target.closest('#rlPop')) rlPopHide();
   });
   window.addEventListener('resize',rlPopHide);
-  document.addEventListener('scroll',e=>{ if(rlPopFor && e.target && e.target.id==='rail') rlPopHide(); },true);
+  document.addEventListener('scroll',e=>{ if(rlPopFor && e.target && e.target.id==='ctrlScroll') rlPopHide(); },true);
 
   // ---- parts: click / keys
   parts.addEventListener('click',e=>{

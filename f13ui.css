@@ -140,3 +140,10 @@ html.f13w .rl-sl.f13w-sl>:not(.f13w-slider),html.f13w .pp-sl.f13w-sl>:not(.f13w-
 html.f13w .dr-f.sc-group .dr-hint{margin-top:2px}
 html.f13w .rl-pair>.f13w-tg{flex:none}
 html.f13w .rl-hue-row>.f13w-seg{flex:1 1 auto;min-width:0}
+
+/* one export bar (click test): the strip row gives way to the progress button, which carries its stage and time left;
+   Cancel sits beside the button while an export runs (moved there by 59-mesh-widgets.js) */
+html.f13w #progRow{display:none!important}
+html.f13w #dock:has(.pg-cancel-dock)>.dk-meta{flex-basis:100%}
+html.f13w #dock:has(.pg-cancel-dock)>#w-run{flex:1 1 auto;width:auto;min-width:0}
+html.f13w #dock>.pg-cancel-dock{flex:none}

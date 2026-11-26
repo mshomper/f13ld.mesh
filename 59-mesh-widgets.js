@@ -270,6 +270,22 @@
     (function runProgress(){
       const pg=$('pgFill'),rb=$('expBtn');if(!pg||!W.run||!rb)return;
       new MutationObserver(()=>{const p=parseFloat(pg.style.width);if(p>0)W.run.setProgress(Math.min(1,p/100));}).observe(pg,{attributes:true,attributeFilter:['style']});
+      // one bar (Matt, click test): the strip row is hidden under html.f13w (f13ui.css); its stage text and time left
+      // become the button's label, and its Cancel sits beside the button while an export runs
+      const st=$('pgStage'),eta=$('pgEta'),cx=$('pgCancel'),dock=$('dock'),prog=$('progRow');
+      let exporting=false;
+      const relabel=()=>{
+        if(!exporting||!st)return;
+        const s=(st.querySelector('b')||st).textContent.trim()||'Working',e=eta?eta.textContent.trim():'';
+        W.run.setLabel(e?s+' · '+e:s);
+      };
+      if(st)new MutationObserver(relabel).observe(st,{childList:true,characterData:true,subtree:true});
+      if(eta)new MutationObserver(relabel).observe(eta,{childList:true,characterData:true,subtree:true});
+      const placeCancel=on=>{
+        if(!cx||!dock||!prog)return;
+        if(on)dock.appendChild(cx);else prog.appendChild(cx);
+        cx.classList.toggle('pg-cancel-dock',on);
+      };
       let cancelled=false;
       const cm=window.cancelMesh;
       if(typeof cm==='function')window.cancelMesh=function(){cancelled=true;return cm.apply(this,arguments);};
@@ -277,6 +293,8 @@
       if(typeof de==='function')window.dockExportState=function(on){
         if(on)cancelled=false;
         const r=de.apply(this,arguments);
+        exporting=!!on;placeCancel(exporting);
+        if(on)setTimeout(relabel,0);
         if(!on)setTimeout(()=>{                                            // done: flood and pop on success, drain on a refusal / failure / cancel
           const ok=!cancelled&&!document.querySelector('#expReport .exp-err');
           W.run.setProgress(ok?1:null);

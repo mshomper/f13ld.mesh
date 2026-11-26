@@ -58,14 +58,21 @@ function _pbMessage(w, msg){
   while(held.size>24) held.delete(held.keys().next().value);
   return Object.assign({},msg,{bodies, keepGrids:[...held.keys()]});
 }
+// Stage 4: keys an export is waiting on (its field-range bake, 16-preview-scene.js
+// ensureExportFieldRanges) are never cancelled by the preview.
+const _pbProtected=new Map();
+function protectPreviewBake(key,on){
+  const n=(_pbProtected.get(key)||0)+(on?1:-1);
+  if(n>0) _pbProtected.set(key,n); else _pbProtected.delete(key);
+}
 function cancelPreviewBakes(){
-  for(const job of [..._pb.jobs]){ job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
+  for(const job of [..._pb.jobs]){ if(job.key && _pbProtected.has(job.key)) continue; job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
 }
 window.cancelPreviewBakes=cancelPreviewBakes;
 // v0.14.0: cancel only the bakes whose result the scene no longer needs
 // (keep: Set of bake keys). The scene asks for several sources at once.
 function cancelPreviewBakesExcept(keep){
-  for(const job of [..._pb.jobs]){ if(job.key && keep && keep.has(job.key)) continue; job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
+  for(const job of [..._pb.jobs]){ if(job.key && ((keep && keep.has(job.key)) || _pbProtected.has(job.key))) continue; job.cancel(); if(typeof _bakeStats!=='undefined') _bakeStats.cancelled++; }
 }
 window.cancelPreviewBakesExcept=cancelPreviewBakesExcept;
 // Run one bake job over `parts` worker messages. Resolves with the replies in
@@ -251,6 +258,8 @@ window.F13LD_previewBake={
   stats:()=>Object.assign({},_bakeStats)
 };
 // ── Preview via Raymarcher (no Manifold, instant) ────────────────────────────
+// Stage 4: the preview runs at High (rm._quality, 20-raymarcher.js); the other
+// sizes stay for triggerPreview(q) (tests, bench) and the export range (Low).
 const PREVIEW_BAKE_N={draft:48,low:64,med:96,high:128,ultra:192};
 
 // Integer-period preview bake bounds for a TPMS recipe — preview-only fix for

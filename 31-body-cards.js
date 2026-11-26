@@ -150,6 +150,7 @@ function setBodySkin(bodyId, mm){
 function _bodyFillChanged(bodyId){
   if(typeof updateExportEstimate==='function') updateExportEstimate();
   if(bodyId === activeBodyId && typeof railPreviewSoon==='function') railPreviewSoon();
+  else if(typeof previewSceneChanged==='function') previewSceneChanged();   // stage 4: was the view strip's 250 ms poll
 }
 
 // ── Weld-group UI helpers + join / leave ops (v0.7.0, v0.12.0) ─────────────
@@ -280,7 +281,7 @@ function weldSetRule(gid, rule){
 }
 function weldSetAnchor(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.anchorMm=Math.max(0, +mm||0); _weldPreviewIfActive(gid); updateExportEstimate(); }
 function weldSetGrade(gid, mm){ const g=weldGroups.get(gid); if(!g) return; g.gradeMm=Math.max(0.05, +mm||0.05); _weldPreviewIfActive(gid); updateExportEstimate(); }
-function weldSetShowJoins(gid, on){ const g=weldGroups.get(gid); if(!g) return; g.showJoins=!!on; }
+function weldSetShowJoins(gid, on){ const g=weldGroups.get(gid); if(!g) return; g.showJoins=!!on; if(typeof previewSceneChanged==='function') previewSceneChanged(); }
 // Viewport colour of a weld (null → the weld's default). Members are drawn in
 // it (resolveBodyColor); their own colour returns when they leave the weld.
 function setWeldColor(gid, hex){

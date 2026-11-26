@@ -232,6 +232,11 @@ function _exportRefuse(msg){
 }
 
 async function _triggerExportImpl(){
+  // UI refresh stage 4: the noise / grain field range the export reads comes
+  // from its own 64³ bake (as main's default preview made it), made here.
+  if(typeof ensureExportFieldRanges==='function'){
+    try{ await ensureExportFieldRanges(); }catch(e){ console.warn('[export] field range bake failed; the worker scans its own range', e); }
+  }
   // ── Weld-group export (W4): active body in a >=2-member weld group emits the
   //    group's union as ONE watertight 3MF part (mirrors active-body export). ──
   const _wgid=(typeof activeGroupId==='function')?activeGroupId():null;

@@ -41,12 +41,51 @@ const partPrep=(function(){
   return d;
 })();
 function ppSave(){
+  if(typeof ppResultsCheck==='function') setTimeout(ppResultsCheck,0);
   try{ localStorage.setItem(PP_STORE_KEY, JSON.stringify({proc:partPrep.proc, mat:partPrep.mat, customRho:partPrep.customRho,
     up:partPrep.up, tiltX:partPrep.tiltX, tiltY:partPrep.tiltY, critDeg:partPrep.critDeg, plateOpacity:partPrep.plateOpacity, standoff:partPrep.standoff})); }catch(_){}
   if(typeof dockRefresh==='function') dockRefresh();   // v0.12.0: dock tags
 }
 let ppLast=null;          // exact stats of the last export (rendered in the panel)
 let ppLastEst=null;       // last live estimate
+let ppLastSig=null;       // ppDesignSig() of the design ppLast measured (UI refresh stage 4)
+
+// ── Results follow the design (UI refresh stage 4, audit F4) ─────────────────
+// Measured and the print report describe one export. They clear as soon as
+// anything that export read changes: the parts (fill, recipe, skin, cell size,
+// rotation, shift, wall offset, visibility, welds and their join settings,
+// which part is selected), part prep (process, material, orientation,
+// standoff, overhang limit) or an Export setting. View-only settings (colour,
+// eye-ghost shells drawn in the preview, section, print view, show joins) keep
+// them.
+function ppDesignSig(){
+  try{
+    const ls=k=>{ try{ return localStorage.getItem(k)||''; }catch(_){ return ''; } };
+    const p=[activeBodyId, bodies.size, importedShape?1:0, currentRecipe?(currentRecipe.id||currentRecipe.family):'',
+      document.getElementById('shapeCellSizeMm')?.value, document.getElementById('trimToNodes')?.checked?1:0,
+      document.getElementById('trimInsetMult')?.value,
+      partPrep.proc, partPrep.mat, partPrep.customRho, partPrep.up, partPrep.tiltX, partPrep.tiltY, partPrep.standoff, partPrep.critDeg,
+      typeof currentExportQual!=='undefined'?currentExportQual:'', typeof exportDomainMm!=='undefined'?exportDomainMm:'',
+      ls('f13ld.mesh.mesher'), ls('f13ld.mesh.loose'), ls('f13ld.mesh.fastchecks')];
+    for(const id of bodyOrder){
+      const b=bodies.get(id); if(!b) continue;
+      const xf=(id===activeBodyId&&typeof structureTransform!=='undefined')?structureTransform:(b.structureTransform||{});
+      p.push(id, b.visibility||'', assignments.get(id)||'', typeof bodyFill==='function'?bodyFill(id):'', b.skinMm, b.cellSizeMm,
+        (xf.rotMat||[]).join(','), xf.spatialOffsetMmX, xf.spatialOffsetMmY, xf.spatialOffsetMmZ, xf.isoOffsetMm,
+        b.trimToNodes?1:0, b.trimInsetMult, bodyGroup.get(id)||'');
+    }
+    for(const [gid,g] of weldGroups) p.push(gid, g.filletMm, g.joinRule, g.anchorMm, g.gradeMm, g.gradeMaxMm);
+    return p.join('|');
+  }catch(e){ return ''; }
+}
+function ppResultsCheck(){
+  if(ppLast && ppLastSig!=null && ppDesignSig()!==ppLastSig) ppClearResults();
+  if(typeof homoSync==='function') homoSync();
+}
+function ppClearResults(){
+  ppLast=null; ppLastSig=null;
+  const b=document.getElementById('ppExact'); if(b) b.innerHTML=ppExactHtml();
+}
 
 // ── Material / density ───────────────────────────────────────────────────────
 function ppMaterial(){ return partPrep.mat==='custom'?null:ppFindMaterial(partPrep.mat); }
@@ -259,7 +298,7 @@ function ppAfterExport(vp, tv, scale, ctx){
   const box=document.getElementById('ppExact');
   if(box) box.innerHTML='<div class="ic-note">measuring the exported part…</div>';
   setTimeout(()=>{
-    try{ ppLast=ppComputeStats(vp, tv, scale, ctx); }
+    try{ ppLast=ppComputeStats(vp, tv, scale, ctx); ppLastSig=ppDesignSig(); }
     catch(e){ console.error('[part prep] stats failed', e); ppLast=null;
       const b=document.getElementById('ppExact'); if(b) b.innerHTML='<div class="exp-err">Could not measure the exported part — '+esc(e.message||e)+'</div>'; return; }
     console.log('[part prep] exported part', ppLast);
@@ -622,3 +661,7 @@ window.ppDownloadReport=function(){
   const blob=new Blob([L.join('\n')+'\n'],{type:'text/markdown'});
   downloadBlob(blob, safeFilePart(base)+'_print-report.md');
 };
+
+// Stage 4: settings edited anywhere (part prep, Export, rail) re-check the results.
+document.addEventListener('change',()=>setTimeout(ppResultsCheck,0),true);
+document.addEventListener('click',()=>setTimeout(ppResultsCheck,0),true);

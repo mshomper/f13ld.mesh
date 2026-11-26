@@ -17,10 +17,6 @@
 .vtab:focus-visible,#viewOptsBtn:focus-visible,#secPanel button:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px}
 .vtab.on{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .vs-right{display:flex;align-items:flex-start;justify-content:flex-end;gap:8px;flex:none}
-/* PREVIEW quality (Draft / Low / Med / High / Ultra): hidden in the layout stage, still wired
-   (setQual / triggerPreview keep working); stage 4 removes it. */
-#resStrip{display:none}
-
 /* view menu: drawn-icon pill + dropdown */
 #viewOpts{position:relative;top:auto;left:auto;z-index:35}
 #viewOptsBtn{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 14px;border-radius:14px;border:1px solid var(--hair);background:oklch(0.13 0.012 265 / 0.82);color:var(--ink-dim);font:500 13px var(--lq-font);white-space:nowrap;cursor:pointer;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}

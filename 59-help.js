@@ -31,7 +31,7 @@
         why:'A look inside before you export. The export is never cut.' },
       { id:'renderq', label:'render quality · automatic',
         what:'The preview picks its own detail. There is no quality switch.',
-        see:'The view sharpens when you stop moving it.',
+        see:'While you turn the view or drag a control it draws a quicker, softer frame, and sharpens a moment after you stop. Nothing redraws while you are not changing anything.',
         why:'Export quality is separate: it is set under Export.' }
     ]},
     { title:'Design · recipes and parts', items:[
@@ -167,11 +167,11 @@
         why:'Check the part before you export. Exact numbers come after the export.' },
       { id:'measured', label:'measured · last export', anchor:{before:'#inspMeas .ic-fold'},
         what:'Numbers taken from the exported triangle mesh: volume, mass, surface area, pieces, support area and plate contact, plus the print report.',
-        see:'Fills after an export. It describes that export, so it can lag behind later edits.',
+        see:'Fills after an export and clears as soon as you change anything that export read: a part, its fill, recipe or structure settings, a weld, part prep (orientation, standoff, material) or an Export setting. Colour, section and print view keep it.',
         why:'These are the file you got, not the preview.' },
       { id:'homo', label:'homogenization', anchor:{before:'#inspHomo .ic-fold'},
         what:'Effective stiffness the design tool computed for the recipe.',
-        see:'Shows for a recipe that carries it.',
+        see:'Shows for a recipe that carries it. It hides while the selected part has a wall offset, a rotation or Lattice + skin, and comes back when they are reset.',
         why:'The numbers are for the recipe as designed. Wall offset, rotation and skin change the lattice away from it.' }
     ]}
   ];
@@ -373,7 +373,7 @@
     simplify:'#grp-checks',
     estimate:'#inspEst',
     measured:'#inspMeas',
-    homo:T('#inspHomo', 'Homogenization shows for a recipe that carries it.')
+    homo:T('#inspHomo', 'Homogenization shows for a recipe that carries it, while the selected part has no wall offset, rotation or skin.')
   };
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);

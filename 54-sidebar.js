@@ -36,6 +36,25 @@ function sidebarEnhance(root){
     }
   }
   if(!found && body){ body.innerHTML=''; if(method) method.textContent=''; }
-  if(host) host.hidden=!found;
+  if(host){ host.dataset.has=found?'1':''; homoSync(); }
   if(typeof dockRefresh==='function') dockRefresh();
+}
+// UI refresh stage 4 (audit F4): the card describes the recipe as the design
+// tool analysed it. It hides while the selected part's wall offset or rotation
+// is not 0, or its fill is Lattice + skin, and shows again when they are back.
+function homoDesignChanged(){
+  try{
+    if(!importedShape || activeBodyId==null || !bodies.has(activeBodyId)) return false;
+    const xf=(typeof structureTransform!=='undefined')?structureTransform:null;
+    if(xf){
+      if(Math.abs(+xf.isoOffsetMm||0)>1e-9) return true;
+      if(Math.abs(+xf.rotXDeg||0)>1e-9||Math.abs(+xf.rotYDeg||0)>1e-9||Math.abs(+xf.rotZDeg||0)>1e-9) return true;
+    }
+    return typeof bodyFill==='function' && bodyFill(activeBodyId)==='skin';
+  }catch(e){ return false; }
+}
+function homoSync(){
+  const host=document.getElementById('inspHomo'); if(!host) return;
+  const hide=host.dataset.has!=='1' || homoDesignChanged();
+  if(host.hidden!==hide){ host.hidden=hide; if(typeof dockRefresh==='function') dockRefresh(); }
 }

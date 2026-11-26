@@ -11,12 +11,23 @@
 //   unit 1 → shape SDF baked to N³ grid in mm (from three-mesh-bvh)
 function MeshRaymarcher(canvas){
   this.canvas=canvas;
-  this.gl=canvas.getContext('webgl2');
+  // UI refresh stage 4: no MSAA. It does nothing for a full-screen ray-marched
+  // quad, and blitting the interactive frame into an MSAA canvas is an error.
+  this.gl=canvas.getContext('webgl2',{antialias:false});
   if(!this.gl){console.error('[MeshRaymarcher] WebGL2 not available');return;}
   var gl=this.gl;
   this._khr=gl.getExtension('KHR_parallel_shader_compile')||null;
   this._pendingProg=null; this._compiling=false;
   this.prog=null; this.quadBuf=null;
+  // Stage 4 render tiers: the loop only runs while something changed (see
+  // _frame). _dirty is written in many places, so it is a property whose
+  // setter wakes the loop.
+  this.drawStats={compile:0,raf:0,int:0,rest:0,restStrips:0,direct:0,lost:0,restored:0};
+  this._rafId=0; this._frameBound=this._frame.bind(this); this.__dirty=false;
+  Object.defineProperty(this,'_dirty',{configurable:true,
+    get:function(){ return this.__dirty; },
+    set:function(v){ this.__dirty=!!v; if(v) this._wake(); }});
+  this._initTiers();
   this.camZoom=16; this._dirty=false;
   this.panX=0; this.panY=0; // view-plane pan offset (Ctrl+right-drag)
   this.rotMat=this._mat3Mul(this._rotAA(0,1,0,0.7),this._rotAA(1,0,0,0.5));
@@ -29,7 +40,10 @@ function MeshRaymarcher(canvas){
   // circuit, no ghosts) — the field already holds the fully-composed union.
   this._assemblyMode=false;
   this.worldMin=[-5,-5,-5]; this.worldMax=[5,5,5]; this.isPeriodic=true;
-  this._quality='draft';
+  // Stage 4: the preview quality is fixed at High (Matt, 2026-11-26). It sets the
+  // bake / shape-grid sizes the scene reads and the rest-frame step count;
+  // triggerPreview(q) still changes it (tests and the bench use it).
+  this._quality='high';
   // v0.13.0: grid textures by grid object, keyed field textures (LRU), scratch
   // field textures for setScaffoldField, held / last-frame scene snapshots.
   this._gridTex=new Map(); this._fieldTexLRU=new Map(); this._fieldScratch=[];
@@ -56,7 +70,9 @@ MeshRaymarcher.prototype.setViewOption=function(key,on){
 };
 // Interaction state: soft shadows pause while orbiting/panning/zooming.
 MeshRaymarcher.prototype._beginInteract=function(){this._interacting=true;};
-MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._slowSince=0;this._dirty=true;}};
+// Stage 4: releasing the view starts the rest frame (after IDLE_MS); a scene
+// check lets the weak-GPU fallback (16-preview-scene.js) bring full detail back.
+MeshRaymarcher.prototype._endInteract=function(){if(this._interacting){this._interacting=false;this._slowSince=0;this._lastKick=performance.now();this._sceneCheck=true;this._wake();}};
 // v0.13.0: mm-distance grid {N, data} (shape / ghost / join SDF) as a texture,
 // cached by the grid OBJECT and uploaded on first use only. A grid's data must
 // not be rewritten in place (bodies replace sdfGrid / sdfGhost with new objects).
@@ -504,10 +520,20 @@ MeshRaymarcher.prototype.setJoins=function(members,bandMm){
   this._joinBand=bandMm;
   if(changed) this._dirty=true;
 };
+// Stage 4: the step count is a uniform, so quality never recompiles. The two
+// variants compile once (first call, or after a lost context).
 MeshRaymarcher.prototype.setQuality=function(q){
-  if(this._quality===q&&(this.prog||this._compiling))return;   // v0.14.0: never restart a running compile
-  this._quality=q;
-  this._submitShader();
+  if(this._quality!==q){ this._quality=q; this._dirty=true; }
+  if(!this.prog&&!this._compiling) this._submitShader();
+};
+// March steps per tier. Rest = the old per-quality literal; moving frames use
+// at most the old Low (256).
+MeshRaymarcher.prototype.MAX_STEPS=2048;
+MeshRaymarcher.prototype.REST_STEPS={draft:128,low:256,med:512,high:1024,ultra:2048};
+MeshRaymarcher.prototype.INT_STEPS=256;
+MeshRaymarcher.prototype._stepsFor=function(tier){
+  var r=this.REST_STEPS[this._quality]||1024;
+  return tier==='int'?Math.min(this.INT_STEPS,r):r;
 };
 // ── v0.14.0 · Scene shader (P2) ───────────────────────────────────────────
 // Every visible part is a MEMBER of one scene, drawn by one shader from a small
@@ -552,18 +578,17 @@ MeshRaymarcher.prototype._sceneFloats=function(){
 // group are read at constant indices (much cheaper on drivers that unroll the
 // member loops). 'multi': any scene. Both compile once per quality.
 MeshRaymarcher.prototype._buildShader=function(variant){
-  var steps={draft:'128',low:'256',med:'512',high:'1024',ultra:'2048'}[this._quality]||'256';
   return [
     '#version 300 es',
     'precision highp float;precision highp sampler3D;',
     '#define MAXM '+this.SC_MAXM,'#define MAXG '+this.SC_MAXG,'#define MAXS '+this.SC_MAXS,
     '#define MS '+this.SC_MS,'#define GS '+this.SC_GS,'#define SS '+this.SC_SS,
-    '#define SINGLE '+(variant==='single'?1:0),
+    '#define SINGLE '+(variant==='single'?1:0),'#define MAXSTEPS '+this.MAX_STEPS,
     'out vec4 fragColor;',
     'uniform vec2 res;uniform mat3 rot;uniform float zoom;uniform vec2 pan;',
     'uniform highp sampler3D uTileAtlas;uniform highp sampler3D uRegAtlas;uniform highp sampler3D uShapeAtlas;',
     'layout(std140) uniform Scene{vec4 M[MAXM*MS];vec4 G[MAXG*GS];vec4 S[MAXS*SS];vec4 C[4];};',
-    'uniform float uLipschitz;uniform float uViewH;uniform float uAOCell;uniform float uPixK;',
+    'uniform float uLipschitz;uniform float uViewH;uniform float uAOCell;uniform float uPixK;uniform int uSteps;',
     // ── v0.10.0 · Print view: build plate + overhang tint ─────────────────
     'uniform float uPrintOn;uniform float uTintOn;uniform vec3 uBuildDir;uniform vec3 uPlateU;uniform vec3 uPlateV;',
     'uniform float uPlateLevel;uniform float uCritCos;uniform float uWarnCos;uniform float uGridStep;uniform float uPlateAlpha;uniform float uLifted;',
@@ -728,7 +753,8 @@ MeshRaymarcher.prototype._buildShader=function(variant){
     '  float t=max(tEn,0.001);bool hit=false;bool nearCap=false;bool exitCap=false;',
     '  float thresh=-0.004;float maxStep=uViewH/10.0;float minSel=1e9;bool outl=C[0].w>0.5;',
     // One loop: step 0 tests the entry cap, the last step the exit cap.
-    '  for(int i=0;i<='+steps+';i++){bool last=(t>tEx)||(i=='+steps+');vec3 p=ro+rd*(last?tEx:t);float d=implicit(p);',
+    // Constant loop bound; uSteps (a uniform: rest or moving tier) ends it.
+    '  for(int i=0;i<=MAXSTEPS;i++){bool last=(t>tEx)||(i>=uSteps);vec3 p=ro+rd*(last?tEx:t);float d=implicit(p);',
     '    if(i==0&&d<thresh){nearCap=true;break;}',
     '    if(last){exitCap=d<thresh;break;}',
     '    float st=clamp(d/uLipschitz*0.85,0.001,maxStep);',
@@ -848,6 +874,7 @@ MeshRaymarcher.prototype._submitShader=function(){
     gl.attachShader(prg,vs_);gl.attachShader(prg,fs_);gl.linkProgram(prg);
     gl.deleteShader(vs_);gl.deleteShader(fs_);
     self._pending.push({variant:variant, prog:prg});
+    self.drawStats.compile++;
   });
   this._pendingProg=this._pending.length?this._pending[0].prog:null;
   this._compiling=this._pending.length>0; this._compileT0=performance.now();
@@ -856,7 +883,7 @@ MeshRaymarcher.prototype._submitShader=function(){
 MeshRaymarcher.prototype._activateUniforms=function(p){
   var gl=this.gl,L={};
   function U(n){ return gl.getUniformLocation(p,n); }
-  ['res','rot','zoom','pan','uTileAtlas','uRegAtlas','uShapeAtlas','uLipschitz','uViewH','uAOCell','uPixK',
+  ['res','rot','zoom','pan','uTileAtlas','uRegAtlas','uShapeAtlas','uLipschitz','uViewH','uAOCell','uPixK','uSteps',
    'uF13Shadow','uF13AO','uF13WarmCool','uF13Cut','uF13Lime','uF13Interact',
    'uPrintOn','uTintOn','uBuildDir','uPlateU','uPlateV','uPlateLevel','uCritCos','uWarnCos','uGridStep','uPlateAlpha','uLifted',
    'uClipOn','uClipN','uClipD'].forEach(function(n){ L[n]=U(n); });
@@ -1040,34 +1067,44 @@ MeshRaymarcher.prototype._dummyTex=function(){
   gl.bindTexture(gl.TEXTURE_3D,null);
   this._dummy=t; return t;
 };
+// Finish compiles that are ready (KHR_parallel_shader_compile).
+MeshRaymarcher.prototype._pollCompile=function(){
+  var gl=this.gl;
+  if(!this._compiling||!this._pending) return;
+  var left=[], self=this;
+  this._pending.forEach(function(q){
+    if(!gl.isProgram(q.prog)) return;   // deleted by a newer compile
+    var ready=!self._khr||gl.getProgramParameter(q.prog,self._khr.COMPLETION_STATUS_KHR);
+    if(!ready){ left.push(q); return; }
+    if(gl.getProgramParameter(q.prog,gl.LINK_STATUS)){
+      if(!self._progs) self._progs={};
+      var old=self._progs[q.variant]; if(old) gl.deleteProgram(old.prog);
+      self._progs[q.variant]={prog:q.prog, L:self._activateUniforms(q.prog)};
+      if(q.variant==='multi') self.prog=q.prog;
+    }else{console.error('Link error:',gl.getProgramInfoLog(q.prog));gl.deleteProgram(q.prog);}
+  });
+  this._pending=left; this._compiling=left.length>0; this._pendingProg=left.length?left[0].prog:null;
+};
+// One full rest-quality frame straight to the canvas, now. Tests and tools
+// call it (rm._dirty=true; rm.render(); then read the canvas in the same task);
+// the frame loop draws through the tiers instead (_frame).
 MeshRaymarcher.prototype.render=function(){
-  var gl=this.gl;if(!gl)return;
-  // Async compile check
-  if(this._compiling&&this._pending){
-    var left=[], self=this;
-    this._pending.forEach(function(q){
-      if(!gl.isProgram(q.prog)) return;   // deleted by a newer compile
-      var ready=!self._khr||gl.getProgramParameter(q.prog,self._khr.COMPLETION_STATUS_KHR);
-      if(!ready){ left.push(q); return; }
-      if(gl.getProgramParameter(q.prog,gl.LINK_STATUS)){
-        if(!self._progs) self._progs={};
-        var old=self._progs[q.variant]; if(old) gl.deleteProgram(old.prog);
-        self._progs[q.variant]={prog:q.prog, L:self._activateUniforms(q.prog)};
-        if(q.variant==='multi') self.prog=q.prog;
-      }else{console.error('Link error:',gl.getProgramInfoLog(q.prog));gl.deleteProgram(q.prog);}
-    });
-    this._pending=left; this._compiling=left.length>0; this._pendingProg=left.length?left[0].prog:null;
-  }
+  var gl=this.gl;if(!gl||this._lost)return;
+  this._pollCompile();
   if(!this.prog||!this._sceneGpu||!this._dirty)return;
   this._dirty=false;
+  this._restActive=false; this._refinePending=false; this._restFenceDrop();   // this is the rest frame
+  var wh=this._sizeCanvas(), self=this;
+  var held=this._withHeld(function(){ self._drawFrame({fb:null, vw:wh[0], vh:wh[1], steps:self._stepsFor('rest'), interact:self._interacting}); });
+  this._canvasBlank=false;
+  if(!held) this._lastFrame=this._captureState();
+  this.drawStats.direct++;
+};
+// v0.13.0: held view. fn draws the held scene with the live camera, rescaled to
+// the held view box; everything is restored afterwards. Returns true if held.
+MeshRaymarcher.prototype._withHeld=function(fn){
   var held=this._held;
-  if(!held){
-    this._drawFrame();
-    this._lastFrame=this._captureState();
-    return;
-  }
-  // v0.13.0: held view. Draw the held scene with the live camera, rescaled to
-  // the held view box; everything is restored afterwards.
+  if(!held){ fn(); return false; }
   var keys=this.HOLD_KEYS, saved={}, i;
   for(i=0;i<keys.length;i++) saved[keys[i]]=this[keys[i]];
   var cz=this.camZoom, px=this.panX, py=this.panY;
@@ -1075,11 +1112,12 @@ MeshRaymarcher.prototype.render=function(){
   try{
     for(i=0;i<keys.length;i++) this[keys[i]]=held[keys[i]];
     this.camZoom=cz*k; this.panX=(px||0)*k; this.panY=(py||0)*k;
-    this._drawFrame();
+    fn();
   }finally{
     for(i=0;i<keys.length;i++) this[keys[i]]=saved[keys[i]];
     this.camZoom=cz; this.panX=px; this.panY=py;
   }
+  return true;
 };
 // Scene state a frame is drawn from (camera and view options excluded).
 // v0.14.0: the GPU scene object carries members, groups, sources and atlases.
@@ -1115,22 +1153,33 @@ MeshRaymarcher.prototype._resolveBaseColor=function(){
   }
   return bc;
 };
-// The draw itself, from this._sceneGpu.
-MeshRaymarcher.prototype._drawFrame=function(){
+// Drawing-buffer size from the pane: CSS size × min(DPR, 1.5). Only a real pane
+// size change resizes it (a resize clears the canvas: _canvasBlank).
+MeshRaymarcher.prototype._sizeCanvas=function(){
+  var area=document.getElementById('previewArea');
+  var dpr=Math.min(window.devicePixelRatio||1,1.5);
+  var w=Math.max(1,Math.round((area?area.clientWidth:400)*dpr));
+  var h=Math.max(1,Math.round((area?area.clientHeight:300)*dpr));
+  if(this.canvas.width!==w||this.canvas.height!==h){ this.canvas.width=w; this.canvas.height=h; this._canvasBlank=true; }
+  return [w,h];
+};
+// The draw itself, from this._sceneGpu. o = {fb (null: canvas), vw, vh (render
+// size; viewport at the origin), steps, interact (shadows off), scissor [y0,y1]
+// (rest strips), timer (GPU timer query for the weak-GPU fallback)}.
+MeshRaymarcher.prototype._drawFrame=function(o){
   var gl=this.gl, sc=this._sceneGpu, self=this;
   var P=(sc.single&&this._progs&&this._progs.single)||(this._progs&&this._progs.multi);
   if(!P) return;
   var L=P.L; this.drawVariant=(P===(this._progs&&this._progs.single))?'single':'multi';
-  var area=document.getElementById('previewArea');
-  var dpr=Math.min(window.devicePixelRatio||1,1.5);
-  var w=Math.round((area?area.clientWidth:400)*dpr);
-  var h=Math.round((area?area.clientHeight:300)*dpr);
-  if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+  var w=o.vw, h=o.vh;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,o.fb||null);
   gl.viewport(0,0,w,h);
+  if(o.scissor){ gl.enable(gl.SCISSOR_TEST); gl.scissor(0,o.scissor[0],w,o.scissor[1]-o.scissor[0]); }
   gl.useProgram(P.prog);
   function u1(n,v){ var l=L[n]; if(l) gl.uniform1f(l,v); }
   function u3(n,a,b,c){ var l=L[n]; if(l) gl.uniform3f(l,a,b,c); }
   if(L.res) gl.uniform2f(L.res,w,h);
+  if(L.uSteps) gl.uniform1i(L.uSteps,o.steps|0);
   u1('uPixK',1.0/(1.6*Math.max(1,Math.min(w,h))));
   var pv=this._printView;
   if(L.rot) gl.uniformMatrix3fv(L.rot,false,new Float32Array(pv?this._mat3Mul(pv.rtColMajor,this.rotMat):this.rotMat));
@@ -1146,14 +1195,14 @@ MeshRaymarcher.prototype._drawFrame=function(){
   u1('uGridStep',pv?pv.gridStep:1.0);
   u1('uPlateAlpha',pv&&pv.plateAlpha!=null?pv.plateAlpha:0.9);
   u1('uLifted',pv&&pv.lifted?1.0:0.0);
-  if(this._updateGimbal) this._updateGimbal();
+  if(this._updateGimbal&&!(o.scissor&&o.scissor[0]>0)) this._updateGimbal();
   u1('zoom',this.camZoom);
   if(L.pan) gl.uniform2f(L.pan,this.panX||0,this.panY||0);
   u1('uViewH',this.viewH);
   u1('uLipschitz',Math.max(sc.lipschitz,1e-3));
   var vo=this.viewOpts;
   u1('uF13Shadow',vo.shadows?1.0:0.0); u1('uF13AO',vo.occlusion?1.0:0.0); u1('uF13WarmCool',vo.warmCool?1.0:0.0);
-  u1('uF13Cut',vo.cutFaces?1.0:0.0); u1('uF13Lime',vo.limeEdges?1.0:0.0); u1('uF13Interact',this._interacting?1.0:0.0);
+  u1('uF13Cut',vo.cutFaces?1.0:0.0); u1('uF13Lime',vo.limeEdges?1.0:0.0); u1('uF13Interact',o.interact?1.0:0.0);
   // Occlusion reach ≈ one lattice cell. Shape/weld mode: a cell is 10 world
   // units. Cube mode: the [-5,5] tile, assume ~1.5 cells across.
   var aoCell=(this.hasShape&&this.shapeData)?Math.min(10.0,this.viewH*1.33):this.viewH*2.0/1.5;
@@ -1177,9 +1226,11 @@ MeshRaymarcher.prototype._drawFrame=function(){
   // v0.14.0: GPU time of frames drawn while the view moves (weak-GPU fallback,
   // 16-preview-scene.js). EXT_disjoint_timer_query_webgl2 where available.
   var tq=this._timerExt; if(tq===undefined) tq=this._timerExt=gl.getExtension('EXT_disjoint_timer_query_webgl2')||null;
-  var q=null; if(tq&&this._interacting&&!this._tqBusy){ q=gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT,q); this._tqBusy=true; }
+  var q=null; if(tq&&o.timer&&!this._tqBusy){ q=gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT,q); this._tqBusy=true; }
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   if(q){ gl.endQuery(tq.TIME_ELAPSED_EXT); (this._tqList||(this._tqList=[])).push(q); }
+  if(o.scissor) gl.disable(gl.SCISSOR_TEST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 };
 // Collect finished GPU timer queries into frame samples.
 MeshRaymarcher.prototype._pollTimers=function(){
@@ -1202,32 +1253,215 @@ MeshRaymarcher.prototype._frameSample=function(ms){
   if(ms>this.SLOW_FRAME_MS){ if(!this._slowSince) this._slowSince=performance.now(); }
   else this._slowSince=0;
 };
-MeshRaymarcher.prototype._startLoop=function(){
-  var self=this;
-  self._loopRunning=true;
-  var lastTs=0;
-  function loop(ts){
-    var dt=Math.min((ts-lastTs)/1000,0.05);lastTs=ts;
-    if(self._dirty||self._compiling){
-      // v0.14.0: the scene is pulled from the app state (16-preview-scene.js)
-      // on every dirty frame; it returns at once when nothing changed.
-      if(self._dirty&&self._sceneProvider){ try{ self._sceneProvider(); }catch(e){ console.error('[scene]',e); } }
-      self.rotMat=self._orthonorm(self.rotMat);
-      var t0=performance.now();
-      var drew=self._dirty&&!!self.prog&&!!self._sceneGpu;
-      self.render();
-      if(drew){
+// ── UI refresh stage 4 · render tiers (liquid-ui templates/f13ld/render-quality.md) ──
+// Moving frames (orbit, pan, zoom, any control edit, or a second change within
+// IDLE_MS) use INT_STEPS, no shadows, and render into an offscreen buffer at an
+// adaptive scale (AQ, 0.4–0.85 of the canvas) that is blitted up with LINEAR
+// filtering. IDLE_MS after the last of them, one rest frame (REST_STEPS of the
+// quality, shadows) is drawn at full size in horizontal strips over several
+// display frames into a second buffer, then blitted once; any change drops the
+// strips. A single change while still (a bake landing, a click) goes straight
+// to the strips: the old frame stays until the new one is complete. Nothing
+// draws and no frame is requested while idle. The canvas buffer is never
+// resized between tiers.
+MeshRaymarcher.prototype.IDLE_MS=150;
+MeshRaymarcher.prototype._initTiers=function(){
+  this.AQ={scale:0.7,min:0.4,max:0.85,cap:0.85,ema:0,prev:0,vsync:16.7,lastTick:0,pxCost:0};
+  this.REST={y:0,rows:0,waits:0,strips:0,W:0,H:0,STRIP_MS:8,REST_COST:3}; this._restFence=null;
+  this._lowFB={fb:null,rb:null,w:0,h:0}; this._hiFB={fb:null,rb:null,w:0,h:0};
+  this._restActive=false; this._refinePending=false; this._restAfter=0;
+  this._lastKick=-1e9; this._lastChangeAt=-1e9; this._prevIntTs=0;
+  this._sceneCheck=false; this._canvasBlank=true; this._lost=false;
+};
+MeshRaymarcher.prototype._wake=function(){
+  if(this._rafId||this._lost||!this._frameBound) return;   // never two frames queued
+  this._rafId=requestAnimationFrame(this._frameBound);
+};
+// A control was edited: moving tier for IDLE_MS, and check the scene.
+MeshRaymarcher.prototype.kick=function(){ this._lastKick=performance.now(); this._sceneCheck=true; this._wake(); };
+// Something the scene reads may have changed: rebuild only if its signature did.
+MeshRaymarcher.prototype.requestSceneCheck=function(){ this._sceneCheck=true; this._wake(); };
+MeshRaymarcher.prototype.aqAtFloor=function(){ return this.AQ.scale<=this.AQ.min+1e-3; };
+// Offscreen colour target (RGBA8 renderbuffer), reallocated only on size change.
+MeshRaymarcher.prototype._ensureFB=function(F,w,h){
+  var gl=this.gl;
+  if(F.fb&&F.w===w&&F.h===h) return true;
+  if(!F.fb){ F.fb=gl.createFramebuffer(); F.rb=gl.createRenderbuffer(); }
+  gl.bindRenderbuffer(gl.RENDERBUFFER,F.rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.RGBA8,w,h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,F.fb);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,F.rb);
+  var ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.bindRenderbuffer(gl.RENDERBUFFER,null);
+  F.w=w; F.h=h;
+  if(!ok){ gl.deleteFramebuffer(F.fb); gl.deleteRenderbuffer(F.rb); F.fb=null; F.rb=null; }
+  return ok;
+};
+MeshRaymarcher.prototype._blit=function(F,sw,sh,W,H,filter){
+  var gl=this.gl;
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER,F.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
+  gl.blitFramebuffer(0,0,sw,sh,0,0,W,H,gl.COLOR_BUFFER_BIT,filter);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+};
+// Moving frame: offscreen at AQ.scale, upscaled to the canvas.
+MeshRaymarcher.prototype._drawInteractive=function(){
+  var gl=this.gl, AQ=this.AQ, self=this, wh=this._sizeCanvas(), W=wh[0], H=wh[1], held;
+  var steps=this._stepsFor('int'), timer=!!this._interacting;
+  if(this._ensureFB(this._lowFB,Math.max(1,Math.ceil(W*AQ.max)),Math.max(1,Math.ceil(H*AQ.max)))){
+    var lw=Math.max(1,Math.round(W*AQ.scale)), lh=Math.max(1,Math.round(H*AQ.scale));
+    held=this._withHeld(function(){ self._drawFrame({fb:self._lowFB.fb, vw:lw, vh:lh, steps:steps, interact:true, timer:timer}); });
+    this._blit(this._lowFB,lw,lh,W,H,gl.LINEAR);
+  }else{
+    held=this._withHeld(function(){ self._drawFrame({fb:null, vw:W, vh:H, steps:steps, interact:true, timer:timer}); });
+  }
+  this._canvasBlank=false;
+  if(!held) this._lastFrame=this._captureState();
+  this.drawStats.int++;
+};
+// Adaptive scale from the frame-to-frame time of consecutive moving frames
+// (EMA): slower than ~20 ms lowers it, at the display rate it creeps back up,
+// never above the last scale that was too slow.
+MeshRaymarcher.prototype._aqSample=function(ts){
+  var AQ=this.AQ, W=this.canvas.width, H=this.canvas.height;
+  if(AQ.prev&&ts-AQ.prev<1000){   // prev is cleared by any frame without a moving draw, so idle gaps never count
+    var d=ts-AQ.prev; AQ.ema=AQ.ema?AQ.ema*0.7+d*0.3:d;
+    AQ.pxCost=AQ.ema/Math.max(1,W*H*AQ.scale*AQ.scale);   // ms per moving pixel (upper bound)
+    var fast=Math.max(12,AQ.vsync*1.2), slow=Math.max(20,AQ.vsync*1.6);
+    if(AQ.ema>slow){ AQ.cap=Math.max(AQ.min,AQ.scale-0.03); AQ.scale=Math.max(AQ.min,AQ.scale*0.88); AQ.ema=0; }
+    else if(AQ.ema<fast&&AQ.scale<AQ.cap) AQ.scale=Math.min(AQ.cap,AQ.scale+0.01);
+  }
+  AQ.prev=ts;
+};
+// Rest frame in strips. First strip sized to ~STRIP_MS from the measured cost
+// per pixel (4–16 strips, even rows). GL calls return before the GPU has done
+// the work, so each strip ends with a fence and the next strip is issued only
+// once the GPU has finished it (paced): a strip done by the next display frame
+// doubles the rows, one that needed n frames shrinks them about n+1 times.
+MeshRaymarcher.prototype._restBegin=function(){
+  var wh=this._sizeCanvas(), W=wh[0], H=wh[1], R=this.REST, AQ=this.AQ;
+  if(!this._ensureFB(this._hiFB,W,H)) return false;
+  var lo=Math.ceil(H/16), hi=Math.ceil(H/4);
+  R.rows=AQ.pxCost>0?Math.round(R.STRIP_MS/(AQ.pxCost*R.REST_COST*W)):lo;   // unknown cost: smallest strips, the pacing grows them
+  R.rows=Math.max(lo,Math.min(hi,R.rows)); R.rows+=R.rows&1;
+  R.W=W; R.H=H; R.y=0; R.waits=0; R.strips=0; this._restFenceDrop(); this._restActive=true;
+  return true;
+};
+MeshRaymarcher.prototype._restFenceDrop=function(){ if(this._restFence){ try{ this.gl.deleteSync(this._restFence); }catch(e){} this._restFence=null; } };
+// One strip; true when the frame is complete and on the canvas. paced=false
+// (tests / timing) skips the fence wait.
+MeshRaymarcher.prototype._restStep=function(ts,unpaced){
+  var R=this.REST, self=this, gl=this.gl, W=this.canvas.width, H=this.canvas.height;
+  if(W!==R.W||H!==R.H){ this._restActive=false; this._restFenceDrop(); this._dirty=true; return false; }   // pane resized mid-way
+  if(this._restFence){
+    var lo=Math.ceil(H/16), hi=Math.ceil(H/4);
+    if(!unpaced&&gl.getSyncParameter(this._restFence,gl.SYNC_STATUS)!==gl.SIGNALED){ R.waits++; return false; }   // GPU still on the last strip
+    this._restFenceDrop();
+    if(!unpaced){ R.rows=R.waits?Math.max(lo,Math.floor(R.rows/(R.waits+1))):Math.min(hi,R.rows*2); R.rows+=R.rows&1; }
+    R.waits=0;
+  }
+  var y0=R.y, y1=Math.min(H,R.y+R.rows), steps=this._stepsFor('rest');
+  if(y0===0) this.rotMat=this._orthonorm(this.rotMat);
+  var held=this._withHeld(function(){ self._drawFrame({fb:self._hiFB.fb, vw:W, vh:H, steps:steps, interact:false, scissor:[y0,y1]}); });
+  R.y=y1; R.strips++;
+  if(R.y<H){ if(!unpaced){ this._restFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0); gl.flush(); } return false; }
+  this._blit(this._hiFB,W,H,W,H,this.gl.NEAREST);
+  this._restActive=false; this._canvasBlank=false;
+  if(!held) this._lastFrame=this._captureState();
+  this.drawStats.rest++; this.drawStats.restStrips=R.strips;
+  return true;
+};
+// Whole rest frame in strips at once (tests / timing only).
+MeshRaymarcher.prototype.drawRestProgressiveAll=function(){
+  if(!this._sceneGpu||!this.prog||!this._restBegin()) return 0;
+  var t=0; while(this._restActive) this._restStep(t+=16,true);
+  return this.drawStats.restStrips;
+};
+// The frame loop. Runs only while something is pending; see above.
+MeshRaymarcher.prototype._frame=function(ts){
+  this._rafId=0; this.drawStats.raf++;
+  if(this._lost||!this.gl) return;
+  var AQ=this.AQ;
+  if(AQ.lastTick){ var dd=ts-AQ.lastTick; if(dd>4&&dd<AQ.vsync) AQ.vsync=dd; } AQ.lastTick=ts;
+  this._pollCompile();
+  var now=performance.now(), kicked=now-this._lastKick<this.IDLE_MS, drewInt=false;
+  // v0.14.0: the scene is pulled from the app state (16-preview-scene.js); it
+  // returns at once when nothing changed, and commits (setting _dirty) when it did.
+  if((this.__dirty||this._sceneCheck)&&this._sceneProvider){ this._sceneCheck=false; try{ this._sceneProvider(); }catch(e){ console.error('[scene]',e); } }
+  this._sceneCheck=false;
+  if(this.__dirty){
+    if(!this._sceneGpu||(!this.prog&&!this._compiling)) this.__dirty=false;   // nothing to draw yet; the next change wakes the loop
+    else if(this.prog){
+      var recent=now-this._lastChangeAt<this.IDLE_MS; this._lastChangeAt=now;
+      this.__dirty=false; this._restActive=false; this._restFenceDrop(); this._refinePending=true;
+      if(this._interacting||kicked||recent||this._canvasBlank){
+        this.rotMat=this._orthonorm(this.rotMat);
+        var t0=performance.now();
+        this._drawInteractive(); drewInt=true; this._restAfter=now+this.IDLE_MS;
+        this._lastDrawMs=performance.now()-t0;
         // Without a GPU timer: frame-to-frame gap, only while the view moves
         // (other gaps include bakes and uploads on the main thread).
-        if(!self._timerExt&&self._interacting&&self._prevDirtyTs&&ts-self._prevDirtyTs<250) self._frameSample(ts-self._prevDirtyTs);
-        self._prevDirtyTs=ts; self._lastDrawMs=performance.now()-t0;
-      }
-      self._pollTimers();
+        if(!this._timerExt&&this._interacting&&this._prevIntTs&&ts-this._prevIntTs<250) this._frameSample(ts-this._prevIntTs);
+        this._prevIntTs=ts;
+      }else this._restAfter=now;
     }
-    requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop);
-  new ResizeObserver(function(){self._dirty=true;}).observe(document.getElementById('previewArea'));
+  if(!drewInt&&this._refinePending){
+    if(this._interacting||kicked||now<this._restAfter){ this._restActive=false; this._restFenceDrop(); }   // moving again: drop the strips
+    else if(!this._restActive&&!this._restBegin()){ this.__dirty=true; this.render(); this._refinePending=false; }
+    else if(this._restStep(ts)){ this._refinePending=false; AQ.cap=Math.min(AQ.max,AQ.cap+0.05); }   // let the next interaction probe a little higher
+  }
+  if(drewInt) this._aqSample(ts); else AQ.prev=0;
+  this._pollTimers();
+  // Keep running while the view is held or a control was just edited, so the
+  // adaptive scale only ever compares back-to-back frames (a frame without a
+  // moving draw clears AQ.prev), never the gap between sparse pointer events.
+  if(this.__dirty||this._compiling||this._sceneCheck||kicked||this._interacting||this._refinePending) this._wake();
+};
+// Lost WebGL context: stop, then rebuild every GPU object on restore and let
+// the scene re-upload from the CPU-side bake cache.
+MeshRaymarcher.prototype._onContextLost=function(e){
+  if(e&&e.preventDefault) e.preventDefault();
+  this._lost=true; if(this._rafId){ cancelAnimationFrame(this._rafId); this._rafId=0; }
+  this.drawStats.lost++;
+};
+MeshRaymarcher.prototype._onContextRestored=function(){
+  var gl=this.gl;
+  this._lost=false; this.drawStats.restored++;
+  this._khr=gl.getExtension('KHR_parallel_shader_compile')||null;
+  this.quadBuf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,this.quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  this.prog=null; this._progs={}; this._pending=[]; this._pendingProg=null; this._compiling=false;
+  this._ubo=null; this._dummy=null; this._dbgProg=null;
+  this._timerExt=undefined; this._tqList=[]; this._tqBusy=false;
+  this._gridTex=new Map(); this._fieldTexLRU=new Map(); this._fieldScratch=[];
+  this.fieldTex=null; this.shapeTex=null; this._ghostTex=null; this._ghostMeta=null; this._ghostCount=0;
+  this._joinTex=null; this._joinMeta=null; this._joinCount=0;
+  this._atlas={}; this._atlasOld=[]; this._sceneGpu=null;
+  if(this._holdTimer){ clearTimeout(this._holdTimer); this._holdTimer=null; }
+  this._held=null; this._lastFrame=null;
+  this._lowFB={fb:null,rb:null,w:0,h:0}; this._hiFB={fb:null,rb:null,w:0,h:0};
+  this._restActive=false; this._refinePending=false; this._canvasBlank=true; this._restFence=null;
+  this._submitShader();
+  if(typeof previewSceneChanged==='function') previewSceneChanged();
+  this._dirty=true;
+};
+MeshRaymarcher.prototype._startLoop=function(){
+  var self=this, cv=this.canvas;
+  self._loopRunning=true;
+  cv.addEventListener('webglcontextlost',function(e){ self._onContextLost(e); },false);
+  cv.addEventListener('webglcontextrestored',function(){ self._onContextRestored(); },false);
+  // Any edit to a control counts as interaction (sliders, selects, number
+  // fields; the widgets fire native input / change events). Clicks and keys
+  // only ask for a scene check, which draws nothing unless the scene signature
+  // changed (this replaces the 250 ms fill / joins poll of 23-view-strip.js).
+  document.addEventListener('input',function(){ self.kick(); },true);
+  document.addEventListener('change',function(){ self.kick(); },true);
+  document.addEventListener('pointerup',function(){ self.requestSceneCheck(); },true);
+  document.addEventListener('keyup',function(){ self.requestSceneCheck(); },true);
+  var area=document.getElementById('previewArea');
+  if(area&&window.ResizeObserver) new ResizeObserver(function(){ self._dirty=true; }).observe(area);
+  this._wake();
 };
 MeshRaymarcher.prototype._rotAA=function(ax,ay,az,angle){var c=Math.cos(angle),s=Math.sin(angle),t2=1-c;var l=Math.sqrt(ax*ax+ay*ay+az*az)||1;ax/=l;ay/=l;az/=l;return[t2*ax*ax+c,t2*ax*ay+s*az,t2*ax*az-s*ay,t2*ax*ay-s*az,t2*ay*ay+c,t2*ay*az+s*ax,t2*ax*az+s*ay,t2*ay*az-s*ax,t2*az*az+c];};
 MeshRaymarcher.prototype._mat3Mul=function(A,B){var r=new Array(9);for(var c=0;c<3;c++)for(var row=0;row<3;row++)r[c*3+row]=A[0*3+row]*B[c*3+0]+A[1*3+row]*B[c*3+1]+A[2*3+row]*B[c*3+2];return r;};

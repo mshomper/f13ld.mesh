@@ -173,24 +173,12 @@
     }catch(e){ list=[]; }
     rm.setJoins(list.length>=2?list:[],band);
   }
-  // Called by triggerPreview (44-preview-trigger.js) after each bake, and by
-  // the rail after it flips showJoins. Cheap and idempotent.
-  window.viewStripSync=function(){ syncJoins(); readout(); };
-  // Skin thickness / fill are drawn live by the shader (no re-bake for a single
-  // body): redraw as soon as the rail changes them. Weld rule / grade / anchor
-  // re-bake through the rail's own triggerPreview.
-  var lastFillSig='';
-  function fillSig(){
-    try{
-      if(typeof activeBodyId==='undefined'||activeBodyId==null) return '';
-      var b=bodies.get(activeBodyId);
-      return bodyFill(activeBodyId)+'|'+(b?b.skinMm:'')+'|'+(rm.shapeData?rm.shapeData.cellSizeMm:'');
-    }catch(e){ return ''; }
-  }
-  setInterval(function(){
-    if(joinSig()!==lastJoinSig) syncJoins();
-    var fs=fillSig(); if(fs!==lastFillSig){ lastFillSig=fs; rm._dirty=true; }
-  },250);
+  // Called when the scene settles (16-preview-scene.js) and by the rail after
+  // it flips showJoins. Cheap and idempotent.
+  // UI refresh stage 4: the 250 ms join / fill poll is gone. Fill, skin, cell
+  // size and show joins redraw from their setters (previewSceneChanged), and
+  // every click / key asks the raymarcher for a scene check (20-raymarcher.js).
+  window.viewStripSync=function(){ if(joinSig()!==lastJoinSig) syncJoins(); readout(); };
 
   // initial state: print view may already be on (persisted part-prep setting)
   document.addEventListener('DOMContentLoaded',function(){

@@ -102,7 +102,7 @@ The **part prep** section above the export controls gives the numbers you need t
 Same pattern as F13LD.lab and F13LD.sweep:
 
 - **Header:** Open recipe, Add part, and a status mark that ripples while the tool works.
-- **View strip:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only). Preview quality and the view menu sit at the right.
+- **View strip:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only). The view menu sits at the right. Render quality is automatic: while you turn the view or drag a control the preview draws quicker, lower-resolution frames, then one sharp frame a moment after you stop; nothing redraws while idle.
 - **Left rail:** recipes (family-coloured cards, details on hover or tap; drag one onto a part to fill it), parts (welds shown as cards with their members inside), and the editor for whatever is selected, right under the list so the view stays clear.
 - **Inspector (right):** Estimate from the preview, Measured after an export (with the field · mesh · simplify split and the print report), Homogenization.
 - **Dock:** Configure opens a drawer with Part prep and Export; the dock tags summarise them (click one to jump to its tab); Export 3MF with its estimate. While an export runs, a strip above the dock shows the stage, elapsed time and Cancel.
@@ -115,7 +115,7 @@ The preview draws every visible part together in one shader, from a small table 
 - **Every structure setting is live** for a single part and for every member of a weld: cell size, wall offset, rotation, shift, fill, skin, fillet, join rule and its distances. The next frame shows the change, with no bake and no held frame.
 - **Welded parts look welded** (fillet, join rule, weld colour) whether or not the weld is selected, and every part shows its real lattice all the time. The selected part (or weld) has a soft lime outline when more than one part is on screen.
 - **Bakes that remain are per recipe:** one tile for periodic recipes, shared by every part that uses it; for noise, spinodoid / GRF grain and warped bundle, the box the transformed part needs, re-baked in the background when rotation, shift or cell size moves it (the old one keeps drawing). Tiles, regions and part shapes live in three 3D-texture atlases, so there is no fixed limit on how many recipes show at once.
-- **Weak GPUs:** if GPU frames stay slow (over 70 ms for about 1.5 s) while you orbit with several lattices on screen, the parts you aren't editing draw as shells while the view moves and come back as soon as it stops. A "Simplified while moving" pill in the view turns this off. `?debug=1` shows frame time, scene size, atlas memory and shader compile time.
+- **Weak GPUs:** if GPU frames stay slow (over 70 ms for about 1.5 s) while you orbit with several lattices on screen, even with the moving frames already at their lowest resolution, the parts you aren't editing draw as shells while the view moves and come back as soon as it stops. `?debug=1` shows frame time, scene size, atlas memory and shader compile time.
 
 ### Parts and fill
 

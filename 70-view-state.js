@@ -34,15 +34,10 @@ function clearStale(){
   if(area){area.classList.remove('preview-stale');}
 }
 function showTriCount(n,ms){triPill.style.display='block';triPill.textContent=n.toLocaleString()+' tri · '+ms+' ms';if(seamPill)seamPill.style.display='none';}
-function setBtns(on){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!on;});}
-function setActivBtn(id){['btnDraft','btnLow','btnMed','btnHigh','btnUltra'].forEach(b=>{const el=document.getElementById(b);if(el)el.classList.toggle('active',b===id);});}
-
-// Parallel to _qualUserSet (export), this tracks whether the user has
-// explicitly clicked a preview-quality button this session. If false on
-// recipe import, default to 'low' (per Matt's UX preference); if true,
-// respect the user's existing choice.
-let _previewQualUserSet=false;
-const PREVIEW_BTN_ID={draft:'btnDraft',low:'btnLow',med:'btnMed',high:'btnHigh',ultra:'btnUltra'};
+// UI refresh stage 4: render quality is automatic (Matt, 2026-11-26). The
+// PREVIEW Draft … Ultra buttons are gone; these stay as no-ops for callers.
+function setBtns(on){}
+function setActivBtn(id){}
 
 async function showRecipe(recipe){
   clearError();
@@ -56,8 +51,8 @@ async function showRecipe(recipe){
   // Default to Low quality on first recipe of the session, but respect any
   // user-selected quality from a previous recipe (v0.5.0).
   if(!_qualUserSet) currentExportQual='low';
-  // Same pattern for preview render quality.
-  const initialPreviewQ=_previewQualUserSet ? (rm&&rm._quality||'low') : 'low';
+  // Stage 4: the preview runs at High (rm._quality; triggerPreview(q) still sets it for tests).
+  const initialPreviewQ=rm&&rm._quality||'high';
   // v0.5.0-rc22: auto-default UI cellSizeMm to recipe.geometry.cell for
   // new-schema beam recipes. The recipe's `cell` is sweep's characterized
   // (geometric mean) cell size in mm; matching the UI to it on load shows
@@ -83,7 +78,6 @@ async function showRecipe(recipe){
     const trimTg=document.getElementById('trimToNodes');
     if(trimMul) trimMul.style.display=(shapeLoaded&&familyHasTrim(recipe)&&trimTg&&trimTg.checked)?'inline-flex':'none';
   }
-  setActivBtn(PREVIEW_BTN_ID[initialPreviewQ]||'btnLow');
   triggerPreview(initialPreviewQ);
   setTimeout(updateExportEstimate,0); // panel renders async
   // rc2.5: refresh both rows so the new recipe appears in the library and
@@ -114,8 +108,3 @@ function resetToDropzone(){
   clearShapeWire();setShapeUI('idle');
 }
 document.getElementById('reloadBtn').addEventListener('click',resetToDropzone);
-document.getElementById('btnDraft').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnDraft');triggerPreview('draft');});
-document.getElementById('btnLow').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnLow');triggerPreview('low');});
-document.getElementById('btnMed').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnMed');triggerPreview('med');});
-document.getElementById('btnHigh').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnHigh');triggerPreview('high');});
-document.getElementById('btnUltra').addEventListener('click',()=>{if(!currentRecipe)return;_previewQualUserSet=true;setActivBtn('btnUltra');triggerPreview('ultra');});

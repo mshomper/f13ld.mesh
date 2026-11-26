@@ -32,7 +32,8 @@ const PSC={
   pend:new Map(),                    // bake key -> promise (in flight)
   lastByBody:new Map(),              // bodyId -> {recipe, kind, src} last committed source
   holding:false, lowDetail:false, slowGpu:false, fallbackOff:false,
-  waiters:[], lastScene:null, lastBakeMs:null, commits:0, keyMemo:new WeakMap()
+  waiters:[], lastScene:null, lastBakeMs:null, commits:0, keyMemo:new WeakMap(),
+  rangeNeed:new WeakMap()            // recipe -> {N, opts}: the export's field-range bake (stage 4)
 };
 const SCENE_MAX_MEMBERS=8;
 
@@ -231,9 +232,9 @@ function _scStartBake(nd){
   const p=bakeField(nd.recipe, nd.N, nd.opts).then(res=>{
     PSC.pend.delete(nd.key);
     PSC.lastBakeMs=Math.round(performance.now()-t0);
-    // v0.8.3 rule: the selected part's raw bake writes its range to the recipe
-    // it baked (the export reads it), even if superseded.
-    if(nd.forActive && nd.opts.bakeRaw){ nd.recipe._previewFieldMin=res.fieldMin; nd.recipe._previewFieldMax=res.fieldMax; }
+    // v0.8.3 rule: the selected part's raw bake sets the range the export reads,
+    // even if superseded. Stage 4: recorded here, baked at export (see below).
+    _scRecordRange(nd);
     PSC.ver++; if(rm) rm._dirty=true;
   }).catch(e=>{
     PSC.pend.delete(nd.key);
@@ -260,6 +261,33 @@ function _scResolve(scene){
   return out;
 }
 
+// -- Export field range (UI refresh stage 4) ------------------------------
+// The export normalizes noise / grain fields with recipe._previewFieldMin/Max,
+// which main took from the selected part's preview bake at its default Low
+// quality (64³). The preview is now fixed at High, so the range comes from its
+// own bake with the same inputs at 64³ (same worker code, same content-keyed
+// cache), made only when an export starts: exports stay byte-identical to
+// main, and the preview neither waits for it nor writes the range itself.
+const EXPORT_RANGE_N=64;
+function _scRecordRange(nd){
+  if(nd && nd.forActive && nd.opts && nd.opts.bakeRaw) PSC.rangeNeed.set(nd.recipe,{N:EXPORT_RANGE_N, opts:nd.opts});
+}
+async function ensureExportFieldRanges(){
+  if(typeof recipes==='undefined') return;
+  const jobs=[];
+  for(const r of recipes.values()){
+    const nd=PSC.rangeNeed.get(r); if(!nd) continue;
+    jobs.push((async()=>{
+      const key=previewBakeKey(r, nd.N, nd.opts);
+      if(typeof protectPreviewBake==='function') protectPreviewBake(key,true);
+      try{ const res=await bakeField(r, nd.N, nd.opts); r._previewFieldMin=res.fieldMin; r._previewFieldMax=res.fieldMax; }
+      finally{ if(typeof protectPreviewBake==='function') protectPreviewBake(key,false); }
+    })());
+  }
+  await Promise.all(jobs);
+}
+window.ensureExportFieldRanges=ensureExportFieldRanges;
+
 // -- Commit ---------------------------------------------------------------
 function _scCommit(scene, r){
   const desc=scene.desc;
@@ -282,7 +310,7 @@ function _scCommit(scene, r){
     rm._fieldData=res.data; rm.bakeN=res.N; rm.fieldMin=res.fieldMin; rm.fieldMax=res.fieldMax;
     rm.lipschitz=res.lipschitz; rm.topology=res.topology||null;
     rm.worldMin=as.box.min.slice(); rm.worldMax=as.box.max.slice(); rm.isPeriodic=as.kind==='tile';
-    if(as.need && as.need.forActive && as.need.opts.bakeRaw){ as.need.recipe._previewFieldMin=res.fieldMin; as.need.recipe._previewFieldMax=res.fieldMax; }
+    if(as.need) _scRecordRange(as.need);
   }
   rm._assemblyMode=false;
   if(desc.cube){ rm.fitPeriodicBounds(desc.cubeBox.min, desc.cubeBox.max); if(typeof seamPill!=='undefined'&&typeof updateSeamPill==='function') updateSeamPill(currentRecipe); }
@@ -296,28 +324,18 @@ function _scPill(){
 }
 
 // -- Weak-GPU fallback --------------------------------------------------
-// Armed after about 1.5 s of slow GPU frames (rm.SLOW_FRAME_MS) while the view
-// moves with two or more lattices drawn; then, while the view moves, parts
-// that aren't being edited draw as shells and full detail returns as soon as it
-// stops. The "Simplified while moving" pill turns it off for the session. Off
-// under automation (software-rendered test browsers are always slow).
+// The second step after the moving tier's adaptive scale (20-raymarcher.js):
+// armed after about 1.5 s of slow GPU frames (rm.SLOW_FRAME_MS) while the view
+// moves with the scale already at its floor and two or more lattices drawn;
+// then, while the view moves, parts that aren't being edited draw as shells
+// and full detail returns as soon as it stops. Automatic (stage 4: the
+// "Simplified while moving" pill is gone, no manual quality switch). Off under
+// automation (software-rendered test browsers are always slow).
 function _scFallback(){
   if(PSC.fallbackOff || (typeof navigator!=='undefined'&&navigator.webdriver)){ PSC.lowDetail=false; return; }
-  if(!PSC.slowGpu && rm._interacting && rm._slowSince && performance.now()-rm._slowSince>1500 && PSC.lastScene &&
-     PSC.lastScene.members.filter(m=>!m.vis&&m.fill).length>=2){ PSC.slowGpu=true; _scPillFallback(); }
+  if(!PSC.slowGpu && rm._interacting && rm._slowSince && performance.now()-rm._slowSince>1500 && (!rm.aqAtFloor||rm.aqAtFloor()) && PSC.lastScene &&
+     PSC.lastScene.members.filter(m=>!m.vis&&m.fill).length>=2) PSC.slowGpu=true;
   PSC.lowDetail=PSC.slowGpu && !!rm._interacting;
-}
-function _scPillFallback(){
-  const area=document.getElementById('previewArea'); if(!area) return;
-  let b=document.getElementById('scSimplified');
-  if(!PSC.slowGpu || PSC.fallbackOff){ if(b) b.remove(); return; }
-  if(b) return;
-  b=document.createElement('button'); b.id='scSimplified'; b.type='button';
-  b.title='Parts you are not editing show as shells while the view moves. Click for full detail.';
-  b.textContent='Simplified while moving · show full detail';
-  b.style.cssText='position:absolute;right:12px;bottom:12px;z-index:30;font:13px/1.2 "IBM Plex Mono",monospace;color:#c8f542;background:rgba(6,8,12,.82);border:1px solid rgba(200,245,66,.5);border-radius:999px;padding:6px 12px;cursor:pointer';
-  b.onclick=()=>{ PSC.fallbackOff=true; PSC.lowDetail=false; _scPillFallback(); previewSceneChanged(); };
-  area.appendChild(b);
 }
 
 // -- Sync (rm._sceneProvider) ----------------------------------------------
@@ -330,6 +348,7 @@ function previewSceneSync(){
     if(rm.isHeld && rm.isHeld() && !PSC.holding) rm.releaseView();
     return;
   }
+  if(typeof ppResultsCheck==='function') ppResultsCheck();   // stage 4: Measured / Homogenization follow the design
   const scene=buildPreviewScene(q);
   if(!scene){ PSC.lastSig=sig; _scSettle(); return; }
   const r=_scResolve(scene);
@@ -372,7 +391,7 @@ window.F13LD_scene={
     groups:PSC.lastScene?PSC.lastScene.groups.slice():[], sources:PSC.lastScene?PSC.lastScene.sources.map(s=>({key:s.key,kind:s.kind,N:s.res.N})):[],
     frameMs:rm&&rm._frameEma?Math.round(rm._frameEma*10)/10:null, compileMs:rm?rm.compileMs:null,
     atlasMB:rm&&rm.atlasBytes?Math.round(rm.atlasBytes()/1048576*10)/10:0}),
-  setSlowGpu:on=>{ PSC.slowGpu=!!on; PSC.fallbackOff=false; _scPillFallback(); previewSceneChanged(); },
+  setSlowGpu:on=>{ PSC.slowGpu=!!on; PSC.fallbackOff=false; previewSceneChanged(); },
   scene:()=>(previewSceneSync(), PSC.lastScene)
 };
 

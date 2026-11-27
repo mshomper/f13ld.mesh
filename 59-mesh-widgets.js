@@ -48,6 +48,36 @@
   wrap('renderRailParts',()=>help(['parts']));
   wrap('ppRerender',()=>{help();if(hooks.prep)hooks.prep();});
 
+  // ---- phone header (< 900 px): one 40 px row; Open recipe and Add part move (ids and handlers kept) into one ⋯ menu.
+  // A comment marker stays behind, so the desktop header comes back at ≥ 900 px. Works without WebGL.
+  (function phoneHeader(){
+    const hdr=document.getElementById('hdr'),right=hdr&&hdr.querySelector('.fh-right');
+    if(!right)return;
+    const ids=['hdrOpenRecipe','hdrAddPart'],marks=[];
+    const more=document.createElement('button');
+    more.type='button';more.id='hdrMore';more.setAttribute('aria-label','More actions');more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded','false');more.title='More actions';
+    more.innerHTML='<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><circle cx="3.2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.8" cy="8" r="1.4"/></svg>';
+    const menu=document.createElement('div');
+    menu.id='hdrMenu';menu.setAttribute('role','menu');menu.hidden=true;
+    right.appendChild(more);hdr.appendChild(menu);
+    const close=()=>{menu.hidden=true;more.setAttribute('aria-expanded','false');};
+    more.addEventListener('click',e=>{e.stopPropagation();menu.hidden=!menu.hidden;more.setAttribute('aria-expanded',String(!menu.hidden));});
+    menu.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('button'))setTimeout(close,0);});
+    document.addEventListener('click',e=>{if(!menu.hidden&&!menu.contains(e.target))close();});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!menu.hidden){close();more.focus();}});
+    let phone=null;
+    function sync(){
+      const p=window.innerWidth<900;
+      if(p===phone)return;phone=p;
+      if(p){
+        ids.forEach(id=>{const el=document.getElementById(id);if(!el)return;const mk=document.createComment(id);el.before(mk);marks.push({id,mk});menu.appendChild(el);});
+      }else{
+        marks.forEach(m=>{const el=document.getElementById(m.id);if(el&&m.mk.parentNode)m.mk.replaceWith(el);});marks.length=0;close();
+      }
+    }
+    window.addEventListener('resize',sync);sync();
+  })();
+
   UI.ready(function(W){
     const $=id=>document.getElementById(id);
     const css=getComputedStyle(document.documentElement);
@@ -82,7 +112,7 @@
         const row=cb.closest('label')||cb,host=document.createElement('div');
         host.className='f13w-tg f13w-tg-menu';row.before(host);row.setAttribute('data-native','toggle');
         let quiet=fn=>fn();
-        const w=Liquid.ui.toggle(host,{size:'sm',accent:ACC,checked:cb.checked,label:row.textContent.trim(),labelFirst:true,
+        const w=Liquid.ui.toggle(host,{size:'xs',accent:ACC,checked:cb.checked,label:row.textContent.trim(),labelFirst:true,
           onChange:v=>{quiet(()=>{cb.checked=v;});fire(cb,'change');}});
         quiet=M.mirror(cb,HTMLInputElement.prototype,v=>w.set(!!v),'checked');   // the menu's reset (and any caller) writes .checked
       });

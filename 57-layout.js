@@ -16,6 +16,7 @@
 window.F13UI=window.F13UI||{};
 window.F13UI.onResize=function(){ if(typeof rm!=='undefined'&&rm) rm._dirty=true; };   // the canvas changed size: redraw
 window.F13UI.viewMenuSelector='#viewOptsBtn';
+window.F13UI.peekRatio=0.34;   // compact phone sheet; --peek in f13ui.css matches
 (function(){
   const UI=window.F13UI=window.F13UI||{};
   const SECS=[...document.querySelectorAll('.sec[data-section]')].map(s=>s.dataset.section);   // order = DOM order
@@ -66,7 +67,7 @@ window.F13UI.viewMenuSelector='#viewOptsBtn';
   const handle=document.getElementById('sheetHandle');
   let sheetState='peek';
   const vh=()=>window.innerHeight;
-  const snapH=s=>Math.round(vh()*(s==='full'?0.88:0.45));
+  const snapH=s=>Math.round(vh()*(s==='full'?(UI.fullRatio||0.88):(UI.peekRatio||0.45)));   // F13UI.peekRatio / fullRatio: a tool with a compact sheet sets them (read at call time; keep the shell's --peek in step)
   function setSheet(s,animate){
     sheetState=s;
     if(!animate)pane.classList.add('dragging');

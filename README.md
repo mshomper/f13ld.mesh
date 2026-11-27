@@ -99,9 +99,9 @@ The **part prep** section above the export controls gives the numbers you need t
 - **Estimate.** Volume filled, porosity, part volume, mass and build size update live from the preview. Volume filled is measured against the export cube, or against the bounding shape's own volume for shape-clipped parts.
 - **Measured.** After each export the exported mesh is measured exactly: volume, mass, volume filled, surface area, area ÷ volume, build size, separate pieces, the area of downward surfaces in 15° bands, the area needing support, its footprint on the plate, and the plate contact area. **Download print report** saves all of it as Markdown.
 
-### Layout (v0.17.0)
+### Layout (v0.17.0, compact in v0.17.1)
 
-Same standard as the other F13LD tools (liquid-ui controls):
+Same standard as the other F13LD tools (liquid-ui controls, compact density since v0.17.1: 32 px controls, 12 px labels):
 
 - **Header:** Open recipe, Add part, help, and a status mark that ripples while the tool works.
 - **Viewer:** Design, Print (build plate with overhang colours) and Section (one clip plane on X, Y or Z with a position slider and flip; preview only) sit over the view, with the view menu at the right. Render quality is automatic: while you turn the view or drag a control the preview draws quicker, lower-resolution frames, then one sharp frame a moment after you stop; nothing redraws while idle.
@@ -112,7 +112,7 @@ Same standard as the other F13LD tools (liquid-ui controls):
   - **Footer, under every section:** the export estimate and Export 3MF. While an export runs, the button shows the stage and time left, with Cancel beside it.
 - **Inspector (right, 1280 px and wider):** Estimate, Measured after an export (with the field · mesh · simplify split and the print report), Homogenization. Below 1280 px they move into Prep and Export. Measured and the print report clear when the design changes.
 - **Help:** an (i) beside each control opens its card; "show" jumps to the control.
-- **Phone:** viewer on top, the control column as a bottom sheet with a Design / Prep / Export tab bar.
+- **Phone:** viewer on top, a one-row header (Open recipe and Add part in the ⋯ menu), and the control column as a bottom sheet with a slim Design / Prep / Export tab bar.
 
 ### Preview (v0.14.0)
 

@@ -214,7 +214,7 @@ html.f13w .rl-ax .lq-sl-val::before{right:0;width:100%;top:-4px;bottom:-4px}
    Loaded last, so it overrides the 44 px rules in ui12.css / viewstrip.css / rail.css / dock.css. The kit sizes come from
    CONFIG.density:'compact' in 58-f13ui-wire.js. Phone chrome (header, handle, peek) is at the end.
    ========================================================================== */
-:root{--peek:34dvh}                                   /* 57-layout.js sets F13UI.peekRatio to match */
+:root{--peek:32dvh}                                  /* 57-layout.js sets F13UI.peekRatio to match */
 /* natives and fallbacks (shown only without WebGL) */
 input[type=range],.rl-sl input[type=range]{height:32px}
 .fld,.fld-num,select.fld,.dr-sel,.dr-num,.rl-num,.rl-erow select{height:32px;min-width:32px;padding:0 8px;border-radius:999px;font-size:12px}
@@ -240,7 +240,7 @@ html.f13w #viewOptsPanel{padding:2px 8px 6px 10px;min-width:176px}
 html.f13w #viewOptsPanel .f13v-r,html.f13w .f13v-p .f13v-r{min-height:32px;margin-top:2px}
 html.f13w .f13v-p .f13v-r::after{content:none}
 #secPanel .sp-seg button,#secPanel .sp-flip{width:32px;height:32px;font-size:12px;border-radius:999px}
-html.f13w #w-clip{height:44px;gap:6px;padding:0 4px 0 10px;border-radius:999px}   /* the kit's clip radio (X / Y / Z wheel) is a 44 px widget with no compact size: its box stays, nothing overlaps it */
+html.f13w #w-clip{height:36px;gap:6px;padding:0 3px 0 10px;border-radius:999px}   /* the clip radio is the kit's xs (32 px options) via CONFIG.density; the host just wraps it */
 html.f13w #w-view{width:240px}
 #typeBadge{top:52px}
 #orientGimbal{top:48px;width:80px;height:80px}

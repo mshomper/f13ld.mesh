@@ -16,7 +16,7 @@
 window.F13UI=window.F13UI||{};
 window.F13UI.onResize=function(){ if(typeof rm!=='undefined'&&rm) rm._dirty=true; };   // the canvas changed size: redraw
 window.F13UI.viewMenuSelector='#viewOptsBtn';
-window.F13UI.peekRatio=0.34;   // compact phone sheet; --peek in f13ui.css matches
+window.F13UI.peekRatio=0.32;   // compact phone sheet; --peek in f13ui.css matches
 (function(){
   const UI=window.F13UI=window.F13UI||{};
   const SECS=[...document.querySelectorAll('.sec[data-section]')].map(s=>s.dataset.section);   // order = DOM order
